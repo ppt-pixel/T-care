@@ -28,6 +28,10 @@ const schema = z.object({
     SMTP_USER: z.preprocess((value) => value === '' ? undefined : value, z.string().email().optional()),
     SMTP_PASSWORD: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
     SMTP_FROM: z.preprocess((value) => value === '' ? undefined : value, z.string().min(3).optional()),
+    // Brevo HTTP API is supported for Render Free, which blocks outbound SMTP ports.
+    BREVO_API_KEY: z.preprocess((value) => value === '' ? undefined : value, z.string().min(10).optional()),
+    EMAIL_FROM_EMAIL: z.preprocess((value) => value === '' ? undefined : value, z.string().email().optional()),
+    EMAIL_FROM_NAME: z.string().default('T-CARE'),
     OTP_TTL_MINUTES: z.coerce.number().int().min(5).max(30).default(10),
     OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(30).max(600).default(60),
     OTP_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(10).default(5),

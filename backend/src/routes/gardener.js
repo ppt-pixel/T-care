@@ -49,7 +49,7 @@ const assignmentActionSchema = z.object({
 }).strict();
 
 const jobQuerySchema = z.object({
-  status: z.enum(['ASSIGNED', 'ACCEPTED', 'REJECTED', 'IN_PROGRESS', 'COMPLETED']).optional(),
+  status: z.enum(['ASSIGNED', 'ACCEPTED', 'REJECTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -329,7 +329,7 @@ router.get('/jobs', async (req, res, next) => {
 
     const where = {
       gardenerId: gardener.id,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status ? { status: query.status } : { status: { not: 'CANCELLED' } }),
       booking: {
         ...(query.from || query.to
           ? { scheduledStart: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } }

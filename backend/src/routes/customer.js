@@ -54,7 +54,7 @@ router.get('/profile', async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.auth.id },
-      select: { id: true, email: true, fullName: true, phone: true, role: true, status: true }
+      select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, emailVerifiedAt: true }
     });
     return res.json({ user });
   } catch (error) { next(error); }
@@ -63,7 +63,7 @@ router.get('/profile', async (req, res, next) => {
 router.patch('/profile', async (req, res, next) => {
   try {
     const input = z.object({ fullName: z.string().trim().min(2).max(120), phone: z.string().trim().max(30).nullable().optional() }).parse(req.body);
-    const user = await prisma.user.update({ where: { id: req.auth.id }, data: input, select: { id: true, email: true, fullName: true, phone: true, role: true, status: true } });
+    const user = await prisma.user.update({ where: { id: req.auth.id }, data: input, select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, emailVerifiedAt: true } });
     return res.json({ user });
   } catch (error) { next(error); }
 });
@@ -107,6 +107,8 @@ router.delete('/addresses/:id', async (req, res, next) => {
     const customer = await getCustomer(req.auth.id);
     const existing = await prisma.address.findFirst({ where: { id: req.params.id, customerId: customer.id } });
     if (!existing) return res.status(404).json({ error: 'ADDRESS_NOT_FOUND', message: 'Address not found.' });
+    const bookingCount = await prisma.booking.count({ where: { addressId: existing.id } });
+    if (bookingCount > 0) return res.status(409).json({ error: 'ADDRESS_IN_USE', message: 'This address is linked to booking history and cannot be deleted. You can edit it or add another address.' });
     await prisma.$transaction(async tx => {
       await tx.address.delete({ where: { id: existing.id } });
       if (existing.isDefault) {
@@ -190,8 +192,11 @@ router.patch('/plants/:id', async (req, res, next) => {
 router.delete('/plants/:id', async (req, res, next) => {
   try {
     const customer = await getCustomer(req.auth.id);
-    const result = await prisma.plant.deleteMany({ where: { id: req.params.id, customerId: customer.id } });
-    if (!result.count) return res.status(404).json({ error: 'PLANT_NOT_FOUND', message: 'Plant not found.' });
+    const plant = await prisma.plant.findFirst({ where: { id: req.params.id, customerId: customer.id }, select: { id: true } });
+    if (!plant) return res.status(404).json({ error: 'PLANT_NOT_FOUND', message: 'Plant not found.' });
+    const bookingCount = await prisma.bookingPlant.count({ where: { plantId: plant.id } });
+    if (bookingCount > 0) return res.status(409).json({ error: 'PLANT_HAS_BOOKING_HISTORY', message: 'This plant is linked to booking history and cannot be deleted. Keep the record so past service reports remain intact.' });
+    await prisma.plant.delete({ where: { id: plant.id } });
     return res.status(204).send();
   } catch (error) { next(error); }
 });

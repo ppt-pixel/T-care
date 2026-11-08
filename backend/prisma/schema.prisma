@@ -68,6 +68,7 @@ enum AssignmentStatus {
   REJECTED
   IN_PROGRESS
   COMPLETED
+  CANCELLED
 }
 
 enum PaymentStatus {

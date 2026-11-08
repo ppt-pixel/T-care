@@ -75,6 +75,46 @@ export async function uploadToStorage(file, { kind, targetType, targetId }) {
   return intent.asset;
 }
 
+// ---------------- Customer: profile ----------------
+export function CustomerProfilePage({ Shell }) {
+  const { data, loading, error, load } = useLoad('/customer/profile');
+  const user = data?.user;
+  const [form, setForm] = React.useState({ fullName: '', phone: '' });
+  const [busy, setBusy] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  React.useEffect(() => {
+    if (user) setForm({ fullName: user.fullName || '', phone: user.phone || '' });
+  }, [user?.id, user?.fullName, user?.phone]);
+  const save = async e => {
+    e.preventDefault(); setBusy(true); setMessage('');
+    try {
+      await request('/customer/profile', { method: 'PATCH', body: json({ fullName: form.fullName, phone: form.phone || null }) });
+      setMessage('Customer profile updated.'); await load();
+    } catch (e2) { setMessage(errorText(e2)); }
+    finally { setBusy(false); }
+  };
+  return <Shell title="Your profile" sub="Manage your Customer account details and verification status.">
+    <Notice error={error || (message && /failed|cannot|invalid|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found/i.test(message) ? message : ''}/>
+    <State loading={loading} error={error} onRetry={load}/>
+    {user && <>
+      <Panel title="Account verification">
+        <div className="p5-metrics"><div><small>Account status</small><b>{statusLabel(user.status)}</b></div><div><small>Email verification</small><b>{user.emailVerifiedAt ? 'Verified' : 'Unverified'}</b></div><div><small>Account type</small><b>{statusLabel(user.role)}</b></div></div>
+        <p>{user.emailVerifiedAt ? 'Your email address is verified.' : 'Verify your email address to secure your T-CARE account.'}</p>
+      </Panel>
+      <Panel title="Personal information" sub="Your registered email address cannot be changed here.">
+        <form onSubmit={save}>
+          <FormGrid>
+            <Field label="Full name"><input required minLength="2" maxLength="120" value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })}/></Field>
+            <Field label="Email address"><input value={user.email || ''} readOnly/></Field>
+            <Field label="Phone number"><input maxLength="30" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}/></Field>
+          </FormGrid>
+          <Button type="submit" disabled={busy || !form.fullName.trim()}>{busy ? 'Saving…' : 'Save profile'}</Button>
+        </form>
+      </Panel>
+    </>}
+  </Shell>;
+}
+
 // ---------------- Customer: dashboard, services, plants, addresses, booking lifecycle ----------------
 export function CustomerDashboardPage({ Shell }) {
   const [snapshot, setSnapshot] = React.useState({ plants: [], bookings: [], notifications: [] });
@@ -246,7 +286,13 @@ export function CustomerBookingCreatePage({ Shell }) {
   React.useEffect(() => { if (!addressId && addresses.length) setAddressId(addresses.find(a => a.isDefault)?.id || addresses[0].id); }, [addresses, addressId]);
   React.useEffect(() => { if (!serviceId && services.length) setServiceId(services[0].id); }, [services, serviceId]);
   const selectedService = services.find(s => s.id === serviceId);
-  const selectedPrice = selectedService?.prices?.find(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants));
+  const selectedPrice = (selectedService?.prices || [])
+    .filter(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants))
+    .sort((a, b) => {
+      const minA = a.minPlants == null ? Number.NEGATIVE_INFINITY : a.minPlants;
+      const minB = b.minPlants == null ? Number.NEGATIVE_INFINITY : b.minPlants;
+      return minB - minA || new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime();
+    })[0];
   const createAddress = async e => { e.preventDefault(); setBusy(true); setError(''); try { const result = await request('/customer/addresses', { method: 'POST', body: json(address) }); setAddresses(current => [result.address, ...current]); setAddressId(result.address.id); setShowAddress(false); setSuccess('Address saved.'); } catch (e2) { setError(errorText(e2)); } finally { setBusy(false); } };
   const submit = async e => { e.preventDefault(); setBusy(true); setError(''); setSuccess(''); try {
     const result = await request('/bookings', { method: 'POST', body: json({ serviceId, plantIds, addressId, scheduledStart: new Date(scheduledStart).toISOString(), specialInstructions }) });
@@ -258,7 +304,7 @@ export function CustomerBookingCreatePage({ Shell }) {
       <PageTitle eyebrow="Booking details" title="Choose your service" sub="The backend recalculates the applicable price and validates ownership at submission." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
       <FormGrid>
         <Field label="Service"><select required value={serviceId} onChange={e => setServiceId(e.target.value)}><option value="">Select service</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.durationLabel}</option>)}</select></Field>
-        <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={new Date(Date.now() + 3600000).toISOString().slice(0, 16)}/></Field>
+        <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}/></Field>
       </FormGrid>
       <Panel title="Select plants" sub="Only plants belonging to your Customer profile are shown.">
         {plants.length ? <div className="p5-check-grid">{plants.map(p => <label key={p.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(p.id)} onChange={e => setPlantIds(current => e.target.checked ? [...current, p.id] : current.filter(id => id !== p.id))}/><span><b>{p.name}</b><small>{p.type || statusLabel(p.healthStatus)}</small></span></label>)}</div> : <Empty title="Add plants before booking" text="Create at least one plant record in My plants."/>}
@@ -566,10 +612,10 @@ export function AdminAnalyticsPage({ Shell }) {
   const { from, to } = React.useMemo(() => { const end = new Date(); return { from: new Date(end.getTime() - range * 86400000).toISOString(), to: end.toISOString() }; }, [range]);
   const analyticsPath = `/analytics/overview?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   const { data, loading, error, load } = useLoad(analyticsPath); const o = data?.overview;
-  const [series, setSeries] = React.useState({ bookings: [], revenue: [], gardeners: [] });
-  React.useEffect(() => { let live = true; Promise.all([request(`/analytics/bookings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request(`/analytics/revenue?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request('/analytics/gardeners')]).then(([b,r,g]) => { if (live) setSeries({ bookings: b.rows || [], revenue: r.rows || [], gardeners: g.gardeners || [] }); }).catch(() => {}); return () => { live = false; }; }, [from, to]);
+  const [series, setSeries] = React.useState({ bookings: [], revenue: [], gardeners: [] }); const [seriesError, setSeriesError] = React.useState('');
+  React.useEffect(() => { let live = true; setSeriesError(''); Promise.all([request(`/analytics/bookings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request(`/analytics/revenue?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request('/analytics/gardeners')]).then(([b,r,g]) => { if (live) setSeries({ bookings: b.rows || [], revenue: r.rows || [], gardeners: g.gardeners || [] }); }).catch(e => { if (live) setSeriesError(errorText(e)); }); return () => { live = false; }; }, [from, to]);
   const labels = [['Users',o?.users],['Customers',o?.customers],['Gardeners',o?.gardeners],['Bookings',o?.bookings],['Completed',o?.completedBookings],['Cancelled',o?.cancelledBookings],['Paid volume',money(o?.grossPaid)],['Issues',o?.issues],['Reviews',o?.reviews]];
-  return <Shell title="Analytics" sub="Live database-backed metrics. Revenue metrics are read-only; payment processing remains out of scope."><div className="p5-toolbar"><select value={range} onChange={e => setRange(Number(e.target.value))}><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option><option value={365}>Last 365 days</option></select></div><State loading={loading} error={error} onRetry={load}/>{o && <div className="p5-metric-grid">{labels.map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value ?? 0}</b></div>)}</div>}
+  return <Shell title="Analytics" sub="Live database-backed metrics. Revenue metrics are read-only; payment processing remains out of scope."><Notice error={seriesError}/><div className="p5-toolbar"><select value={range} onChange={e => setRange(Number(e.target.value))}><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option><option value={365}>Last 365 days</option></select></div><State loading={loading} error={error} onRetry={load}/>{o && <div className="p5-metric-grid">{labels.map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value ?? 0}</b></div>)}</div>}
     <div className="p5-columns"><Panel title="Booking activity" sub={`${series.bookings.length} daily data points`}>{series.bookings.length ? <RecordTable headers={['Day','Bookings','Completed','Cancelled']}>{series.bookings.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{r.total}</td><td>{r.completed}</td><td>{r.cancelled}</td></tr>)}</RecordTable> : <Empty title="No booking activity in this range"/>}</Panel><Panel title="Gardener performance" sub="Assignment counts, ratings and KYC state">{series.gardeners.length ? <RecordTable headers={['Gardener','Assignments','Rating','KYC']}>
       {series.gardeners.map(g => <tr key={g.id}><td>{g.user?.fullName}</td><td>{g._count?.assignments || 0}</td><td>{g.rating == null ? '—' : Number(g.rating).toFixed(1)}</td><td>{statusLabel(g.kycStatus)}</td></tr>)}</RecordTable> : <Empty/>}</Panel></div>
     <Panel title="Paid volume and refunds" sub="Read-only payment records; collection and refund execution are excluded from this Phase 5 scope.">{series.revenue.length ? <RecordTable headers={['Day','Paid volume','Refunded']}>{series.revenue.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{money(r.paid)}</td><td>{money(r.refunded)}</td></tr>)}</RecordTable> : <Empty title="No recorded payment activity in this range"/>}</Panel>

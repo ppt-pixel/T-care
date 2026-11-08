@@ -62,12 +62,28 @@ router.get('/revenue', async (req, res, next) => {
     const from = q.from ?? new Date(Date.now() - 90 * 86400000);
     const to = q.to ?? new Date();
     const rows = await prisma.$queryRaw`
-      SELECT DATE_TRUNC('day', "createdAt") AS day,
-             COALESCE(SUM("amount") FILTER (WHERE status IN ('PAID','PARTIALLY_REFUNDED')), 0) AS paid,
-             COALESCE(SUM("amount") FILTER (WHERE status = 'REFUNDED'), 0) AS refunded
-      FROM "Payment"
-      WHERE "createdAt" >= ${from} AND "createdAt" < ${to}
-      GROUP BY 1 ORDER BY 1 ASC`;
+      WITH paid_by_day AS (
+        SELECT DATE_TRUNC('day', "paidAt") AS day, SUM("amount") AS paid
+        FROM "Payment"
+        WHERE "paidAt" IS NOT NULL
+          AND status IN ('PAID', 'PARTIALLY_REFUNDED', 'REFUNDED')
+          AND "paidAt" >= ${from} AND "paidAt" < ${to}
+        GROUP BY 1
+      ),
+      refunded_by_day AS (
+        SELECT DATE_TRUNC('day', "processedAt") AS day, SUM("amount") AS refunded
+        FROM "Refund"
+        WHERE "processedAt" IS NOT NULL
+          AND status IN ('REFUNDED', 'PARTIALLY_REFUNDED')
+          AND "processedAt" >= ${from} AND "processedAt" < ${to}
+        GROUP BY 1
+      )
+      SELECT COALESCE(p.day, r.day) AS day,
+             COALESCE(p.paid, 0) AS paid,
+             COALESCE(r.refunded, 0) AS refunded
+      FROM paid_by_day p
+      FULL OUTER JOIN refunded_by_day r ON p.day = r.day
+      ORDER BY day ASC`;
     res.json({ rows });
   } catch (error) { next(error); }
 });

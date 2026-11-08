@@ -13,7 +13,36 @@ export class EmailDeliveryConfigurationError extends Error {
 }
 
 export function isEmailDeliveryConfigured() {
-  return Boolean(env.SMTP_USER && env.SMTP_PASSWORD);
+  const brevoReady = Boolean(env.BREVO_API_KEY && env.EMAIL_FROM_EMAIL);
+  const smtpReady = Boolean(env.SMTP_USER && env.SMTP_PASSWORD);
+  return brevoReady || smtpReady;
+}
+
+async function sendViaBrevo({ to, subject, text, html }) {
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': env.BREVO_API_KEY,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { email: env.EMAIL_FROM_EMAIL, name: env.EMAIL_FROM_NAME },
+      to: [{ email: to }],
+      subject,
+      textContent: text,
+      htmlContent: html
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    const error = new Error(`Brevo email delivery failed (${response.status}).`);
+    error.statusCode = 502;
+    error.providerDetail = detail.slice(0, 500);
+    throw error;
+  }
+  return response.json().catch(() => ({}));
 }
 
 function getTransporter() {
@@ -47,7 +76,6 @@ function escapeHtml(value) {
 }
 
 export async function sendEmailVerificationCode({ to, fullName, code, expiresInMinutes }) {
-  const mailer = getTransporter();
   const safeName = escapeHtml(fullName || 'there');
   const subject = 'Verify your email address — T-CARE';
   const text = [
@@ -70,16 +98,18 @@ export async function sendEmailVerificationCode({ to, fullName, code, expiresInM
   </div>
 </body></html>`;
 
+  if (env.BREVO_API_KEY && env.EMAIL_FROM_EMAIL) {
+    return sendViaBrevo({ to, subject, text, html });
+  }
+  const mailer = getTransporter();
   return mailer.sendMail({
     from: env.SMTP_FROM || { name: 'T-CARE', address: env.SMTP_USER },
-    to,
-    subject,
-    text,
-    html,
+    to, subject, text, html,
     headers: { 'X-Auto-Response-Suppress': 'All' }
   });
 }
 
 export async function verifySmtpConnection() {
+  if (env.BREVO_API_KEY && env.EMAIL_FROM_EMAIL) return true;
   return getTransporter().verify();
 }

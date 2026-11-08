@@ -61,7 +61,7 @@ router.get('/users', async(req, res, next) => {
             } : {})
         };
         const [users, total] = await prisma.$transaction([
-            prisma.user.findMany({ where, select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, createdAt: true, updatedAt: true, lastLoginAt: true, customerProfile: { select: { id: true } }, gardenerProfile: { select: { id: true, kycStatus: true, rating: true, serviceArea: true } }, _count: { select: { notifications: true } } }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
+            prisma.user.findMany({ where, select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, emailVerifiedAt: true, createdAt: true, updatedAt: true, lastLoginAt: true, customerProfile: { select: { id: true } }, gardenerProfile: { select: { id: true, kycStatus: true, rating: true, serviceArea: true } }, _count: { select: { notifications: true } } }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
             prisma.user.count({ where })
         ]);
         res.json({ users, pagination: { page: q.page, limit: q.limit, total, pages: Math.ceil(total / q.limit) } });
@@ -72,7 +72,7 @@ router.get('/users/:id', async(req, res, next) => {
     try {
         const user = await prisma.user.findUnique({
             where: { id: req.params.id },
-            select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, createdAt: true, updatedAt: true, lastLoginAt: true, customerProfile: { include: { addresses: true, plants: { include: { photos: true } } } }, gardenerProfile: { include: { availability: true, kycDocuments: { select: { id: true, documentType: true, originalFileName: true, contentType: true, sizeBytes: true, status: true, reviewNote: true, reviewedAt: true, mediaAssetId: true, createdAt: true } } } } }
+            select: { id: true, email: true, fullName: true, phone: true, role: true, status: true, emailVerifiedAt: true, createdAt: true, updatedAt: true, lastLoginAt: true, customerProfile: { include: { addresses: true, plants: { include: { photos: true } } } }, gardenerProfile: { include: { availability: true, kycDocuments: { select: { id: true, documentType: true, originalFileName: true, contentType: true, sizeBytes: true, status: true, reviewNote: true, reviewedAt: true, mediaAssetId: true, createdAt: true } } } } }
         });
         if (!user) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found.' });
         res.json({ user });
@@ -85,8 +85,12 @@ router.patch('/users/:id/status', async(req, res, next) => {
         if (req.params.id === req.auth.id) return res.status(409).json({ error: 'SELF_STATUS_CHANGE_FORBIDDEN', message: 'An administrator cannot change their own account status.' });
         const user = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, status: true, email: true } });
         if (!user) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found.' });
-        const updated = await prisma.user.update({ where: { id: user.id }, data: { status: input.status }, select: { id: true, email: true, role: true, status: true } });
-        await audit(req.auth.id, 'STATUS_CHANGE', 'User', user.id, { from: user.status, to: input.status });
+        const updated = await prisma.$transaction(async tx => {
+            const changed = await tx.user.update({ where: { id: user.id }, data: { status: input.status }, select: { id: true, email: true, role: true, status: true } });
+            await tx.refreshSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+            await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'User', entityId: user.id, metadata: { from: user.status, to: input.status, refreshSessionsRevoked: true } } });
+            return changed;
+        });
         await notifyUserSafely({ userId: user.id, type: 'SYSTEM', channel: 'IN_APP', title: 'Account status updated', body: `Your T-CARE account status is now ${input.status}.` });
         res.json({ user: updated });
     } catch (error) { next(error); }
@@ -237,15 +241,32 @@ router.get('/bookings/:id', async(req, res, next) => {
 router.patch('/bookings/:id/status', async(req, res, next) => {
     try {
         const input = z.object({ status: z.enum(['CONFIRMED', 'GARDENER_ASSIGNED', 'GARDENER_ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'SERVICE_STARTED', 'SERVICE_COMPLETED', 'CANCELLED']), note: z.string().trim().max(1000).optional() }).strict().parse(req.body);
-        const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+        const booking = await prisma.booking.findUnique({
+            where: { id: req.params.id },
+            include: {
+                customer: { select: { userId: true } },
+                assignment: { include: { gardener: { select: { userId: true } } } },
+                payment: { select: { status: true } }
+            }
+        });
         if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
         if (!canTransitionBooking(booking.status, input.status)) return res.status(409).json({ error: 'INVALID_BOOKING_TRANSITION', message: `Booking cannot transition from ${booking.status} to ${input.status}.` });
+        if (input.status === 'CANCELLED' && ['PAID', 'PARTIALLY_REFUNDED'].includes(booking.payment?.status)) {
+            return res.status(409).json({ error: 'REFUND_REQUIRED', message: 'A processed payment must go through the refund workflow before this booking can be cancelled.' });
+        }
         const updated = await prisma.$transaction(async tx => {
             const b = await tx.booking.update({ where: { id: booking.id }, data: { status: input.status } });
+            if (input.status === 'CANCELLED' && booking.assignment) {
+                await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { status: 'CANCELLED' } });
+            }
             await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: input.status, changedBy: req.auth.id, note: input.note || 'Administrative status change.' } });
             return b;
         });
         await audit(req.auth.id, 'STATUS_CHANGE', 'Booking', booking.id, { from: booking.status, to: input.status, note: input.note });
+        if (input.status === 'CANCELLED') {
+            await notifyUserSafely({ userId: booking.customer.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
+            if (booking.assignment?.gardener?.userId) await notifyUserSafely({ userId: booking.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
+        }
         res.json({ booking: updated });
     } catch (error) { next(error); }
 });
@@ -261,7 +282,21 @@ router.post('/bookings/:id/assign', async(req, res, next) => {
             if (!gardener) throw Object.assign(new Error('Gardener not found.'), { statusCode: 404, code: 'GARDENER_NOT_FOUND' });
             if (gardener.user.status !== 'ACTIVE') throw Object.assign(new Error('Gardener account is not active.'), { statusCode: 409, code: 'GARDENER_INACTIVE' });
             if (gardener.kycStatus !== 'VERIFIED') throw Object.assign(new Error('Only KYC-verified gardeners can receive assignments.'), { statusCode: 409, code: 'GARDENER_KYC_REQUIRED' });
-            if (booking.assignment?.gardenerId === gardener.id && booking.assignment.status !== 'REJECTED') return { booking, assignment: booking.assignment, unchanged: true };
+            if (booking.assignment?.gardenerId === gardener.id && booking.assignment.status !== 'REJECTED' && booking.assignment.status !== 'CANCELLED') return { booking, assignment: booking.assignment, unchanged: true };
+            const overlappingAssignment = await tx.gardenerAssignment.findFirst({
+                where: {
+                    gardenerId: gardener.id,
+                    status: { notIn: ['REJECTED', 'COMPLETED', 'CANCELLED'] },
+                    booking: { is: {
+                        id: { not: booking.id },
+                        status: { notIn: ['SERVICE_COMPLETED', 'CANCELLED'] },
+                        scheduledStart: { lt: booking.scheduledEnd },
+                        scheduledEnd: { gt: booking.scheduledStart }
+                    } }
+                },
+                select: { id: true, booking: { select: { reference: true } } }
+            });
+            if (overlappingAssignment) throw Object.assign(new Error(`This Gardener already has an overlapping assignment (${overlappingAssignment.booking.reference}). Choose another Gardener or visit time.`), { statusCode: 409, code: 'GARDENER_SCHEDULE_CONFLICT' });
             if (booking.assignment) await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { gardenerId: gardener.id, status: 'ASSIGNED', acceptedAt: null, startedAt: null, completedAt: null } });
             else await tx.gardenerAssignment.create({ data: { bookingId: booking.id, gardenerId: gardener.id, status: 'ASSIGNED' } });
             const updatedBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: 'GARDENER_ASSIGNED' } });

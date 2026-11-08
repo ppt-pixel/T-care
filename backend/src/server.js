@@ -2,8 +2,9 @@ import { app } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 
-const server = app.listen(env.PORT, () => {
-  console.log(`T-CARE backend listening on http://localhost:${env.PORT}`);
+// Bind to all interfaces for managed container hosts such as Render.
+const server = app.listen(env.PORT, '0.0.0.0', () => {
+  console.log(`T-CARE backend listening on port ${env.PORT}`);
 });
 
 async function shutdown(signal) {

@@ -68,7 +68,7 @@ async function getCurrentPrice(tx, serviceId, plantCount, at) {
         { OR: [{ maxPlants: null }, { maxPlants: { gte: plantCount } }] }
       ]
     },
-    orderBy: [{ minPlants: 'desc' }, { effectiveFrom: 'desc' }]
+    orderBy: [{ minPlants: { sort: 'desc', nulls: 'last' } }, { effectiveFrom: 'desc' }]
   });
   if (!prices.length) throw Object.assign(new Error('No active price is available for this service and plant count.'), { statusCode: 409, code: 'SERVICE_PRICE_UNAVAILABLE' });
   return prices[0];
@@ -163,7 +163,10 @@ router.get('/:id', async (req, res, next) => {
 router.post('/:id/cancel', async (req, res, next) => {
   try {
     const customer = await getCustomer(req.auth.id);
-    const booking = await prisma.booking.findFirst({ where: { id: req.params.id, customerId: customer.id } });
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, customerId: customer.id },
+      include: { assignment: { include: { gardener: { select: { userId: true } } } } }
+    });
     if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
     if (!allowedTransitions[booking.status]?.has('CANCELLED')) return res.status(409).json({ error: 'BOOKING_CANNOT_CANCEL', message: `Booking cannot be cancelled from ${booking.status}.` });
     const payment = await prisma.payment.findUnique({ where: { bookingId: booking.id }, select: { id: true, status: true } });
@@ -172,10 +175,16 @@ router.post('/:id/cancel', async (req, res, next) => {
     }
     const updated = await prisma.$transaction(async tx => {
       const nextBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: 'CANCELLED' } });
+      if (booking.assignment) {
+        await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { status: 'CANCELLED' } });
+      }
       await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: 'CANCELLED', changedBy: req.auth.id, note: 'Cancelled by customer.' } });
       return nextBooking;
     });
     await notifyUserSafely({ userId: req.auth.id, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} has been cancelled.` });
+    if (booking.assignment?.gardener?.userId) {
+      await notifyUserSafely({ userId: booking.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by the Customer.` });
+    }
     await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: booking.id, metadata: { fromStatus: booking.status, toStatus: 'CANCELLED' } } });
     return res.json({ booking: updated });
   } catch (error) { next(error); }
