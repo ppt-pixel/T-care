@@ -1,0 +1,693 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CUSTOMER
+  GARDENER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  PENDING
+  INACTIVE
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum KycDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum AddressType {
+  HOME
+  OFFICE
+  OTHER
+}
+
+enum PlantHealthStatus {
+  EXCELLENT
+  HEALTHY
+  NEEDS_ATTENTION
+  CRITICAL
+}
+
+enum ServiceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BookingStatus {
+  CONFIRMED
+  GARDENER_ASSIGNED
+  GARDENER_ACCEPTED
+  ON_THE_WAY
+  ARRIVED
+  SERVICE_STARTED
+  SERVICE_COMPLETED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+  OTHER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+  PENDING
+}
+
+enum NotificationType {
+  BOOKING
+  SERVICE
+  PLANT_CARE
+  SUBSCRIPTION
+  PAYMENT
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  HIDDEN
+}
+
+enum IssueStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaStatus {
+  PENDING
+  UPLOADED
+  DELETED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  STATUS_CHANGE
+  PAYMENT_EVENT
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  fullName        String
+  phone           String?
+  emailVerifiedAt DateTime?
+  role            Role       @default(CUSTOMER)
+  status          UserStatus @default(ACTIVE)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  lastLoginAt     DateTime?
+
+  customerProfile CustomerProfile?
+  gardenerProfile GardenerProfile?
+  refreshSessions RefreshSession[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]       @relation("AuditActor")
+  mediaAssets     MediaAsset[]
+  emailOtps       EmailOtp[]
+
+  @@index([role, status])
+}
+
+model CustomerProfile {
+  id            String         @id @default(cuid())
+  userId        String         @unique
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses     Address[]
+  plants        Plant[]
+  bookings      Booking[]
+  subscriptions Subscription[]
+  reviews       Review[]
+  issues        IssueReport[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model GardenerProfile {
+  id           String                 @id @default(cuid())
+  userId       String                 @unique
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio          String?
+  serviceArea  String?
+  rating       Decimal?               @db.Decimal(3, 2)
+  kycStatus    KycStatus              @default(NOT_STARTED)
+  availability GardenerAvailability[]
+  assignments  GardenerAssignment[]
+  payouts      Payout[]
+  kycDocuments GardenerKycDocument[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+}
+
+model GardenerKycDocument {
+  id               String            @id @default(cuid())
+  gardenerId       String
+  gardener         GardenerProfile   @relation(fields: [gardenerId], references: [id], onDelete: Cascade)
+  mediaAssetId     String            @unique
+  mediaAsset       MediaAsset        @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  documentType     String
+  originalFileName String
+  contentType      String
+  sizeBytes        Int
+  status           KycDocumentStatus @default(PENDING)
+  reviewNote       String?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([gardenerId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+model RefreshSession {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model EmailOtp {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model Address {
+  id         String          @id @default(cuid())
+  customerId String
+  customer   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String
+  type       AddressType     @default(HOME)
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  latitude   Decimal?        @db.Decimal(10, 7)
+  longitude  Decimal?        @db.Decimal(10, 7)
+  isDefault  Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  bookings   Booking[]
+
+  @@index([customerId, isDefault])
+}
+
+model Plant {
+  id                  String               @id @default(cuid())
+  customerId          String
+  customer            CustomerProfile      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name                String
+  type                String?
+  locationInHome      String?
+  healthStatus        PlantHealthStatus    @default(HEALTHY)
+  nextCareAt          DateTime?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  photos              PlantPhoto[]
+  careRecords         PlantCareRecord[]
+  bookingPlants       BookingPlant[]
+  serviceReportPlants ServiceReportPlant[]
+
+  @@index([customerId, healthStatus])
+  @@index([nextCareAt])
+}
+
+model MediaAsset {
+  id          String      @id @default(cuid())
+  ownerUserId String
+  owner       User        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  bucket      String
+  objectKey   String      @unique
+  kind        String
+  contentType String
+  sizeBytes   Int?
+  status      MediaStatus @default(PENDING)
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  kycDocument GardenerKycDocument?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([ownerUserId, createdAt])
+  @@index([targetType, targetId])
+  @@index([status, createdAt])
+}
+
+model PlantPhoto {
+  id        String   @id @default(cuid())
+  plantId   String
+  plant     Plant    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  objectKey String
+  url       String?
+  altText   String?
+  createdAt DateTime @default(now())
+
+  @@index([plantId, createdAt])
+}
+
+model PlantCareRecord {
+  id         String    @id @default(cuid())
+  plantId    String
+  plant      Plant     @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  bookingId  String?
+  booking    Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  title      String
+  notes      String?
+  recordedAt DateTime  @default(now())
+  nextCareAt DateTime?
+
+  @@index([plantId, recordedAt])
+  @@index([bookingId])
+}
+
+model Service {
+  id              String         @id @default(cuid())
+  name            String         @unique
+  description     String
+  category        String
+  durationLabel   String
+  durationMinutes Int?
+  status          ServiceStatus  @default(ACTIVE)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  prices          ServicePrice[]
+  bookings        Booking[]
+}
+
+model ServicePrice {
+  id            String    @id @default(cuid())
+  serviceId     String
+  service       Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  amount        Decimal   @db.Decimal(10, 2)
+  minPlants     Int?
+  maxPlants     Int?
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([serviceId, effectiveFrom, effectiveTo])
+}
+
+model Booking {
+  id                  String                 @id @default(cuid())
+  reference           String                 @unique
+  customerId          String
+  customer            CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  serviceId           String
+  service             Service                @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  addressId           String
+  address             Address                @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  scheduledStart      DateTime
+  scheduledEnd        DateTime
+  specialInstructions String?
+  status              BookingStatus          @default(CONFIRMED)
+  subtotal            Decimal                @db.Decimal(10, 2)
+  convenienceFee      Decimal                @default(0) @db.Decimal(10, 2)
+  total               Decimal                @db.Decimal(10, 2)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  plants              BookingPlant[]
+  statusHistory       BookingStatusHistory[]
+  assignment          GardenerAssignment?
+  report              ServiceReport?
+  payment             Payment?
+  review              Review?
+  issues              IssueReport[]
+  careRecords         PlantCareRecord[]
+
+  @@index([customerId, status, scheduledStart])
+  @@index([serviceId, scheduledStart])
+  @@index([status, scheduledStart])
+}
+
+model BookingPlant {
+  bookingId String
+  plantId   String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  plant     Plant   @relation(fields: [plantId], references: [id], onDelete: Restrict)
+
+  @@id([bookingId, plantId])
+}
+
+model BookingStatusHistory {
+  id         String         @id @default(cuid())
+  bookingId  String
+  booking    Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+  changedBy  String?
+  note       String?
+  createdAt  DateTime       @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
+model GardenerAssignment {
+  id          String           @id @default(cuid())
+  bookingId   String           @unique
+  booking     Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  gardenerId  String
+  gardener    GardenerProfile  @relation(fields: [gardenerId], references: [id], onDelete: Restrict)
+  status      AssignmentStatus @default(ASSIGNED)
+  assignedAt  DateTime         @default(now())
+  acceptedAt  DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([gardenerId, status])
+}
+
+model GardenerAvailability {
+  id         String          @id @default(cuid())
+  gardenerId String
+  gardener   GardenerProfile @relation(fields: [gardenerId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int
+  startTime  String
+  endTime    String
+  isActive   Boolean         @default(true)
+
+  @@index([gardenerId, dayOfWeek, isActive])
+}
+
+model ServiceReport {
+  id             String                 @id @default(cuid())
+  bookingId      String                 @unique
+  booking        Booking                @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  summary        String
+  observations   String?
+  recommendation String?
+  nextCareAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  checklistItems ServiceChecklistItem[]
+  photos         ServiceReportPhoto[]
+  plants         ServiceReportPlant[]
+}
+
+model ServiceReportPlant {
+  id             String            @id @default(cuid())
+  reportId       String
+  plantId        String
+  report         ServiceReport     @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  plant          Plant             @relation(fields: [plantId], references: [id], onDelete: Restrict)
+  healthStatus   PlantHealthStatus
+  conditionNote  String?
+  recommendation String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([reportId, plantId])
+  @@index([plantId, createdAt])
+}
+
+model ServiceChecklistItem {
+  id        String        @id @default(cuid())
+  reportId  String
+  report    ServiceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  label     String
+  completed Boolean       @default(false)
+
+  @@index([reportId])
+}
+
+model ServiceReportPhoto {
+  id        String        @id @default(cuid())
+  reportId  String
+  report    ServiceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  objectKey String
+  url       String?
+  caption   String?
+  createdAt DateTime      @default(now())
+}
+
+model Payment {
+  id                String         @id @default(cuid())
+  bookingId         String?        @unique
+  booking           Booking?       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  subscriptionId    String?
+  subscription      Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  amount            Decimal        @db.Decimal(10, 2)
+  currency          String         @default("INR")
+  method            PaymentMethod
+  status            PaymentStatus  @default(PENDING)
+  provider          String?
+  providerOrderId   String?        @unique
+  providerPaymentId String?        @unique
+  idempotencyKey    String         @unique
+  paidAt            DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  refunds           Refund[]
+  events            PaymentEvent[]
+
+  @@index([status, createdAt])
+  @@index([provider, providerPaymentId])
+  @@index([subscriptionId, status])
+}
+
+model PaymentEvent {
+  id              String    @id @default(cuid())
+  paymentId       String?
+  payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  provider        String
+  providerEventId String
+  eventType       String
+  payload         Json
+  processedAt     DateTime?
+  receivedAt      DateTime  @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId, receivedAt])
+}
+
+model Refund {
+  id               String        @id @default(cuid())
+  paymentId        String
+  payment          Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount           Decimal       @db.Decimal(10, 2)
+  reason           String?
+  status           PaymentStatus @default(PENDING)
+  providerRefundId String?       @unique
+  idempotencyKey   String        @unique
+  createdAt        DateTime      @default(now())
+  processedAt      DateTime?
+
+  @@index([paymentId, status])
+}
+
+model SubscriptionPlan {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  description   String?
+  billingCycle  String
+  plantLimit    Int?
+  price         Decimal        @db.Decimal(10, 2)
+  status        ServiceStatus  @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id          String             @id @default(cuid())
+  customerId  String
+  customer    CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  planId      String
+  plan        SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status      SubscriptionStatus @default(PENDING)
+  startedAt   DateTime?
+  renewsAt    DateTime?
+  pausedAt    DateTime?
+  cancelledAt DateTime?
+  payments    Payment[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([customerId, status])
+}
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  body      String
+  readAt    DateTime?
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+model Review {
+  id         String          @id @default(cuid())
+  bookingId  String          @unique
+  booking    Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  rating     Int
+  comment    String?
+  status     ReviewStatus    @default(PENDING)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model IssueReport {
+  id          String          @id @default(cuid())
+  customerId  String
+  customer    CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  bookingId   String?
+  booking     Booking?        @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  subject     String
+  description String
+  status      IssueStatus     @default(OPEN)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([customerId, status, createdAt])
+  @@index([bookingId])
+}
+
+model PlantKnowledge {
+  id             String   @id @default(cuid())
+  commonName     String
+  scientificName String?
+  category       String?
+  watering       String?
+  light          String?
+  feeding        String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([commonName])
+  @@index([scientificName])
+}
+
+model CmsContent {
+  id          String        @id @default(cuid())
+  key         String        @unique
+  title       String
+  body        String
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status, publishedAt])
+}
+
+model Payout {
+  id          String          @id @default(cuid())
+  gardenerId  String
+  gardener    GardenerProfile @relation(fields: [gardenerId], references: [id], onDelete: Restrict)
+  amount      Decimal         @db.Decimal(10, 2)
+  status      PaymentStatus   @default(PENDING)
+  periodStart DateTime?
+  periodEnd   DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([gardenerId, status, createdAt])
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actorUserId String?
+  actor       User?       @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      AuditAction
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+}
