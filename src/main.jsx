@@ -12,7 +12,7 @@ import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,Term
 import './styles.css';
 import * as Phase5 from './phase5.jsx';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:4000')).replace(/\/+$/, '');
 const API_V1 = `${API_BASE_URL}/api/v1`;
 
 async function authApi(path, body) {
