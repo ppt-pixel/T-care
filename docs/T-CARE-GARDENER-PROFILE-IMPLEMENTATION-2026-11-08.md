@@ -1,7 +1,7 @@
 # T-CARE Gardener Profile Integration
 
-**Date:** 8 November 2026
-**Source archive:** `T-care Final.zip`
+**Date:** 8 November 2026  
+**Source archive:** `T-care Final.zip`  
 **Scope:** Replace the Gardener Profile placeholder with a backend-connected profile page while preserving the existing T-CARE visual system.
 
 ## Implemented

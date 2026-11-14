@@ -135,7 +135,7 @@ router.put('/jobs/:id/report', async (req, res, next) => {
           });
 
       for (const item of input.plants) {
-        await tx.plant.update({ where: { id: item.plantId }, data: { healthStatus: item.healthStatus, nextCareAt: input.nextCareAt ?? undefined } });
+        await tx.plant.update({ where: { id: item.plantId }, data: { healthStatus: item.healthStatus, nextCareAt: input.nextCareAt === undefined ? undefined : input.nextCareAt } });
         const careNotes = [item.conditionNote, item.recommendation].filter(Boolean).join('\n\n') || input.summary;
         const priorCareRecord = await tx.plantCareRecord.findFirst({ where: { plantId: item.plantId, bookingId: booking.id } });
         if (priorCareRecord) {
@@ -149,6 +149,15 @@ router.put('/jobs/:id/report', async (req, res, next) => {
       return report;
     });
 
+    if (input.plants.length) {
+      await notifyUserSafely({
+        userId: booking.customer.user.id,
+        type: 'PLANT_CARE',
+        channel: 'IN_APP',
+        title: 'Gardener updated your plant health report',
+        body: `Your Gardener saved plant condition notes and care recommendations for booking ${booking.reference}. Open the visit to review the latest report.`
+      });
+    }
     return res.json({ report: await serializeReport(result, req.auth.id) });
   } catch (error) { next(error); }
 });

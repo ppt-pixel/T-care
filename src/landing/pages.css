@@ -111,3 +111,15 @@
 .phero-card li span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--g);color:#fff;flex:none}[data-theme=dark] .phero-card li span{color:#10200f}
 .pc-icons{display:flex;gap:10px;padding-top:14px;border-top:1px dashed var(--line)}.pc-icons i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--soft);color:var(--g)}
 @media(max-width:900px){.phero{grid-template-columns:1fr}.phero-card{display:none}}
+
+/* Phase 5 live public catalogue states and product media */
+.public-state{max-width:900px;margin:22px auto;padding:22px 24px;border:1px solid var(--line);border-radius:20px;background:var(--card);color:var(--mut);text-align:center;line-height:1.6}
+.public-state p{margin:0 0 8px}.public-state span{font-size:.9rem}
+.public-state button{background:none;border:0;color:var(--g);font:inherit;font-weight:700;cursor:pointer;text-decoration:underline}
+.catalog-note{max-width:900px;margin:22px auto 0;text-align:center;color:var(--mut);font-size:.9rem;line-height:1.55}
+.pimg img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+.product-desc{color:var(--mut);font-size:.85rem;line-height:1.45;margin:4px 0 0;min-height:2.5em}
+.pcard .add:disabled{opacity:.48;cursor:not-allowed;transform:none}
+.team-rating{display:inline-flex;gap:4px;align-items:center;color:#c58a16;font-size:.86rem;font-weight:700}
+.team-area{display:inline-flex;gap:4px;align-items:center;color:var(--mut);font-size:.82rem}
+.team-card>small{color:var(--mut);font-size:.78rem}

@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { addBillingPeriod, isSupportedBillingCycle } from '../lib/billingPeriod.js';
+import { notifyUserSafely } from '../lib/notifications.js';
 
 const router = Router();
 
-const planInput = z.object({
+const planInputBase = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(2000).nullable().optional(),
   billingCycle: z.string().trim().min(1).max(40),
@@ -14,21 +16,16 @@ const planInput = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE')
 }).strict();
 
-const planPatch = planInput.partial();
+const validateBillingCycle = (value, ctx) => {
+  if (value.billingCycle !== undefined && !isSupportedBillingCycle(value.billingCycle)) {
+    ctx.addIssue({ code: 'custom', path: ['billingCycle'], message: 'Use a supported duration such as 1 month, 6 months or 12 months.' });
+  }
+};
+const planInput = planInputBase.superRefine(validateBillingCycle);
+const planPatch = planInputBase.partial().superRefine(validateBillingCycle);
 
 function serializePlan(plan) {
   return { ...plan, price: Number(plan.price) };
-}
-
-function addBillingPeriod(date, billingCycle) {
-  const next = new Date(date);
-  const cycle = billingCycle.trim().toLowerCase();
-  if (cycle.includes('year')) next.setUTCFullYear(next.getUTCFullYear() + 1);
-  else if (cycle.includes('month')) next.setUTCMonth(next.getUTCMonth() + 1);
-  else if (cycle.includes('week')) next.setUTCDate(next.getUTCDate() + 7);
-  else if (cycle.includes('day')) next.setUTCDate(next.getUTCDate() + 1);
-  else return null;
-  return next;
 }
 
 function httpError(statusCode, code, message) {
@@ -109,10 +106,18 @@ customer.post('/', async (req, res, next) => {
       return created;
     });
 
+    await notifyUserSafely({
+      userId: req.auth.id,
+      type: 'SUBSCRIPTION',
+      channel: 'IN_APP',
+      title: 'Subscription request received',
+      body: `${plan.name} (${plan.billingCycle}) is pending payment verification. Your plan will not become active until payment is verified.`
+    });
+
     return res.status(201).json({
       subscription: { ...subscription, plan: serializePlan(subscription.plan) },
       paymentRequired: true,
-      message: 'Subscription created in PENDING state. Activate it only after a verified payment/provider result.'
+      message: 'Subscription request created in PENDING state. Payment integration is not available in this checkout flow; the plan remains inactive until payment is verified.'
     });
   } catch (error) { next(error); }
 });
@@ -134,6 +139,7 @@ customer.post('/:id/cancel', async (req, res, next) => {
       await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: existing.status, toStatus: 'CANCELLED' } } });
       return item;
     });
+    await notifyUserSafely({ userId: req.auth.id, type: 'SUBSCRIPTION', channel: 'IN_APP', title: 'Subscription cancelled', body: `${existing.plan.name} has been cancelled.` });
     return res.json({ subscription: { ...updated, plan: serializePlan(updated.plan) } });
   } catch (error) { next(error); }
 });
@@ -149,6 +155,7 @@ customer.post('/:id/pause', async (req, res, next) => {
       await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: existing.status, toStatus: 'PAUSED' } } });
       return item;
     });
+    await notifyUserSafely({ userId: req.auth.id, type: 'SUBSCRIPTION', channel: 'IN_APP', title: 'Subscription paused', body: 'Your subscription has been paused.' });
     return res.json({ subscription: { ...updated, plan: serializePlan(updated.plan) } });
   } catch (error) { next(error); }
 });
@@ -164,6 +171,7 @@ customer.post('/:id/resume', async (req, res, next) => {
       await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: existing.status, toStatus: 'ACTIVE' } } });
       return item;
     });
+    await notifyUserSafely({ userId: req.auth.id, type: 'SUBSCRIPTION', channel: 'IN_APP', title: 'Subscription resumed', body: 'Your subscription has been resumed.' });
     return res.json({ subscription: { ...updated, plan: serializePlan(updated.plan) } });
   } catch (error) { next(error); }
 });
@@ -229,15 +237,24 @@ admin.get('/', async (req, res, next) => {
 admin.patch('/:id/status', async (req, res, next) => {
   try {
     const input = z.object({ status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'EXPIRED', 'PENDING']) }).strict().parse(req.body);
-    const existing = await prisma.subscription.findUnique({ where: { id: req.params.id }, include: { plan: true } });
+    const existing = await prisma.subscription.findUnique({ where: { id: req.params.id }, include: { plan: true, customer: { select: { userId: true } } } });
     if (!existing) throw httpError(404, 'SUBSCRIPTION_NOT_FOUND', 'Subscription not found.');
+    if (input.status === 'ACTIVE' && existing.status !== 'ACTIVE') {
+      const verifiedPayment = await prisma.payment.findFirst({
+        where: { subscriptionId: existing.id, status: 'PAID', paidAt: { not: null } },
+        select: { id: true }
+      });
+      if (!verifiedPayment) throw httpError(409, 'SUBSCRIPTION_PAYMENT_NOT_VERIFIED', 'This subscription cannot be activated until a verified PAID payment is recorded.');
+    }
     const now = new Date();
     let data = { status: input.status };
     if (input.status === 'ACTIVE' && existing.status !== 'ACTIVE') {
       data.startedAt = existing.startedAt ?? now;
       data.cancelledAt = null;
       data.pausedAt = null;
-      data.renewsAt = addBillingPeriod(data.startedAt, existing.plan.billingCycle);
+      const renewsAt = addBillingPeriod(data.startedAt, existing.plan.billingCycle);
+      if (!renewsAt) throw httpError(409, 'UNSUPPORTED_BILLING_CYCLE', 'The plan has an unsupported billing duration and cannot be activated. Update the plan duration first.');
+      data.renewsAt = renewsAt;
     }
     if (input.status === 'CANCELLED') data.cancelledAt = now;
     if (input.status === 'PAUSED') data.pausedAt = now;
@@ -248,6 +265,15 @@ admin.patch('/:id/status', async (req, res, next) => {
       await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: existing.status, toStatus: input.status } } });
       return item;
     });
+    if (existing.status !== input.status) {
+      await notifyUserSafely({
+        userId: existing.customer.userId,
+        type: 'SUBSCRIPTION',
+        channel: 'IN_APP',
+        title: 'Subscription status updated',
+        body: `Your ${existing.plan.name} subscription is now ${input.status.toLowerCase()}.`
+      });
+    }
     return res.json({ subscription: { ...updated, plan: serializePlan(updated.plan) } });
   } catch (error) { next(error); }
 });

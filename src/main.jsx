@@ -1,14 +1,14 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence, useInView, useMotionValue, animate } from 'framer-motion';
-import HeroPlant from './HeroPlant.jsx';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence, MotionConfig, useMotionValue, animate } from 'framer-motion';
 import {AppBackground,AuthScenery} from './Backgrounds.jsx';
-import {useCart,CartDrawer,LandingNav,Hero,WhyChoose,Included,Steps,ServiceBanner,Plans,CtaCard,Transformations,Story,Market,Reviews,FinalCta,SiteFooter,WhatsAppFab} from './landing/Sections.jsx';
-import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Plus, X, Droplets, Heart, Scissors, MapPin, Clock3, Star,
+import {useCart,CartDrawer,LandingNav,Hero,WhyChoose,Included,Steps,Market,Reviews,FinalCta,SiteFooter,WhatsAppFab} from './landing/Sections.jsx';
+import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, Star,
   LayoutGrid, CalendarDays, Flower2, Sprout, WalletCards, CreditCard, UserRound, Stethoscope, Users, Package, BarChart3, FileText,
-  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft, TrendingUp, MoreHorizontal, UserPlus, UserCheck, Receipt, RefreshCcw, SearchCheck, Save, SlidersHorizontal } from 'lucide-react';
+  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft } from 'lucide-react';
 import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage} from './landing/Pages.jsx';
+import {usePublicList} from './landing/publicData.js';
 import './styles.css';
 import * as Phase5 from './phase5.jsx';
 
@@ -36,26 +36,11 @@ function workspaceForRole(role) {
   return role === 'ADMIN' ? '/hq' : role === 'GARDENER' ? '/crew' : '/garden';
 }
 
-/* ---------- data ---------- */
-const services=[['Plant Care','Routine care, pruning and nourishment.',Leaf,499,'60 min','Care'],['Plant Setup','Create a healthy green space from scratch.',Flower2,1499,'2–3 hrs','Design'],['Plant Rescue','Diagnose stressed plants and restore them.',Stethoscope,799,'90 min','Care'],['Maintenance','Reliable recurring care for your collection.',Scissors,1299,'Monthly','Care'],['Events','Green styling for memorable occasions.',Sprout,2999,'Half day','Design'],['Green Makeover','Transform ordinary spaces with plants.',Wand2,3499,'1 day','Design'],['Plant Store','Discover plants and essentials.',ShoppingBag,199,'Delivery','Shop & Learn'],['AI Care','Smart guidance for everyday plant care.',Bot,0,'Instant','Shop & Learn']].map(([name,desc,icon,price,time,cat],i)=>({name,desc,icon,price,time,cat,hue:[140,95,20,60,190,290,40,160][i]}));
-const seedPlants=[{name:'Monstera deliciosa',type:'Indoor • Tropical',status:'Excellent',next:'Today'},{name:'Snake Plant',type:'Indoor • Succulent',status:'Healthy',next:'2 days'},{name:'Peace Lily',type:'Indoor • Flowering',status:'Needs water',next:'Today'},{name:'Fiddle Leaf Fig',type:'Indoor • Tree',status:'Healthy',next:'5 days'}];
-const bookings=[{service:'Plant Care',plants:'3 plants',date:'30 Sep',time:'10:30 AM',gardener:'Aarav Patel',status:'Confirmed'},{service:'Green Makeover',plants:'12 plants',date:'04 Oct',time:'02:00 PM',gardener:'Meera Shah',status:'Assigned'},{service:'Maintenance',plants:'8 plants',date:'12 Oct',time:'11:00 AM',gardener:'Aarav Patel',status:'Scheduled'},{service:'Plant Rescue',plants:'2 plants',date:'21 Sep',time:'04:30 PM',gardener:'Riya Mehta',status:'Completed'}];
-const bookingMeta=[{id:'TC-1042',state:'Confirmed',service:'Plant Care',plants:'3 plants',date:'30 Sep 2026',time:'10:30 AM',gardener:'Aarav Patel',address:'Home · 24 Green Avenue',price:499,eta:'Saturday, 10:30 AM'},{id:'TC-1038',state:'Gardener Assigned',service:'Green Makeover',plants:'12 plants',date:'04 Oct 2026',time:'02:00 PM',gardener:'Meera Shah',address:'Home · 24 Green Avenue',price:3499,eta:'Sunday, 2:00 PM'},{id:'TC-1027',state:'Completed',service:'Plant Rescue',plants:'2 plants',date:'21 Sep 2026',time:'04:30 PM',gardener:'Riya Mehta',address:'Office · 8 Riverfront Road',price:799,eta:'Completed'}];
-const bookingTimeline=['Booking Confirmed','Gardener Assigned','Gardener Accepted','On the way','Arrived','Service started','Service completed'];
-const bookingStateIndex={Confirmed:0,'Gardener Assigned':1,'Gardener Accepted':2,'On the way':3,Arrived:4,'Service started':5,Completed:6,'Service completed':6,Cancelled:-1};
-const bookingStatusLabel={Confirmed:'Confirmed','Gardener Assigned':'Assigned','Gardener Accepted':'Accepted','On the way':'On the way',Arrived:'Arrived','Service started':'In progress',Completed:'Completed',Cancelled:'Cancelled'};
-const bookingById=id=>bookingMeta.find(x=>x.id===id)||bookingMeta[0];
-const crewJobs=[
-{id:'JOB-1042',bookingId:'TC-1042',customer:'Kabir Mehta',address:'24 Green Avenue, Ahmedabad',service:'Plant Care',plants:['Monstera deliciosa','Peace Lily','Fiddle Leaf Fig'],date:'30 Sep 2026',time:'10:30 AM',status:'Assigned',instructions:'Check soil moisture before watering. Inspect the Peace Lily for drooping and clean the Monstera leaves.',price:499,priority:'Next'},
-{id:'JOB-1038',bookingId:'TC-1038',customer:'Neha Shah',address:'8 Riverfront Road, Ahmedabad',service:'Green Makeover',plants:['12 plants · mixed collection'],date:'04 Oct 2026',time:'02:00 PM',status:'Accepted',instructions:'Review the proposed placement plan before moving any plants.',price:3499,priority:'Scheduled'},
-{id:'JOB-1027',bookingId:'TC-1027',customer:'Aisha Patel',address:'17 Garden Lane, Ahmedabad',service:'Plant Rescue',plants:['Fiddle Leaf Fig','Peace Lily'],date:'21 Sep 2026',time:'04:30 PM',status:'Completed',instructions:'Document leaf damage and recommend follow-up care.',price:799,priority:'Completed'},
-{id:'JOB-1019',bookingId:'TC-1019',customer:'Rohan Desai',address:'5 Palm Court, Ahmedabad',service:'Maintenance',plants:['8 plants · home collection'],date:'12 Oct 2026',time:'11:00 AM',status:'New',instructions:'Routine maintenance visit. Confirm pruning and feeding requirements.',price:1299,priority:'Upcoming'}
-];
-const careChecklist=['Inspect plant health','Check soil moisture','Water as required','Prune / clean leaves','Check pests & disease','Record photos and observations'];
+/* ---------- role navigation ---------- */
 const roles={
-  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Plan',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Me',UserRound]]},
-  crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['me','Me',UserRound]]},
-  hq:{label:'Admin',base:'/hq',nav:[['','Pulse',LayoutGrid],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
+  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Me',UserRound]]},
+  crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['inbox','Inbox',Bell],['me','Me',UserRound]]},
+  hq:{label:'Admin',base:'/hq',nav:[['','Pulse',LayoutGrid],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
 const roleOf=p=>p.startsWith('/crew')?'crew':p.startsWith('/hq')?'hq':'garden';
 
 /* ---------- app state ---------- */
@@ -74,12 +59,17 @@ function PerformanceManager(){
 }
 
 function Provider({children}){
-  const [plants,setPl]=React.useState(seedPlants),[toasts,setT]=React.useState([]),[pal,setPal]=React.useState(false),[add,setAdd]=React.useState(false),[jobOverrides,setJobOverrides]=React.useState({});
-  const [adminOverrides,setAdminOverrides]=React.useState({});
-  const [bookingOverrides,setBookingOverrides]=React.useState({});
-  const [authUser,setAuthUser]=React.useState(null),[authReady,setAuthReady]=React.useState(false);
+  const [toasts,setToasts]=React.useState([]);
+  const [paletteOpen,setPaletteOpen]=React.useState(false);
+  const [authUser,setAuthUser]=React.useState(null);
+  const [authReady,setAuthReady]=React.useState(false);
   const [theme,setTheme]=React.useState(()=>{try{return localStorage.getItem('tcare-theme')||'light'}catch{return'light'}});
-  React.useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem('tcare-theme',theme)}catch{}},[theme]);
+
+  React.useEffect(()=>{
+    document.documentElement.dataset.theme=theme;
+    try{localStorage.setItem('tcare-theme',theme)}catch{}
+  },[theme]);
+
   React.useEffect(()=>{
     let active=true;
     const readSession=()=>fetch(`${API_V1}/auth/session`,{credentials:'include'});
@@ -92,50 +82,107 @@ function Provider({children}){
         }
         if(response?.ok){
           const payload=await response.json();
-          if(active) setAuthUser(payload.user||null);
+          if(active)setAuthUser(payload.user||null);
         }
       }catch{
         // Public pages remain available while the API is offline; protected pages stay guarded.
       }finally{
-        if(active) setAuthReady(true);
+        if(active)setAuthReady(true);
       }
     };
     restore();
     return()=>{active=false};
   },[]);
-  React.useEffect(()=>{const k=e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setPal(p=>!p)}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
-  const toast=React.useCallback(m=>{const id=Math.random();setT(t=>[...t,{id,m}]);setTimeout(()=>setT(t=>t.filter(x=>x.id!==id)),3200)},[]);
+
+  React.useEffect(()=>{
+    const onShortcut=event=>{
+      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){
+        event.preventDefault();
+        setPaletteOpen(value=>!value);
+      }
+    };
+    addEventListener('keydown',onShortcut);
+    return()=>removeEventListener('keydown',onShortcut);
+  },[]);
+
+  const toast=React.useCallback(message=>{
+    const id=Math.random();
+    setToasts(current=>[...current,{id,message}]);
+    setTimeout(()=>setToasts(current=>current.filter(item=>item.id!==id)),3200);
+  },[]);
   const cart=useCart(toast);
-  const addPlant=React.useCallback(p=>{setPl(x=>[p,...x]);toast(`${p.name} planted in your garden`)},[toast]);
-  const toggleTheme=React.useCallback(()=>setTheme(t=>t==='dark'?'light':'dark'),[]);
-  const openPalette=React.useCallback(()=>setPal(true),[]),openAdd=React.useCallback(()=>setAdd(true),[]);
-  const updateJob=React.useCallback((id,patch)=>setJobOverrides(v=>({...v,[id]:{...v[id],...patch}})),[]);
-  const updateAdmin=React.useCallback((key,patch)=>setAdminOverrides(v=>({...v,[key]:{...v[key],...patch}})),[]);
-  const updateBooking=React.useCallback((id,patch)=>setBookingOverrides(v=>({...v,[id]:{...v[id],...patch}})),[]);
+  const toggleTheme=React.useCallback(()=>setTheme(current=>current==='dark'?'light':'dark'),[]);
+  const openPalette=React.useCallback(()=>setPaletteOpen(true),[]);
   const logout=React.useCallback(async()=>{
     try{await fetch(`${API_V1}/auth/logout`,{method:'POST',credentials:'include'})}catch{}
     setAuthUser(null);
   },[]);
-  const value=React.useMemo(()=>({cart,plants,addPlant,toast,theme,toggleTheme,openPalette,openAdd,jobOverrides,updateJob,adminOverrides,updateAdmin,bookingOverrides,updateBooking,authUser,authReady,setAuthUser,logout}),[cart,plants,addPlant,toast,theme,toggleTheme,openPalette,openAdd,jobOverrides,updateJob,adminOverrides,updateAdmin,bookingOverrides,updateBooking,authUser,authReady,setAuthUser,logout]);
-  return <Ctx.Provider value={value}><PerformanceManager/>{children}
-    <AnimatePresence>{pal&&<Palette onClose={()=>setPal(false)}/>}{add&&<AddPlant onClose={()=>setAdd(false)}/>}</AnimatePresence>
-    <div className="toasts"><AnimatePresence>{toasts.map(t=><motion.div key={t.id} className="toast" layout initial={{opacity:0,y:40,scale:.9}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,scale:.9}}><Check size={16}/>{t.m}</motion.div>)}</AnimatePresence></div></Ctx.Provider>}
+  const value=React.useMemo(()=>({cart,toast,theme,toggleTheme,openPalette,authUser,authReady,setAuthUser,logout}),
+    [cart,toast,theme,toggleTheme,openPalette,authUser,authReady,logout]);
 
+  return <Ctx.Provider value={value}>
+    <PerformanceManager/>
+    {children}
+    <AnimatePresence>{paletteOpen&&<Palette onClose={()=>setPaletteOpen(false)}/>}</AnimatePresence>
+    <div className="toasts"><AnimatePresence>{toasts.map(item=><motion.div key={item.id} className="toast" layout initial={{opacity:0,y:40,scale:.9}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,scale:.9}}><Check size={16}/>{item.message}</motion.div>)}</AnimatePresence></div>
+  </Ctx.Provider>;
+}
 
 /* ---------- small parts ---------- */
 const Badge=({children,tone})=>{const text=String(children??'');const t=tone||(/Completed|Paid|Inactive|Blocked/.test(text)?'n':/Assigned|Needs|Pending|attention/.test(text)?'a':'g');return <span className={'badge '+t}>{children}</span>};
-const Btn=({children,to,onClick,ghost,arrow=true,full})=>{const {toast}=useApp();const c='btn'+(ghost?' ghost':'')+(full?' full':'');const i=arrow&&<ArrowUpRight size={16}/>;const fallback=()=>toast('This frontend action is ready for its backend connection.');return to?<Link to={to} className={c}>{children}{i}</Link>:<button className={c} onClick={onClick||fallback}>{children}{i}</button>};
-function CountUp({to,suffix=''}){const r=React.useRef(),v=useInView(r,{once:true}),[n,setN]=React.useState(0);React.useEffect(()=>{if(!v)return;let f,t0;const s=t=>{t0=t0||t;const p=Math.min((t-t0)/1400,1);setN(Math.round(to*(1-(1-p)**3)));if(p<1)f=requestAnimationFrame(s)};f=requestAnimationFrame(s);return()=>cancelAnimationFrame(f)},[v,to]);return <span ref={r}>{n.toLocaleString()}{suffix}</span>}
-const Metric=({icon:I,label,value,meta,tone})=><motion.div className="metric" whileHover={{rotate:-1,y:-4}}><I size={18}/><small>{label}</small><b>{value}</b><em className={tone}>{meta}</em></motion.div>;
-function Modal({title,onClose,children}){React.useEffect(()=>{const onKey=e=>e.key==='Escape'&&onClose();addEventListener('keydown',onKey);return()=>removeEventListener('keydown',onKey)},[onClose]);return <motion.div className="overlay" role="presentation" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}><motion.div className="modal" role="dialog" aria-modal="true" aria-label={title} initial={{y:'100%'}} animate={{y:0}} exit={{y:'100%'}} transition={{type:'spring',damping:30,stiffness:300}} onClick={e=>e.stopPropagation()}><div className="mh"><h3>{title}</h3><button className="ib" onClick={onClose} aria-label="Close dialog" title="Close"><X size={16}/></button></div>{children}</motion.div></motion.div>}
-function AddPlant({onClose}){const {addPlant}=useApp();const [f,setF]=React.useState({name:'',type:'Indoor',room:''});const go=()=>{if(!f.name.trim())return;addPlant({name:f.name.trim(),type:f.type,status:'Healthy',next:'Tomorrow'});onClose()};
-  return <Modal title="Plant something new" onClose={onClose}><label>Plant name<input autoFocus value={f.name} onChange={e=>setF({...f,name:e.target.value})} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="e.g. Snake plant"/></label><label>Type<select value={f.type} onChange={e=>setF({...f,type:e.target.value})}>{['Indoor','Outdoor','Succulent','Herb'].map(t=><option key={t}>{t}</option>)}</select></label><label>Location<input value={f.room} onChange={e=>setF({...f,room:e.target.value})} placeholder="Living room"/></label><div className="acts"><Btn ghost arrow={false} onClick={onClose}>Cancel</Btn><Btn onClick={go}>Save plant</Btn></div></Modal>}
-function Palette({onClose}){const nav=useNavigate();const {plants,toggleTheme,theme}=useApp();const [q,setQ]=React.useState(''),[i,setI]=React.useState(0);
-  const all=[{label:'Book a service',group:'Action',icon:CalendarDays,run:()=>nav('/garden/book')},{label:theme==='dark'?'Switch to light':'Switch to dark',group:'Action',icon:theme==='dark'?Sun:Moon,run:toggleTheme,keep:1},...Object.values(roles).flatMap(r=>r.nav.map(([p,l,I])=>({label:l,group:r.label,icon:I,run:()=>nav(r.base+(p?'/'+p:''))}))),...plants.map((p,n)=>({label:p.name,group:'Plant',icon:Leaf,run:()=>nav(`/garden/plants/${n}`)})),{label:'Home page',group:'Action',icon:Leaf,run:()=>nav('/')}];
+const Btn=({children,to,onClick,ghost,arrow=true,full})=>{const c='btn'+(ghost?' ghost':'')+(full?' full':'');const icon=arrow&&<ArrowUpRight size={16}/>;return to?<Link to={to} className={c}>{children}{icon}</Link>:<button type="button" className={c} onClick={onClick} disabled={!onClick}>{children}{icon}</button>};
+function Palette({onClose}){const nav=useNavigate();const {authUser,toggleTheme,theme}=useApp();const [q,setQ]=React.useState(''),[i,setI]=React.useState(0);
+  const mine=authUser?.role==='ADMIN'?['hq']:authUser?.role==='GARDENER'?['crew']:authUser?.role==='CUSTOMER'?['garden']:[];
+  const all=[...(authUser?.role==='CUSTOMER'?[{label:'Book a service',group:'Action',icon:CalendarDays,run:()=>nav('/garden/book')}]:[]),{label:theme==='dark'?'Switch to light':'Switch to dark',group:'Action',icon:theme==='dark'?Sun:Moon,run:toggleTheme,keep:1},...Object.entries(roles).filter(([k])=>mine.includes(k)).flatMap(([,r])=>r.nav.map(([p,l,I])=>({label:l,group:r.label,icon:I,run:()=>nav(r.base+(p?'/'+p:''))}))),{label:'Home page',group:'Action',icon:Leaf,run:()=>nav('/')}];
   const res=all.filter(x=>(x.label+x.group).toLowerCase().includes(q.toLowerCase())).slice(0,9);const run=x=>{if(!x)return;x.run();if(!x.keep)onClose()};
   const key=e=>{const n=Math.max(res.length,1);if(e.key==='ArrowDown'){e.preventDefault();setI((i+1)%n)}else if(e.key==='ArrowUp'){e.preventDefault();setI((i-1+n)%n)}else if(e.key==='Enter')run(res[i]);else if(e.key==='Escape')onClose()};
-  return <motion.div className="overlay top" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}><motion.div className="palette" initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.95,opacity:0}} onClick={e=>e.stopPropagation()}><div className="pin"><Search size={18}/><input autoFocus value={q} onChange={e=>{setQ(e.target.value);setI(0)}} onKeyDown={key} placeholder="Jump to a page, plant or action…"/><kbd>esc</kbd></div><div className="pl">{res.length?res.map((x,n)=><button key={x.group+x.label} className={n===i?'on':''} onMouseEnter={()=>setI(n)} onClick={()=>run(x)}><x.icon size={16}/><span>{x.label}</span><small>{x.group}</small>{n===i&&<CornerDownLeft size={13}/>}</button>):<p className="empty">Nothing for “{q}”</p>}</div></motion.div></motion.div>}
-function Notif(){const [o,setO]=React.useState(false);return <div className="notif"><button className="ib" onClick={()=>setO(!o)} aria-label="Open notifications" title="Notifications"><Bell size={17}/><i className="ping"/></button><AnimatePresence>{o&&<motion.div className="nmenu" initial={{opacity:0,scale:.8,y:10}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:.8}}><b>Notifications</b>{[['Watering due today','Monstera · 6 PM'],['Gardener assigned','Aarav will visit Sat 10 AM'],['Report ready','Fiddle Leaf health report']].map(([a,b])=><div key={a}><span className="dot"/><p>{a}<small>{b}</small></p></div>)}</motion.div>}</AnimatePresence></div>}
+  return <motion.div className="overlay top" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}><motion.div className="palette" initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.95,opacity:0}} onClick={e=>e.stopPropagation()}><div className="pin"><Search size={18}/><input autoFocus value={q} onChange={e=>{setQ(e.target.value);setI(0)}} onKeyDown={key} placeholder="Jump to a page or action…"/><kbd>esc</kbd></div><div className="pl">{res.length?res.map((x,n)=><button key={x.group+x.label} className={n===i?'on':''} onMouseEnter={()=>setI(n)} onClick={()=>run(x)}><x.icon size={16}/><span>{x.label}</span><small>{x.group}</small>{n===i&&<CornerDownLeft size={13}/>}</button>):<p className="empty">Nothing for “{q}”</p>}</div></motion.div></motion.div>}
+function Notif(){
+  const {authUser}=useApp();
+  const role=authUser?.role;
+  const live=role==='CUSTOMER'||role==='GARDENER'; // admins read the notification centre; /notifications is per-recipient
+  const inbox=role==='ADMIN'?'/hq/notifications':role==='GARDENER'?'/crew/inbox':'/garden/inbox';
+  const [o,setO]=React.useState(false);
+  const [feed,setFeed]=React.useState({items:[],unread:0,state:'loading'});
+  const box=React.useRef(null);
+  const pull=React.useCallback(async()=>{
+    if(!live||document.visibilityState!=='visible')return;
+    try{
+      const res=await fetch(`${API_V1}/notifications?limit=5`,{credentials:'include',cache:'no-store'});
+      if(!res.ok)throw new Error(String(res.status));
+      const data=await res.json();
+      setFeed({items:Array.isArray(data.notifications)?data.notifications:[],unread:Number(data.unreadCount)||0,state:'ready'});
+    }catch{setFeed(f=>({...f,state:'error'}))}
+  },[live]);
+  React.useEffect(()=>{
+    if(!live)return undefined;
+    pull();
+    const timer=setInterval(pull,30000);
+    document.addEventListener('visibilitychange',pull);
+    return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',pull)};
+  },[live,pull,authUser?.id]);
+  React.useEffect(()=>{
+    if(!o)return undefined;
+    pull();
+    const away=e=>{if(box.current&&!box.current.contains(e.target))setO(false)};
+    const esc=e=>{if(e.key==='Escape')setO(false)};
+    document.addEventListener('pointerdown',away);document.addEventListener('keydown',esc);
+    return()=>{document.removeEventListener('pointerdown',away);document.removeEventListener('keydown',esc)};
+  },[o,pull]);
+  const when=v=>{try{return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(v))}catch{return''}};
+  const unread=live?feed.unread:0;
+  return <div className="notif" ref={box}>
+    <button className="ib" onClick={()=>setO(v=>!v)} aria-label={unread?`Open notifications, ${unread} unread`:'Open notifications'} aria-expanded={o} aria-haspopup="true" title="Notifications"><Bell size={17}/>{unread>0&&<i className="ping"/>}</button>
+    <AnimatePresence>{o&&<motion.div className="nmenu" role="region" aria-label="Notifications" initial={{opacity:0,scale:.9,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:.9,y:8}} transition={{duration:.18}}>
+      <b>Notifications{unread>0?` · ${unread} unread`:''}</b>
+      {!live?<p className="nmenu-note">Review and send in-app notifications from the notification centre.</p>
+        :feed.state==='loading'?<p className="nmenu-note">Loading…</p>
+        :feed.state==='error'&&!feed.items.length?<p className="nmenu-note">Notifications could not be loaded right now.</p>
+        :!feed.items.length?<p className="nmenu-note">You’re all caught up.</p>
+        :feed.items.map(n=><div key={n.id} className={n.readAt?'':'unread'}><span className={'dot'+(n.readAt?' read':'')}/><p>{n.title||'Update'}<small>{when(n.createdAt)}</small></p></div>)}
+      <Link to={inbox} className="nmenu-all" onClick={()=>setO(false)}>{live?'View all notifications':'Open notification centre'}</Link>
+    </motion.div>}</AnimatePresence>
+  </div>}
 
 /* ---------- shell: floating dock + seed-bloom transition ---------- */
 const clickPos={x:innerWidth/2,y:innerHeight/2};
@@ -147,17 +194,19 @@ function Bloom({children}){const {pathname}=useLocation();
   const clip=useMotionValue('none');
   React.useLayoutEffect(()=>{
     const {x,y}={...clickPos};scrollTo(0,0);
+    if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){clip.set('none');return undefined}
     const r=Math.max(innerWidth,innerHeight)*1.6;
     clip.set(`circle(0px at ${x}px ${y}px)`);
     const a=animate(clip,`circle(${r}px at ${x}px ${y}px)`,{duration:.9,ease:[.22,1,.36,1],onComplete:()=>clip.set('none')});
     return()=>a.stop();
   },[pathname,clip]);
   return <motion.div key={pathname} style={{minHeight:'100vh',clipPath:clip}}>{children}</motion.div>}
+const safeDecode=v=>{try{return decodeURIComponent(v)}catch{return v}};
 function Breadcrumbs({pathname}){
   const rk=roleOf(pathname),R=roles[rk];
   const parts=pathname.split('/').filter(Boolean);
-  const labels={garden:'Today',crew:'Route',hq:'Pulse',visits:'Visits',plants:'Plants',shop:'Services',book:'Book a service',plan:'Plan',billing:'Billing',inbox:'Inbox',me:'Profile',jobs:'Jobs',reports:'Reports',pay:'Pay',hours:'Hours',people:'Customers',catalog:'Services',plans:'Plans',botany:'Plants',money:'Finance',insights:'Analytics',cms:'Content'};
-  return <nav className="crumbs" aria-label="Breadcrumb"><Link to={R.base}>{R.label}</Link>{parts.slice(1).map((part,i)=><React.Fragment key={part}><span>/</span><span>{labels[part]||decodeURIComponent(part).replace(/-/g,' ')}</span></React.Fragment>)}</nav>
+  const labels={garden:'Today',crew:'Route',hq:'Pulse',visits:'Visits',plants:'Plants',shop:'Services',book:'Book a service',plan:'Plan',billing:'Billing',inbox:'Inbox',me:'Profile',jobs:'Jobs',reports:'Reports',pay:'Pay',hours:'Hours',people:'Customers',catalog:'Services',store:'Store',plans:'Plans',botany:'Plants',money:'Finance',insights:'Analytics',cms:'Content',addresses:'Addresses',kyc:'Verification',notifications:'Notifications'};
+  return <nav className="crumbs" aria-label="Breadcrumb"><Link to={R.base}>{R.label}</Link>{parts.slice(1).map((part,i)=><React.Fragment key={part}><span>/</span><span>{labels[part]||safeDecode(part).replace(/-/g,' ')}</span></React.Fragment>)}</nav>
 }
 function AccountMenu({role}){
   const R=roles[role];
@@ -170,8 +219,9 @@ function AccountMenu({role}){
   const signOut=async()=>{await logout();setOpen(false);nav('/login',{replace:true})};
   return <div className="account"><button className="avatar" onClick={()=>setOpen(v=>!v)} aria-label="Open account menu" title="Account menu">{initials||'T'}</button><AnimatePresence>{open&&<motion.div className="account-menu" initial={{opacity:0,y:8,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.96}}><strong>{R.label} workspace</strong><span className="account-name">{authUser?.fullName||'Account'}</span><span className="account-email">{authUser?.email||''}</span><Link to={profileTarget} onClick={()=>setOpen(false)}>Profile & preferences</Link><Link to={secondary[1]} onClick={()=>setOpen(false)}>{secondary[0]}</Link><button type="button" onClick={signOut} className="danger">Sign out</button></motion.div>}</AnimatePresence></div>
 }
-const Dock=React.memo(function Dock({R,pathname}){const [hover,setHover]=React.useState(null);
-  return <nav className="dock" aria-label={`${R.label} navigation`}>{R.nav.map(([p,l,I],i)=>{const to=R.base+(p?'/'+p:''),on=pathname===to||(p&&pathname.startsWith(to+'/'));const d=hover===null?0:Math.abs(hover-i);
+const Dock=React.memo(function Dock({R,pathname}){const [hover,setHover]=React.useState(null);const dockRef=React.useRef(null);
+  React.useEffect(()=>{const c=dockRef.current,a=c?.querySelector('a.on');if(c&&a)c.scrollTo({left:Math.max(0,a.offsetLeft-(c.clientWidth-a.offsetWidth)/2)})},[pathname]);
+  return <nav className="dock" ref={dockRef} aria-label={`${R.label} navigation`}>{R.nav.map(([p,l,I],i)=>{const to=R.base+(p?'/'+p:''),on=pathname===to||(p&&pathname.startsWith(to+'/'));const d=hover===null?0:Math.abs(hover-i);
       return <Link key={to} to={to} className={on?'on':''} aria-label={l} onMouseEnter={()=>setHover(i)} onMouseLeave={()=>setHover(null)}><motion.span animate={{scale:hover===null?1:d===0?1.35:d===1?1.15:1,y:hover===null?0:d===0?-8:d===1?-3:0}} transition={{type:'spring',stiffness:500,damping:26}}><I size={20}/></motion.span><em>{l}</em><span className="dock-label">{l}</span></Link>})}</nav>});
 function Shell({title,sub,action,children}){
   const {pathname}=useLocation();const rk=roleOf(pathname),R=roles[rk];const {theme,toggleTheme,openPalette,authUser}=useApp();
@@ -263,51 +313,54 @@ function GardenBackground({theme}){
   return <div className="gbg" aria-hidden="true"><i className="gb-orb o1"/><i className="gb-orb o2"/><i className="gb-orb o3"/><i className="gb-rays"/><i className="gb-grain"/><canvas ref={ref} className="gb-canvas"/></div>;
 }
 function PublicPage({children}){
-  const {theme,toggleTheme,toast,cart}=useApp();
+  const {theme,toggleTheme,cart}=useApp();
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} toast={toast}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart}/>
     <main>{children}</main>
-    <FinalCta toast={toast}/>
-    <SiteFooter toast={toast}/>
-    <WhatsAppFab toast={toast}/>
-    <CartDrawer cart={cart} toast={toast}/>
+    <FinalCta/>
+    <SiteFooter/>
+    <WhatsAppFab/>
+    <CartDrawer cart={cart}/>
   </div>}
-const ServicesRoute=()=><PublicPage><ServicesPage services={services}/></PublicPage>;
+const PUBLIC_SERVICE_ICONS={'Plant Care':Leaf,'Plant Setup':Flower2,'Plant Rescue':Stethoscope,'Maintenance':Scissors,'Events':Sprout,'Green Makeover':Wand2,'Plant Store':ShoppingBag,'AI Care':Bot};
+function ServicesRoute(){
+  const {items:records,loading,error,retry}=usePublicList('/services','services');
+  const list=records.map(service=>({
+    ...service,cat:service.category||'Services',hue:140,icon:PUBLIC_SERVICE_ICONS[service.name]||Leaf,
+    price:service.prices?.length?Math.min(...service.prices.map(price=>Number(price.amount))):null,
+    time:service.durationLabel||'Duration shared during booking',desc:service.description
+  }));
+  return <PublicPage><ServicesPage services={list} loading={loading} error={error} onRetry={retry}/></PublicPage>;
+}
 const AboutRoute=()=><PublicPage><AboutPage/></PublicPage>;
 const PlansRoute=()=><PublicPage><PlansPage/></PublicPage>;
 const StoreRoute=()=>{const {cart}=useApp();return <PublicPage><StorePage cart={cart}/></PublicPage>};
 const MakeoverRoute=()=><PublicPage><MakeoverPage/></PublicPage>;
-const ContactRoute=()=>{const {toast}=useApp();return <PublicPage><ContactPage toast={toast}/></PublicPage>};
+const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
 const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
 function Home(){
-  const {theme,toggleTheme,toast,cart}=useApp();
+  const {theme,toggleTheme,cart}=useApp();
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} toast={toast}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart}/>
     <Hero theme={theme}/>
     <WhyChoose/>
     <Included/>
     <Steps/>
-    <CtaCard toast={toast}/>
+    <Market cart={cart}/>
     <Reviews/>
-    <FinalCta toast={toast}/>
-    <SiteFooter toast={toast}/>
-    <WhatsAppFab toast={toast}/>
-    <CartDrawer cart={cart} toast={toast}/>
+    <FinalCta/>
+    <SiteFooter/>
+    <WhatsAppFab/>
+    <CartDrawer cart={cart}/>
   </div>}
 
-/* ---------- shared views ---------- */
-function Bookings({rows=bookings}){const {bookingOverrides}=useApp();return <div className="rows">{rows.map((x,i)=>{const meta=bookingMeta.find(m=>m.id===x.id)||bookingMeta[i%bookingMeta.length];const ov=bookingOverrides[meta.id]||{};const state=ov.state||meta.state;const gardener=ov.gardener||meta.gardener;const status=bookingStatusLabel[state]||x.status;return <Link key={`${meta.id}-${i}`} to={`/garden/visits/${meta.id}`} className="row row-link" aria-label={`Open booking ${meta.id}, ${x.service}, ${status}`}><div className="rt"><b>{x.time}</b><small>{x.date}</small></div><div className="rm"><h3>{x.service}</h3><p>{x.plants} · {gardener}</p></div><Badge>{status}</Badge><ArrowUpRight size={17}/></Link>})}</div>}
-function EmptyState({title,text,action}){return <div className="empty-state"><div className="empty-orb"><Leaf size={22}/></div><h3>{title}</h3><p>{text}</p>{action}</div>}
-function LoadingState({label='Loading your workspace…'}){return <div className="loading-state" role="status" aria-live="polite"><span className="loader"/><p>{label}</p></div>}
-function ErrorState({title='Something needs attention',text='This is a frontend error state. The backend will provide detailed recovery information later.',onRetry}){return <div className="error-state" role="alert"><div><b>{title}</b><p>{text}</p></div>{onRetry&&<Btn ghost arrow={false} onClick={onRetry}>Try again</Btn>}</div>}
-function Filter({items,value,onChange}){const [local,setLocal]=React.useState(items[0]);const selected=value??local;const change=x=>{setLocal(x);onChange?.(x)};return <div className="filters" role="tablist" aria-label="Filter results">{items.map(x=><button type="button" role="tab" aria-selected={selected===x} key={x} className={selected===x?'on':''} onClick={()=>change(x)}>{selected===x&&<motion.i layoutId={`flt-${items.join('-')}`}/>}<span>{x}</span></button>)}</div>}
-function BookingManager({admin=false}){const {bookingOverrides}=useApp();const [filter,setFilter]=React.useState('All');const states=['All','Pending','Assigned','In progress','Completed','Cancelled'];const visible=bookings.filter((b,i)=>{const id=bookingMeta[i%bookingMeta.length].id;const state=bookingOverrides[id]?.state||bookingMeta[i%bookingMeta.length].state;const label=bookingStatusLabel[state]||b.status;return filter==='All'||filter===label||filter==='Pending'&&label==='Scheduled'});return <><Filter items={states} value={filter} onChange={setFilter}/>{visible.length?<Bookings rows={visible}/>:<EmptyState title="No bookings here" text="Try another status filter or create a new service booking." action={<Btn to="/garden/book">Book a service</Btn>}/>}</>}
-function JobManager(){const {jobOverrides}=useApp();const [filter,setFilter]=React.useState('All');const states=['All','New','Accepted','In progress','Completed'];const source=crewJobs.map(x=>({...x,...(jobOverrides[x.id]||{})}));const visible=filter==='All'?source:source.filter(x=>x.status===filter);return <><Filter items={states} value={filter} onChange={setFilter}/><Jobs all rows={visible}/></>}
-function Table({cols,rows}){return <div className="tbl"><div className="tr th">{cols.map(c=><span key={c}>{c}</span>)}</div>{rows.map((r,i)=><motion.div className="tr" key={i} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{delay:i*.05}}>{r.map((v,j)=><span key={j}>{j===0?<b>{v}</b>:/^(Active|Blocked|Pending|Inactive)$/.test(v)?<Badge>{v}</Badge>:v}</span>)}</motion.div>)}</div>}
-const Generic=({title,sub})=>{const D=[['Overview','Everything at a glance','Live'],['Active work','Items in progress right now','3 open'],['History','Past records and receipts','24 entries'],['Insights','Trends and recommendations','Updated today']];const [o,setO]=React.useState(0);
-return <Shell title={title} sub={sub}><div className="metrics"><Metric icon={LayoutGrid} label="Status" value="All good" meta="Synced just now" tone="ok"/><Metric icon={ClipboardList} label="Open items" value="3" meta="1 needs attention" tone="warn"/><Metric icon={CalendarDays} label="Next update" value="Tomorrow" meta="Auto-scheduled"/></div>
-<div className="sh"><h2>Explore</h2></div><div className="filters">{D.map(([x],i)=><button key={x} className={o===i?'on':''} onClick={()=>setO(i)}>{o===i&&<motion.i layoutId="flt"/>}<span>{x}</span></button>)}</div>
-<AnimatePresence mode="wait"><motion.div key={o} className="rows" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}}>{[0,1,2].map(i=><div className="row" key={i}><div className="rm"><h3>{D[o][0]} · item {i+1}</h3><p>{D[o][1]}</p></div><Badge tone={i===1?'a':undefined}>{i===1?'Pending':D[o][2]}</Badge></div>)}</motion.div></AnimatePresence></Shell>};
+/* ---------- reusable loading and error states ---------- */
+function LoadingState({label='Loading your workspace…'}){
+  return <div className="loading-state" role="status" aria-live="polite"><span className="loader"/><p>{label}</p></div>;
+}
+function ErrorState({title='Something needs attention',text='Please try again or contact T-Care support.',onRetry}){
+  return <div className="error-state" role="alert"><div><b>{title}</b><p>{text}</p></div>{onRetry&&<Btn ghost arrow={false} onClick={onRetry}>Try again</Btn>}</div>;
+}
 
 function GardenerProfile(){
   const {authUser,setAuthUser,toast}=useApp();
@@ -580,10 +633,6 @@ function Auth(){
           {mode==='register'&&<label>Phone number <span className="field-optional">(optional)</span><input type="tel" autoComplete="tel" value={form.phone} onChange={event=>update('phone',event.target.value)} placeholder="Your contact number"/></label>}
           <label>Password<input required type="password" minLength={mode==='register'?8:1} maxLength={72} autoComplete={mode==='login'?'current-password':'new-password'} value={form.password} onChange={event=>update('password',event.target.value)} placeholder="At least 8 characters"/></label>
           {error&&<p className="auth-alert" role="alert">{error}</p>}
-          <div className="form-row">
-            <label className="check"><input type="checkbox"/> Remember me</label>
-            {mode==='login'&&<button type="button" className="text-btn" onClick={()=>toast('Password recovery will be configured in the account-management phase.')}>Forgot password?</button>}
-          </div>
           <button className="btn full" type="submit" disabled={busy}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in to workspace':'Create account')} <ArrowUpRight size={16}/></button>
         </form>
         <p className="auth-note">Email verification is required before an account can sign in. Admin accounts are provisioned separately.</p>
@@ -593,103 +642,12 @@ function Auth(){
   </div>
 }
 
-/* ---------- customer ---------- */
-function GardenHome(){const {plants}=useApp();return <Shell title="Good afternoon, Kazumi." sub="Here’s what’s happening with your plants today.">
-  <div className="hero-card"><div><span className="eyebrow">Next care</span><h2>{plants[0].name}</h2><p>Water + soil check recommended today.</p><Btn to="/garden/plants/0">Open plant</Btn></div><motion.div className="blob" animate={{rotate:360}} transition={{repeat:Infinity,duration:40,ease:'linear'}}><Leaf size={64} strokeWidth={1.2}/></motion.div></div>
-  <div className="metrics"><Metric icon={CalendarDays} label="Upcoming service" value="Plant Care · 30 Sep" meta="10:30 AM · Confirmed"/><Metric icon={Heart} label="Plant health" value="3 of 4 thriving" meta="1 needs attention" tone="warn"/><Metric icon={WalletCards} label="Subscription" value="Green Monthly" meta="12 plants · Active" tone="ok"/></div>
-  <div className="sh"><h2>Your care plan</h2><Link className="tl" to="/garden/visits">All visits <ArrowUpRight size={15}/></Link></div><Bookings rows={bookings.slice(0,3)}/></Shell>}
-function GardenShop(){const [cat,setCat]=React.useState('All');const list=services.filter(s=>cat==='All'||s.cat===cat);
-  return <Shell title="Services" sub="Choose the kind of care your plants need.">
-  <div className="feature"><div><span className="chip">Most booked this month</span><h2>Plant <em>Rescue</em></h2><p>Yellowing leaves, drooping stems, mystery pests — we diagnose and bring your plant back.</p><Btn to="/garden/book">Book a rescue</Btn> <span className="rate"><Star size={14}/> 4.9 · 320 rescues</span></div><div className="orb"><i/><i/><Stethoscope size={54} strokeWidth={1.3}/></div></div>
-  <div className="filters">{['All','Care','Design','Shop & Learn'].map(c=><button key={c} className={cat===c?'on':''} onClick={()=>setCat(c)}>{cat===c&&<motion.i layoutId="flt"/>}<span>{c}</span></button>)}</div>
-  <motion.div layout className="cards"><AnimatePresence mode="popLayout">{list.map((s,n)=><motion.article layout key={s.name} className="scard flat" style={{'--h':s.hue}} initial={{opacity:0,scale:.9}} animate={{opacity:1,scale:1,transition:{delay:n*.05}}} exit={{opacity:0,scale:.9}} whileHover={{y:-6}}><s.icon size={28} strokeWidth={1.4}/><span className="price">{s.price?<>from <b>₹{s.price.toLocaleString()}</b></>:<b>Free</b>}</span><h3>{s.name}</h3><p>{s.desc}</p><div className="foot"><span><Clock3 size={13}/> {s.time}</span><Link to="/garden/book">Book <ArrowUpRight size={14}/></Link></div></motion.article>)}</AnimatePresence></motion.div></Shell>}
-function GardenPlants(){const {plants,openAdd}=useApp();const [filter,setFilter]=React.useState('All');const visible=plants.filter(p=>filter==='All'||(filter==='Healthy'&&/Healthy|Excellent/.test(p.status))||(filter==='Needs attention'&&!/Healthy|Excellent/.test(p.status)));return <Shell title="My plants" sub="Your collection, care history and next actions." action={<Btn onClick={openAdd} arrow={false}><Plus size={16}/> Add plant</Btn>}>
-  <Filter items={['All','Healthy','Needs attention']} value={filter} onChange={setFilter}/>
-  <div className="cards"><AnimatePresence mode="popLayout">{visible.map((p,i)=>{const realIndex=plants.findIndex(x=>x.name===p.name);return <motion.div layout key={p.name} className="ptile" initial={{opacity:0,scale:.8,rotate:-4}} animate={{opacity:1,scale:1,rotate:0}} exit={{opacity:0,scale:.8}} whileHover={{y:-6,rotate:1}}><div className="pp" style={{'--h':90+i*35}}><Leaf size={40} strokeWidth={1.2}/></div><small>{p.type}</small><h3>{p.name}</h3><Badge>{p.status}</Badge><p><Droplets size={13}/> Next care: {p.next}</p><Link to={`/garden/plants/${realIndex}`}>View plant <ArrowUpRight size={14}/></Link></motion.div>})}</AnimatePresence></div>
-  {!visible.length&&<div className="empty-state"><Leaf size={30}/><h3>No plants in this view</h3><p>Add a plant or switch the filter to see your collection.</p><Btn onClick={openAdd}>Add plant</Btn></div>}
-</Shell>}
-function PlantDetail(){const {id}=useParams();const {plants}=useApp();const p=plants[id]||plants[0];const [tab,setTab]=React.useState('Overview');return <Shell title={p.name} sub="Living record · Indoor · Living room" action={<Btn to="/garden/book" ghost arrow={false}>Book care</Btn>}>
-  <div className="hero-card"><div><Badge tone={/Needs/.test(p.status)?'a':'g'}>{p.status}</Badge><h2>{p.name}</h2><p>Last serviced 18 Sep · Next care {p.next.toLowerCase()}</p><div className="mini-actions"><Btn to="/garden/book" arrow={false}>Book service</Btn><Btn ghost arrow={false} onClick={()=>{}}>Edit plant</Btn></div></div><div className="blob"><Leaf size={64} strokeWidth={1.2}/></div></div>
-  <div className="filters">{['Overview','Care plan','History'].map(x=><button type="button" key={x} className={tab===x?'on':''} onClick={()=>setTab(x)}>{tab===x&&<motion.i layoutId="plant-tab"/>}<span>{x}</span></button>)}</div>
-  {tab==='Overview'&&<><div className="quad">{[[Droplets,'Watering','Today','Medium moisture'],[Sun,'Sunlight','Bright indirect','6–8 hrs/day'],[Scissors,'Pruning','Due soon','2 leaves to inspect'],[Heart,'Health',p.status,/Needs/.test(p.status)?'Check leaves and soil today':'No issues reported']].map(([I,t,v,m],i)=><motion.div key={t} className="qc" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:i*.07}}><I size={20}/><small>{t}</small><h3>{v}</h3><p>{m}</p></motion.div>)}</div><div className="split-note"><div><span className="eyebrow">Next action</span><h3>{/Needs/.test(p.status)?'Inspect leaves and check soil moisture':'Water + rotate toward the light'}</h3><p>This task is shown as a frontend reminder. The care schedule will become data-driven in the backend phase.</p></div><Btn to="/garden/book">Book a visit</Btn></div></>}
-  {tab==='Care plan'&&<div className="detail-grid"><div className="detail-card"><span className="eyebrow">Routine</span><h3>Weekly care</h3><p>Water when the top layer is dry, rotate weekly and inspect leaves for pests.</p></div><div className="detail-card"><span className="eyebrow">Environment</span><h3>Bright indirect light</h3><p>Keep away from harsh afternoon sun and cold drafts.</p></div><div className="detail-card"><span className="eyebrow">Reminder</span><h3>Next check · {p.next}</h3><p>Frontend mock reminder — notifications will be connected later.</p></div></div>}
-  {tab==='History'&&<><div className="sh"><h2>Recent activity</h2></div><div className="tline">{['Plant Care completed · 18 Sep','Soil check completed · 18 Sep','Watering reminder · 12 Sep'].map((x,i)=><div key={x}><span className="dot"/><p>{x}<small>{i?'Previously':'Latest'}</small></p></div>)}</div></>}
-</Shell>}
-
-function BookingConfirmation(){const {id}=useParams();const {updateBooking}=useApp();React.useEffect(()=>updateBooking(id,{state:'Confirmed'}),[id]);return <Shell title="Booking confirmed" sub="Your request is saved in this frontend workflow."><div className="confirmation"><div className="confirm-icon"><Check size={32}/></div><span className="eyebrow">Booking {id}</span><h2>Your plants are on the calendar.</h2><p>Plant Care for 3 plants · 30 Sep 2026 · 10:30 AM. A gardener will be assigned before the visit.</p><div className="confirm-grid"><div><small>Service</small><b>Plant Care</b></div><div><small>Location</small><b>Home · 24 Green Avenue</b></div><div><small>Estimated total</small><b>₹499</b></div></div><div className="acts"><Btn to={`/garden/visits/${id}`}>View booking</Btn><Btn to="/garden" ghost arrow={false}>Back to dashboard</Btn></div></div></Shell>}
-
-function BookingDetail(){const {id}=useParams();const {bookingOverrides}=useApp();const base=bookingById(id);const ov=bookingOverrides[id]||{};const b={...base,...ov};const state=b.state||base.state;const completed=state==='Completed';const activeIndex=bookingStateIndex[state]??0;return <Shell title={`Booking ${b.id}`} sub="One shared record across customer, gardener and admin."><div className="booking-head"><div><Badge>{bookingStatusLabel[state]||state}</Badge><h2>{b.service}</h2><p>{b.plants} · {b.date} · {b.time}</p></div><Btn to={completed?`/garden/plants/0`:`/garden/tracking/${b.id}`}>{completed?'View plant report':'Track gardener'}</Btn></div><div className="detail-grid"><div className="detail-card"><span className="eyebrow">Gardener</span><h3>{b.gardener||'Awaiting assignment'}</h3><p>{b.gardener?'Verified T-CARE gardener · 4.9 rating':'Admin will assign an available gardener.'}</p><Btn ghost arrow={false} onClick={()=>{}}>View profile</Btn></div><div className="detail-card"><span className="eyebrow">Visit</span><h3>{b.time}</h3><p>{b.date}<br/>{b.address}</p></div><div className="detail-card"><span className="eyebrow">Payment</span><h3>₹{b.price.toLocaleString()}</h3><p>Payment status · Frontend demo state</p></div></div><div className="status-panel"><div className="sh"><h2>Service timeline</h2><Badge>{bookingStatusLabel[state]||state}</Badge></div><div className="status-line">{bookingTimeline.map((x,i)=><div className={i<=activeIndex?'done':''} key={x}><span>{i<=activeIndex?<Check size={12}/>:i+1}</span><p>{x}<small>{i===activeIndex?'Current status':i<activeIndex?'Completed':'Upcoming'}</small></p></div>)}</div></div>{completed&&<div className="report-card"><span className="eyebrow">Health report</span><h3>Plant rescue completed</h3><p>Soil moisture improved, damaged leaves pruned and a follow-up check recommended in 7 days.</p><Btn to="/garden/plants/0">View plant history</Btn></div>}</Shell>}
-function Tracking(){const {id}=useParams();const {bookingOverrides}=useApp();const base=bookingById(id);const b={...base,...(bookingOverrides[id]||{})};const state=b.state||base.state;const active=bookingStateIndex[state]??0;return <Shell title="Track your gardener" sub={`${b.service} · ${b.date} · ${b.time}`}><div className="track-hero"><div className="map-placeholder" role="img" aria-label="Live map placeholder"><MapPin size={42}/><span>Live map placeholder</span><small>GPS tracking connects in the backend phase.</small></div><div className="track-card"><Badge>{bookingStatusLabel[state]||state}</Badge><h2>{b.gardener||'Awaiting assignment'}</h2><p>{b.gardener?'Verified gardener · 4.9 rating':'Admin assignment is pending.'}</p><div className="eta"><Clock3 size={18}/><div><small>Next update</small><b>{state==='Completed'?'Visit completed':b.eta}</b></div></div><Btn to={`/garden/visits/${b.id}`} ghost arrow={false}>Back to booking</Btn></div></div><div className="status-panel"><div className="sh"><h2>Visit status</h2></div><div className="status-line">{bookingTimeline.map((x,i)=><div className={i<=active?'done':''} key={x}><span>{i<=active?<Check size={12}/>:i+1}</span><p>{x}<small>{i<=active?'Done':'Waiting'}</small></p></div>)}</div></div></Shell>}
-function Book(){
-  const {toast,plants,updateBooking}=useApp();const nav=useNavigate();const [step,setStep]=React.useState(0);
-  const [b,setB]=React.useState({svc:services[0],pl:['Monstera deliciosa'],date:'30 Sep',time:'10:30 AM',addr:'Home · 24 Green Avenue'});
-  const S=['Service','Plants','Schedule','Address','Review'];const togglePl=n=>setB(x=>({...x,pl:x.pl.includes(n)?x.pl.filter(a=>a!==n):[...x.pl,n]}));
-  const go=()=>{if(step<4)setStep(step+1);else{updateBooking('TC-1042',{state:'Confirmed',gardener:''});toast('Booking confirmed — a gardener will be assigned shortly');nav('/garden/booking-confirmed/TC-1042')}};
-  return <Shell title="Book a service" sub="Tell us what your plants need. Review everything before payment.">
-  <p className="sentence">I need <u onClick={()=>setStep(0)}>{b.svc.name}</u> for <u onClick={()=>setStep(1)}>{b.pl.length} plant{b.pl.length!==1&&'s'}</u> on <u onClick={()=>setStep(2)}>{b.date}, {b.time}</u> at <u onClick={()=>setStep(3)}>{b.addr.split(' · ')[0]}</u>.</p>
-  <div className="dots">{S.map((x,i)=><button key={x} className={i===step?'on':i<step?'done':''} onClick={()=>setStep(i)}>{i<step?<Check size={12}/>:i+1}<span>{x}</span></button>)}</div>
-  <div className="bk"><AnimatePresence mode="wait"><motion.div key={step} className="bmain" initial={{opacity:0,x:60}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-60}} transition={{duration:.3}}>
-   {step===0&&<div className="pick">{services.slice(0,6).map(s=><button key={s.name} className={b.svc.name===s.name?'on':''} onClick={()=>{setB({...b,svc:s});setStep(1)}}><s.icon size={22}/><b>{s.name}</b><small>{s.desc}</small></button>)}</div>}
-   {step===1&&<div className="pick one">{plants.map(p=><button key={p.name} className={b.pl.includes(p.name)?'on':''} onClick={()=>togglePl(p.name)}><Leaf size={20}/><b>{p.name}</b><small>{p.type} · Included</small>{b.pl.includes(p.name)&&<Check size={16}/>}</button>)}</div>}
-   {step===2&&<><div className="pills">{['30 Sep','01 Oct','02 Oct','04 Oct'].map((d,i)=><button key={d} className={b.date===d?'on':''} onClick={()=>setB({...b,date:d})}><b>{d}</b><small>{['Tue','Wed','Thu','Sat'][i]}</small></button>)}</div><div className="pills t">{['10:30 AM','12:00 PM','02:00 PM','04:30 PM'].map(t=><button key={t} className={b.time===t?'on':''} onClick={()=>setB({...b,time:t})}>{t}</button>)}</div></>}
-   {step===3&&<div className="pick one">{['Home · 24 Green Avenue','Office · 8 Riverfront Road'].map(a=><button key={a} className={b.addr===a?'on':''} onClick={()=>setB({...b,addr:a})}><MapPin size={20}/><b>{a.split(' · ')[0]}</b><small>{a.split(' · ')[1]}, Ahmedabad</small></button>)}</div>}
-   {step===4&&<div className="rev">{[['Service',b.svc.name],['Plants',b.pl.join(', ')||'—'],['Date',`${b.date} · ${b.time}`],['Address',b.addr],['Notes','Please check the soil before watering.']].map(([a,v])=><div key={a}><span>{a}</span><b>{v}</b></div>)}</div>}
-  </motion.div></AnimatePresence>
-  <aside className="sum"><span className="eyebrow">Summary</span><h3>{b.svc.name}</h3><div><span>Service</span><b>₹{b.svc.price}</b></div><div><span>{b.pl.length} plants</span><b>Included</b></div><div><span>Convenience</span><b>₹0</b></div><div className="tot"><span>Total</span><b>₹{b.svc.price}</b></div><Btn full onClick={go}>{step<4?'Continue':'Confirm booking'}</Btn></aside></div></Shell>}
-
-/* ---------- gardener + admin ---------- */
-function Jobs({all,rows}){const {jobOverrides}=useApp();const source=crewJobs.map(x=>({...x,...(jobOverrides[x.id]||{})}));const list=rows??(all?source:source.slice(0,3));return <div className="rows">{list.map((x,i)=><Link key={x.id} to={`/crew/jobs/${x.id}`} className="row row-link crew-job-row"><div className="rt"><b>{x.time}</b><small>{x.date}</small></div><div className="rm"><Badge tone={x.status==='Assigned'&&i===0?'a':undefined}>{x.priority==='Next'?'Next':x.status}</Badge><h3>{x.service}</h3><p>{x.customer} · {x.address}</p></div><ArrowUpRight size={18}/></Link>)}</div>}
-const CrewHome=()=> <Shell title="Good afternoon, Aarav." sub="Your route and earnings snapshot."><div className="metrics four"><Metric icon={ClipboardList} label="Today's jobs" value="4" meta="1 completed"/><Metric icon={Clock3} label="Next visit" value="10:30 AM" meta="Plant Care · Kabir"/><Metric icon={Star} label="Rating" value="4.9 / 5" meta="128 reviews"/><Metric icon={WalletCards} label="This month" value="₹28,450" meta="+12% vs last month" tone="ok"/></div><div className="sh"><h2>Today's route</h2><Link className="tl" to="/crew/jobs">All jobs <ArrowUpRight size={15}/></Link></div><Jobs/></Shell>;
-function CrewJobDetail(){
- const {id}=useParams(); const {toast,jobOverrides,updateJob,updateBooking}=useApp(); const baseJob=crewJobs.find(x=>x.id===id)||crewJobs[0]; const job={...baseJob,...(jobOverrides[baseJob.id]||{})};
- const [status,setStatus]=React.useState(job.status); const [checked,setChecked]=React.useState(()=>job.status==='Completed'?Object.fromEntries(careChecklist.map(x=>[x,true])):{}); const [obs,setObs]=React.useState(''); const [recommendation,setRecommendation]=React.useState(''); const [photos,setPhotos]=React.useState(job.status==='Completed'?3:0); const started=status==='In progress'||status==='Completed'; const completed=status==='Completed';
- const accept=()=>{setStatus('Accepted');updateJob(job.id,{status:'Accepted',priority:'Accepted'});updateBooking(job.bookingId,{state:'Gardener Accepted'});toast(`${job.id} accepted — the customer has been notified in this frontend workflow`)}; const start=()=>{setStatus('In progress');updateJob(job.id,{status:'In progress'});updateBooking(job.bookingId,{state:'Service started'});toast(`${job.id} started — service checklist is now active`)}; const complete=()=>{if(!careChecklist.every(x=>checked[x])){toast('Complete every care checklist item before closing the job');return}setStatus('Completed');updateJob(job.id,{status:'Completed',priority:'Completed'});updateBooking(job.bookingId,{state:'Completed'});toast(`${job.id} completed — health report is ready`)};
- return <Shell title={job.service} sub={`${job.id} · ${job.customer} · ${job.date} · ${job.time}`} action={completed?<Btn to={`/crew/jobs/${job.id}/report`}>View report</Btn>:status==='New'||status==='Assigned'?<Btn onClick={accept}>Accept job</Btn>:<Btn onClick={started?complete:start}>{started?'Complete job':'Start job'}</Btn>}>
- <div className="job-head"><div><Badge tone={completed?'n':status==='In progress'?'a':undefined}>{status}</Badge><h2>{job.customer}</h2><p>{job.address}</p></div><div className="job-head-meta"><span><small>Service</small><b>{job.service}</b></span><span><small>Value</small><b>₹{job.price}</b></span><span><small>Booking</small><b>{job.bookingId}</b></span></div></div>
- <div className="job-grid"><div>
- <section className="workflow-card"><div className="sh"><div><span className="eyebrow">Step 1</span><h2>Visit brief</h2></div><Badge>{job.priority}</Badge></div><div className="brief-grid"><div><small>Plants</small><b>{job.plants.join(' · ')}</b></div><div><small>Instructions</small><b>{job.instructions}</b></div></div></section>
- <section className="workflow-card"><div className="sh"><div><span className="eyebrow">Step 2</span><h2>Care checklist</h2></div><span className="progress-note">{Object.values(checked).filter(Boolean).length}/{careChecklist.length}</span></div><div className="checklist">{careChecklist.map(x=><label key={x} className={checked[x]?'checked':''}><input type="checkbox" checked={!!checked[x]} onChange={()=>setChecked(v=>({...v,[x]:!v[x]}))} disabled={!started||completed}/><span>{checked[x]?<Check size={14}/>:null}</span><b>{x}</b></label>)}</div>{!started&&<p className="workflow-hint">Start the job to unlock the care checklist.</p>}</section>
- <section className="workflow-card"><div className="sh"><div><span className="eyebrow">Step 3</span><h2>Observations & photos</h2></div><Badge>{photos} photo{photos!==1?'s':''}</Badge></div><div className="photo-strip">{Array.from({length:Math.max(photos,1)}).slice(0,4).map((_,i)=><div className={i<photos?'mock-photo':'mock-photo empty-photo'} key={i}><Leaf size={22}/><small>{i<photos?`Photo ${i+1}`:'Add photo'}</small></div>)}<button className="photo-add" onClick={()=>{setPhotos(p=>Math.min(p+1,4));toast('Photo placeholder added to this frontend report')}} disabled={!started||photos>=4}><Plus size={18}/><span>Add photo</span></button></div><label className="field">Observations<textarea value={obs} onChange={e=>setObs(e.target.value)} disabled={!started||completed} placeholder="Describe plant condition, soil, pests or visible changes…"/></label></section>
- <section className="workflow-card"><div className="sh"><div><span className="eyebrow">Step 4</span><h2>Recommendation</h2></div></div><label className="field">Next-care recommendation<textarea value={recommendation} onChange={e=>setRecommendation(e.target.value)} disabled={!started||completed} placeholder="What should the customer do next, and when?"/></label>{completed?<div className="complete-note"><Check size={18}/><div><b>Job completed</b><p>The report is ready to review and will later sync to the customer's plant history.</p></div></div>:<p className="workflow-hint">This report will become the customer's plant health record in the backend phase.</p>}</section>
- </div><aside className="job-side"><div className="workflow-card"><span className="eyebrow">Job actions</span><h3>{completed?'Service completed':started?'Service in progress':status==='Accepted'?'Ready to start':'New assignment'}</h3><p>{completed?'The health report is ready for review.':started?'Work through the checklist, capture observations and close the visit when complete.':status==='Accepted'?'Review the address and instructions, then start the service when you arrive.':'Accept the assignment first, then prepare for the visit.'}</p>{status==='New'||status==='Assigned'?<Btn full onClick={accept}>Accept job</Btn>:status==='Accepted'?<Btn full onClick={start}>Start job</Btn>:completed?<Btn full to={`/crew/jobs/${job.id}/report`}>Open health report</Btn>:<Btn full onClick={complete}>Complete job</Btn>}</div><div className="workflow-card"><span className="eyebrow">Customer</span><h3>{job.customer}</h3><p>{job.address}</p><div className="mini-actions"><Btn ghost arrow={false} onClick={()=>toast('Customer contact will connect to the backend phase')}>Contact</Btn><Btn ghost arrow={false} onClick={()=>toast('Navigation will connect to maps in the integration phase')}>Navigate</Btn></div></div><Link className="back-link" to="/crew/jobs">← Back to jobs</Link></aside></div>
- </Shell>;
-}
-function CrewReport(){const {id}=useParams();const {jobOverrides}=useApp();const baseJob=crewJobs.find(x=>x.id===id)||crewJobs[2];const job={...baseJob,...(jobOverrides[baseJob.id]||{})};return <Shell title="Health report" sub={`${job.id} · ${job.customer} · Completed visit`} action={<Btn to={`/crew/jobs/${job.id}`} ghost arrow={false}>Back to job</Btn>}><div className="report-hero"><div><Badge>Completed</Badge><h2>{job.service} report</h2><p>This frontend report is the handoff between the gardener's visit and the customer's plant history.</p></div><div className="report-score"><b>Good</b><span>Plant condition</span></div></div><div className="report-grid"><div className="workflow-card"><span className="eyebrow">Observations</span><h3>Overall plant condition is stable.</h3><p>Soil moisture was checked, damaged foliage was addressed and no major pest activity was observed during the visit.</p></div><div className="workflow-card"><span className="eyebrow">Work performed</span><h3>Care checklist completed</h3><p>Inspection · watering · leaf cleaning · pruning · pest check · photos.</p></div><div className="workflow-card"><span className="eyebrow">Recommendation</span><h3>Follow-up in 7 days</h3><p>Keep the Peace Lily away from direct afternoon sun and re-check soil moisture before the next watering.</p></div></div><div className="report-footer"><div><span className="eyebrow">Next system handoff</span><h3>Customer plant history</h3><p>Backend phase will persist this report against the booking and each affected plant.</p></div><Btn to="/crew/jobs">Return to jobs</Btn></div></Shell>}
-const CrewReports=()=> <Shell title="Plant health reports" sub="Document condition, work performed and next-care recommendations." action={<Btn to="/crew/jobs/JOB-1042">New report</Btn>}><div className="cards">{crewJobs.filter(x=>x.status==='Completed'||x.id==='JOB-1042').map((j,i)=><Link to={`/crew/jobs/${j.id}/report`} key={j.id} className="ptile"><div className="pp" style={{'--h':90+i*40}}><Leaf size={34} strokeWidth={1.2}/></div><Badge tone={j.status==='Completed'?'g':'a'}>{j.status==='Completed'?'Healthy':'Draft'}</Badge><h3>{j.plants[0]}</h3><p>{j.service} · {j.customer} · {j.date}</p><small>Report {j.status==='Completed'?'ready':'in progress'}</small></Link>)}</div></Shell>;
-
-const CrewPay=()=><Shell title="Earnings" sub="Track service earnings and payout history."><div className="metrics"><Metric icon={WalletCards} label="Available" value="₹12,840" meta="Ready for payout" tone="ok"/><Metric icon={TrendingUp} label="This month" value="₹28,450" meta="31 completed jobs"/><Metric icon={CalendarDays} label="Last payout" value="₹18,200" meta="25 Sep 2026"/></div><div className="sh"><h2>Recent payouts</h2></div><div className="rows">{['25 Sep · ₹18,200','10 Sep · ₹21,650','25 Aug · ₹19,480','10 Aug · ₹17,900'].map(x=><div className="row" key={x}><div className="rm"><h3>{x}</h3></div><Badge>Paid</Badge></div>)}</div></Shell>;
-const adminCustomers=[
-{id:'CUS-001',name:'Kabir Mehta',email:'kabir@example.com',phone:'+91 98••• 2145',bookings:12,plants:8,plan:'Green Monthly',status:'Active',joined:'12 Jan 2026'},
-{id:'CUS-002',name:'Neha Shah',email:'neha@example.com',phone:'+91 97••• 8042',bookings:8,plants:14,plan:'None',status:'Active',joined:'08 Feb 2026'},
-{id:'CUS-003',name:'Aisha Patel',email:'aisha@example.com',phone:'+91 99••• 6710',bookings:21,plants:19,plan:'Green Quarterly',status:'Active',joined:'21 Nov 2025'},
-{id:'CUS-004',name:'Rohan Desai',email:'rohan@example.com',phone:'+91 96••• 3318',bookings:3,plants:4,plan:'None',status:'Blocked',joined:'04 Mar 2026'}
-];
-const adminGardenerData=[
-{id:'GRD-001',name:'Aarav Patel',email:'aarav@tcare.example',phone:'+91 98••• 1022',jobs:148,rating:'4.9',status:'Active',area:'Ahmedabad West',services:'Care · Rescue · Maintenance'},
-{id:'GRD-002',name:'Meera Shah',email:'meera@tcare.example',phone:'+91 97••• 4431',jobs:126,rating:'4.8',status:'Active',area:'Ahmedabad Central',services:'Design · Setup · Events'},
-{id:'GRD-003',name:'Riya Mehta',email:'riya@tcare.example',phone:'+91 99••• 8120',jobs:98,rating:'4.7',status:'Pending',area:'Ahmedabad East',services:'Care · Rescue'},
-{id:'GRD-004',name:'Dev Joshi',email:'dev@tcare.example',phone:'+91 96••• 5524',jobs:172,rating:'4.9',status:'Active',area:'Ahmedabad North',services:'Maintenance · Care'}
-];
-const adminTx=[['TX-2048','30 Sep 2026','Kabir Mehta','Plant Care','₹499','Paid'],['TX-2047','30 Sep 2026','Neha Shah','Green Makeover','₹3,499','Paid'],['TX-2046','29 Sep 2026','Aisha Patel','Maintenance','₹1,299','Pending'],['TX-2041','27 Sep 2026','Rohan Desai','Plant Rescue','₹799','Refunded']];
-function AdminHeader({eyebrow='Operations',title,sub,action}){return <div className="admin-context"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2><p>{sub}</p></div>{action}</div>}
-function AdminCustomers(){const {adminOverrides,updateAdmin,toast}=useApp();const [filter,setFilter]=React.useState('All');const [q,setQ]=React.useState('');const source=adminCustomers.map(x=>({...x,...(adminOverrides[x.id]||{})}));const visible=source.filter(x=>(filter==='All'||x.status===filter)&&(`${x.name} ${x.email}`.toLowerCase().includes(q.toLowerCase())));return <Shell title="Customers" sub="Manage customer profiles, plants, bookings and subscription status." action={<Btn onClick={()=>toast('Customer creation form is ready for the backend phase')}>Add customer</Btn>}><AdminHeader title="Customer operations" sub={`${visible.length} visible customers · profile and account controls are frontend-only.`} action={<div className="admin-search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search customers"/></div>}/><Filter items={['All','Active','Blocked']} value={filter} onChange={setFilter}/><div className="admin-table"><div className="admin-row admin-head"><span>Customer</span><span>Plants</span><span>Bookings</span><span>Plan</span><span>Status</span><span>Actions</span></div>{visible.map(c=><motion.div className="admin-row" key={c.id} layout><div><b>{c.name}</b><small>{c.email}</small></div><span>{c.plants}</span><span>{c.bookings}</span><span>{c.plan}</span><Badge>{c.status}</Badge><div className="admin-actions"><Btn ghost arrow={false} to={`/hq/people/${c.id}`}>View</Btn><button className="icon-action" title="Toggle customer status" onClick={()=>updateAdmin(c.id,{status:c.status==='Active'?'Blocked':'Active'})}><SlidersHorizontal size={15}/></button></div></motion.div>)}</div></Shell>}
-function AdminCustomerDetail(){const {id}=useParams();const c=adminCustomers.find(x=>x.id===id)||adminCustomers[0];const {toast}=useApp();return <Shell title={c.name} sub={`${c.id} · Joined ${c.joined}`} action={<Btn to="/hq/people" ghost arrow={false}>Back to customers</Btn>}><div className="admin-profile"><div className="profile-orb">{c.name.split(' ').map(x=>x[0]).join('')}</div><div><Badge>{c.status}</Badge><h2>{c.name}</h2><p>{c.email} · {c.phone}</p></div><div className="profile-actions"><Btn ghost arrow={false} onClick={()=>toast('Customer edit form is ready for the backend phase')}>Edit profile</Btn><Btn onClick={()=>toast('Booking creation will connect to the backend phase')}>New booking</Btn></div></div><div className="metrics four"><Metric icon={Flower2} label="Plants" value={c.plants} meta="Active plant records"/><Metric icon={ClipboardList} label="Bookings" value={c.bookings} meta="All-time services"/><Metric icon={WalletCards} label="Plan" value={c.plan} meta="Subscription state"/><Metric icon={CreditCard} label="Account" value={c.status} meta="Current access"/></div><div className="detail-grid"><div className="detail-card"><span className="eyebrow">Plants</span><h3>8 tracked plants</h3><p>Plant profiles, care history and upcoming tasks will be linked here.</p><Btn ghost arrow={false} to="/hq/botany">Open plant database</Btn></div><div className="detail-card"><span className="eyebrow">Bookings</span><h3>{c.bookings} service records</h3><p>Bookings, gardener assignments, reports and payment states belong to the same customer record.</p><Btn ghost arrow={false} to="/hq/visits">View bookings</Btn></div><div className="detail-card"><span className="eyebrow">Payments</span><h3>₹18,420 lifetime</h3><p>Transactions and refunds will be persisted by the payment layer in Phase 4.</p><Btn ghost arrow={false} to="/hq/money">View finance</Btn></div></div></Shell>}
-function AdminGardeners(){const {adminOverrides,updateAdmin,toast}=useApp();const [filter,setFilter]=React.useState('All');const source=adminGardenerData.map(x=>({...x,...(adminOverrides[x.id]||{})}));const visible=source.filter(x=>filter==='All'||x.status===filter);return <Shell title="Gardeners" sub="Manage gardener profiles, access, service areas and operational status." action={<Btn onClick={()=>toast('Gardener onboarding form is ready for the backend phase')}>Add gardener</Btn>}><AdminHeader title="Gardener access" sub="Admin controls the operational roster. Login credentials will be created by the backend later."/><Filter items={['All','Active','Pending','Inactive']} value={filter} onChange={setFilter}/><div className="admin-table"><div className="admin-row admin-head"><span>Gardener</span><span>Jobs</span><span>Rating</span><span>Service area</span><span>Status</span><span>Actions</span></div>{visible.map(g=><motion.div className="admin-row" key={g.id} layout><div><b>{g.name}</b><small>{g.email}</small></div><span>{g.jobs}</span><span>★ {g.rating}</span><span>{g.area}</span><Badge>{g.status}</Badge><div className="admin-actions"><Btn ghost arrow={false} onClick={()=>toast(`${g.name} profile selected — backend profile editor pending`)}>View</Btn><button className="icon-action" title="Change gardener status" onClick={()=>updateAdmin(g.id,{status:g.status==='Active'?'Inactive':'Active'})}><UserCheck size={15}/></button></div></motion.div>)}</div></Shell>}
-function AdminBookings(){const {adminOverrides,updateAdmin,updateBooking,bookingOverrides,toast}=useApp();const [filter,setFilter]=React.useState('All');const source=bookings.map((b,i)=>{const id=bookingMeta[i%bookingMeta.length].id;const meta=bookingMeta[i%bookingMeta.length];const ov=bookingOverrides[id]||{};const state=ov.state||meta.state;return {...b,id,gardener:ov.gardener||(state==='Gardener Assigned'||state==='Gardener Accepted'||state==='On the way'||state==='Arrived'||state==='Service started'||state==='Completed'?meta.gardener:''),status:bookingStatusLabel[state]||b.status,...(adminOverrides[id]||{})}});const visible=source.filter(x=>filter==='All'||x.status===filter);const assign=(id,name)=>{if(!name){updateBooking(id,{gardener:'',state:'Confirmed'});updateAdmin(id,{gardener:'',status:'Confirmed'});toast(`${id} is awaiting gardener assignment`);return}updateBooking(id,{gardener:name,state:'Gardener Assigned'});updateAdmin(id,{gardener:name,status:'Assigned'});toast(`${name} assigned to ${id}`)};return <Shell title="Booking management" sub="Review bookings, assign gardeners and follow operational status." action={<Btn to="/hq/crew" ghost arrow={false}>Manage gardeners</Btn>}><AdminHeader title="Booking queue" sub={`${visible.length} bookings in this view. Assignment changes are frontend-only and reset on refresh.`}/><Filter items={['All','Scheduled','Confirmed','Assigned','Completed']} value={filter} onChange={setFilter}/><div className="admin-bookings">{visible.map((b,i)=>{const meta=bookingMeta[i%bookingMeta.length];const id=b.id||meta.id;const assigned=b.gardener||'';return <motion.div className="admin-booking" key={`${id}-${i}`} layout><div className="admin-booking-main"><div className="booking-id"><span>{id}</span><Badge>{b.status}</Badge></div><h3>{b.service}</h3><p>{b.date} · {b.time} · {b.plants}</p><small>{assigned?'Gardener: '+assigned:'No gardener assigned'} · ₹{meta.price}</small></div><div className="assign-box"><label>Gardener<select value={assigned||''} onChange={e=>assign(id,e.target.value)}><option value="">Assign gardener</option>{adminGardenerData.filter(g=>g.status==='Active').map(g=><option key={g.id}>{g.name}</option>)}</select></label><div className="admin-actions"><Btn ghost arrow={false} to={`/garden/visits/${id}`}>Open booking</Btn><Btn arrow={false} onClick={()=>toast(`Payment status for ${id}: Paid in this demo`) }>Payment</Btn></div></div></motion.div>})}</div></Shell>}
-function AdminFinance(){return <Shell title="Finance & payouts" sub="Payment processing is intentionally excluded from the current Phase 5 implementation."><div className="p5-panel"><h3>Payment workflows are out of scope</h3><p>Razorpay checkout, payment webhooks, refunds, subscription billing and payout execution have not been changed. Existing payment records remain in the database and can be reviewed after the separate payment phase is approved.</p></div></Shell>}
-function AdminAnalytics(){const points=[42,55,49,68,61,78,72,88,81,94,89,100];return <Shell title="Reports & analytics" sub="Understand revenue, booking demand and gardener performance."><div className="metrics four"><Metric icon={TrendingUp} label="Booking growth" value="+14.2%" meta="vs previous month" tone="ok"/><Metric icon={WalletCards} label="Revenue growth" value="+11.8%" meta="vs previous month" tone="ok"/><Metric icon={Star} label="Avg. rating" value="4.86" meta="Across 1,240 reviews"/><Metric icon={Clock3} label="Completion" value="96.4%" meta="Service success rate" tone="ok"/></div><div className="analytics-grid"><div className="analytics-card"><div className="sh"><div><span className="eyebrow">Bookings</span><h2>12-week trend</h2></div><Badge>Updated today</Badge></div><div className="sparkline">{points.map((v,i)=><div key={i} style={{height:v+'%'}}><span>{v}</span></div>)}</div><div className="axis"><span>Week 1</span><span>Week 12</span></div></div><div className="analytics-card"><div className="sh"><div><span className="eyebrow">Service demand</span><h2>Share by category</h2></div></div><div className="bars">{[['Plant Care',78],['Maintenance',62],['Green Makeover',49],['Plant Rescue',34],['Plant Setup',27]].map(([x,v])=><div key={x}><span>{x}<b>{v}%</b></span><i><motion.u initial={{width:0}} animate={{width:v+'%'}} transition={{delay:.2,duration:.7}}/></i></div>)}</div></div></div></Shell>}
-function AdminContent(){const {toast}=useApp();const [saved,setSaved]=React.useState(false);const [title,setTitle]=React.useState('Care that grows with you.');const [announcement,setAnnouncement]=React.useState('Book your next plant-care visit in a few quiet clicks.');const save=()=>{setSaved(true);toast('Content draft saved in this frontend session');setTimeout(()=>setSaved(false),2200)};return <Shell title="Content management" sub="Manage banners, FAQs, plant-care content and testimonials." action={<Btn onClick={save}><Save size={15}/>{saved?'Saved':'Save draft'}</Btn>}><div className="cms-grid"><section className="workflow-card"><span className="eyebrow">Homepage hero</span><h3>Primary message</h3><label className="field">Headline<input value={title} onChange={e=>setTitle(e.target.value)}/></label><label className="field">Announcement<input value={announcement} onChange={e=>setAnnouncement(e.target.value)}/></label><div className="cms-preview"><span className="eyebrow">Live preview</span><h2>{title}</h2><p>{announcement}</p></div></section><section className="workflow-card"><span className="eyebrow">Content modules</span><h3>Publishing queue</h3>{['FAQ · Plant watering basics','Blog · Monsoon plant care','Testimonial · Neha S.','Banner · October maintenance'].map((x,i)=><div className="cms-item" key={x}><div><b>{x}</b><small>{i<2?'Draft':'Published'} · Updated recently</small></div><Badge tone={i<2?'a':'g'}>{i<2?'Draft':'Live'}</Badge></div>)}<Btn ghost arrow={false} onClick={()=>toast('Content editor module is ready for backend/CMS persistence')}>Add content</Btn></section></div></Shell>}
-function AdminPlants(){const {toast}=useApp();const [q,setQ]=React.useState('');const visible=seedPlants.filter(x=>x.name.toLowerCase().includes(q.toLowerCase()));return <Shell title="Plant database" sub="Maintain the care knowledge base used by customer and gardener workflows." action={<Btn onClick={()=>toast('Plant record editor is ready for the backend phase')}>Add plant</Btn>}><AdminHeader title="Care knowledge" sub="Plant records will later power recommendations, care plans and reports." action={<div className="admin-search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search plants"/></div>}/><div className="admin-table"><div className="admin-row admin-head"><span>Plant</span><span>Category</span><span>Health</span><span>Next care</span><span>Watering</span><span>Actions</span></div>{visible.map(p=><div className="admin-row" key={p.name}><div><b>{p.name}</b><small>{p.type}</small></div><span>Indoor</span><Badge>{p.status}</Badge><span>{p.next}</span><span>Weekly</span><Btn ghost arrow={false} onClick={()=>toast(`${p.name} editor is ready for backend persistence`)}>Edit</Btn></div>)}</div></Shell>}
-const HqHome=()=><Shell title="Operations pulse" sub="T-CARE activity across customers, gardeners and bookings."><div className="metrics four"><Metric icon={Users} label="Customers" value="2,842" meta="+8.4% this month" tone="ok"/><Metric icon={Flower2} label="Gardeners" value="86" meta="42 active today"/><Metric icon={ClipboardList} label="Bookings" value="1,248" meta="74 pending"/><Metric icon={WalletCards} label="Revenue" value="₹8.42L" meta="+14.2% this month" tone="ok"/></div><div className="duo"><div><div className="sh"><h2>Recent activity</h2><Link className="tl" to="/hq/visits">View all <ArrowUpRight size={15}/></Link></div><Bookings/></div><div><div className="sh"><h2>Popular services</h2></div><div className="bars">{[['Plant Care',78],['Maintenance',62],['Green Makeover',49],['Plant Rescue',34]].map(([x,v],i)=><div key={x}><span>{x}<b>{v}%</b></span><i><motion.u initial={{width:0}} animate={{width:v+'%'}} transition={{delay:.3+i*.1,duration:.9}}/></i></div>)}</div></div></div></Shell>;
-const T=(title,cols,rows,add)=>()=><Shell title={title} sub="Manage this area with frontend-only mock data." action={<Btn>{add}</Btn>}><Table cols={cols} rows={rows}/></Shell>;
-
 /* ---------- routes ---------- */
 function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><Leaf size={64} strokeWidth={1}/><h1>Lost in the <em>undergrowth</em></h1><p>This page doesn't exist — let's get you back to greener ground.</p><Btn to="/">Back home</Btn></div>}
-const G=(title,sub)=>()=><Generic title={title} sub={sub}/>;
 const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
-['/garden/plan',()=> <Phase5.OutOfScopePage Shell={Shell} title="Subscription plans" sub="Payment-dependent subscription billing is excluded from the current completion scope."/>],['/garden/billing',()=> <Phase5.OutOfScopePage Shell={Shell} title="Payments & invoices" sub="Payment collection, invoices and refunds are excluded from the current completion scope."/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],
-['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.OutOfScopePage Shell={Shell} title="Gardener payouts" sub="Payment and payout processing are excluded from the current completion scope."/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],
-['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.OutOfScopePage Shell={Shell} title="Subscription plans" sub="Payment-dependent subscription billing is excluded from the current completion scope."/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.OutOfScopePage Shell={Shell} title="Finance operations" sub="Payment processing, refunds and payouts are excluded from the current completion scope."/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
+['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],
+['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],
+['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
 function ProtectedRole({role,children}){
   const {authUser,authReady}=useApp();
   const nav=useNavigate();
@@ -710,4 +668,26 @@ function App(){
     return <Route key={p} path={p} element={element}/>;
   })}</Routes></Bloom>
 }
-createRoot(document.getElementById('root')).render(<BrowserRouter><Provider><App/></Provider></BrowserRouter>);
+
+class AppErrorBoundary extends React.Component {
+  constructor(props){
+    super(props);
+    this.state={hasError:false};
+  }
+  static getDerivedStateFromError(){ return {hasError:true}; }
+  componentDidCatch(error,info){
+    console.error('T-CARE interface rendering error:',error,info?.componentStack||'');
+  }
+  render(){
+    if(this.state.hasError){
+      return <main role="alert" style={{minHeight:'100vh',display:'grid',placeContent:'center',gap:16,padding:24,textAlign:'center',background:'#f6f8f4',color:'#1d2b22'}}>
+        <h1 style={{margin:0}}>T-CARE encountered a display problem.</h1>
+        <p style={{maxWidth:520,margin:'0 auto'}}>Your saved account and booking data have not been intentionally changed. Reload the page to retry the interface.</p>
+        <button type="button" onClick={()=>window.location.reload()} style={{justifySelf:'center',padding:'12px 20px',border:0,borderRadius:10,background:'#245c3c',color:'#fff',cursor:'pointer'}}>Reload T-CARE</button>
+      </main>;
+    }
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById('root')).render(<BrowserRouter><MotionConfig reducedMotion="user"><Provider><AppErrorBoundary><App/></AppErrorBoundary></Provider></MotionConfig></BrowserRouter>);

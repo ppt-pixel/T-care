@@ -1,6 +1,6 @@
 # T-CARE Backend
 
-Current Phase 2 target: Supabase Free-compatible production architecture.
+Backend implementation and operational guide for the six-phase T-CARE project. The deployment target remains the existing Supabase PostgreSQL/Storage project with a Render-hosted Express API.
 
 ## Implemented
 - Node.js + Express API
@@ -21,13 +21,13 @@ Current Phase 2 target: Supabase Free-compatible production architecture.
 All customer routes require an authenticated CUSTOMER account. Resource queries scope records by the authenticated customer's profile; client-supplied IDs are never treated as sufficient authorization.
 
 ## Supabase setup
-Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `SUPABASE_STORAGE_BUCKET` in `.env` using the values from the Supabase project. Create the `tcare-media` private bucket before enabling media uploads.
+Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `SUPABASE_STORAGE_BUCKET` in `.env` using values from the Supabase project. For the persistent Render service, use the Supabase Shared Pooler Session URI on port `5432` (or a direct URI if IPv6 is reachable); do not use the Transaction Pooler on port `6543` with this current single-URL Prisma configuration. Create the `tcare-media` private bucket before enabling media uploads.
 
 The application is designed so moving from Supabase Free to Pro does not require an application-level database redesign. Plan/quotas are infrastructure concerns, not hard-coded application limits.
 
 ## Payments
 
-Payment endpoints use a server-authoritative Razorpay Orders flow. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server. Never expose the secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
+The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. The current Customer UI exposes read-only payment history only; it does not start checkout. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server, and leave the Razorpay credentials unset until test-mode checkout, webhook and refund verification are completed. Never expose secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
 
 
 ## Authentication and email verification

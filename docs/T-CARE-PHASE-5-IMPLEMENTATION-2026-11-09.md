@@ -1,7 +1,7 @@
 # T-CARE Phase 5 — Business Functionality Implementation
 
-**Source of truth:** `T-care Final(1).zip` uploaded on 9 November 2026.
-**Scope:** Phase 5 business functionality from the owner's ten-item checklist.
+**Source of truth:** `T-care Final(1).zip` uploaded on 9 November 2026.  
+**Scope:** Phase 5 business functionality from the owner's ten-item checklist.  
 **Payment scope:** Payment processing, payment webhooks, refunds, payouts, and payment-dependent subscription billing remain excluded.
 
 ## Implementation summary

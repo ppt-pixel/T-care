@@ -5,8 +5,37 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { canTransitionBooking } from './bookings.js';
 import { removeObject } from '../lib/supabaseStorage.js';
 import { notifyUserSafely } from '../lib/notifications.js';
+import { canEditVisitPlantList, sumCompletedBookingValue } from '../lib/gardenerRules.js';
 
 const router = Router();
+
+// Public About-us directory: disclose only active, KYC-verified gardener profiles.
+// Private email, phone, documents and availability are intentionally omitted.
+router.get('/public', async (req, res, next) => {
+  try {
+    const gardeners = await prisma.gardenerProfile.findMany({
+      where: { kycStatus: 'VERIFIED', user: { role: 'GARDENER', status: 'ACTIVE' } },
+      select: {
+        id: true, bio: true, serviceArea: true, rating: true,
+        user: { select: { fullName: true } },
+        assignments: { where: { status: 'COMPLETED' }, select: { id: true } }
+      },
+      orderBy: [{ rating: 'desc' }, { updatedAt: 'desc' }],
+      take: 24
+    });
+    const publicProfiles = gardeners.map(profile => ({
+      id: profile.id,
+      name: profile.user.fullName,
+      bio: profile.bio,
+      serviceArea: profile.serviceArea,
+      rating: profile.rating == null ? null : Number(profile.rating),
+      completedVisits: profile.assignments.length,
+      verified: true
+    }));
+    return res.json({ gardeners: publicProfiles, generatedAt: new Date().toISOString() });
+  } catch (error) { next(error); }
+});
+
 router.use(requireAuth, requireRole('GARDENER'));
 
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -165,6 +194,129 @@ router.patch('/profile', async (req, res, next) => {
     });
 
     return res.json({ profile: { ...updated, rating: updated.rating == null ? null : Number(updated.rating) } });
+  } catch (error) { next(error); }
+});
+
+// -----------------------------------------------------------------------------
+// Gardener dashboard, customer plant updates and payout ledger
+// -----------------------------------------------------------------------------
+
+const dashboardRangeSchema = z.object({
+  todayFrom: z.coerce.date().optional(),
+  todayTo: z.coerce.date().optional(),
+  monthFrom: z.coerce.date().optional(),
+  monthTo: z.coerce.date().optional()
+}).superRefine((value, ctx) => {
+  if (value.todayFrom && value.todayTo && value.todayFrom >= value.todayTo) {
+    ctx.addIssue({ code: 'custom', path: ['todayTo'], message: 'todayTo must be later than todayFrom.' });
+  }
+  if (value.monthFrom && value.monthTo && value.monthFrom >= value.monthTo) {
+    ctx.addIssue({ code: 'custom', path: ['monthTo'], message: 'monthTo must be later than monthFrom.' });
+  }
+});
+
+router.get('/dashboard', async (req, res, next) => {
+  try {
+    const gardener = await getGardener(req.auth.id);
+    const range = dashboardRangeSchema.parse(req.query);
+    const now = new Date();
+    // The client supplies local calendar boundaries. Defaults remain usable for API clients
+    // that do not send them, although UTC is then used as the fallback calendar.
+    const todayFrom = range.todayFrom || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayTo = range.todayTo || new Date(todayFrom.getTime() + 86400000);
+    const monthFrom = range.monthFrom || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthTo = range.monthTo || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const activeVisitStatuses = ['GARDENER_ASSIGNED', 'GARDENER_ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'SERVICE_STARTED'];
+    const todayAndCompletedStatuses = [...activeVisitStatuses, 'SERVICE_COMPLETED'];
+
+    const [todayJobs, monthCompleted, nextVisit, recentCustomerPlantUpdates, availability] = await Promise.all([
+      prisma.gardenerAssignment.findMany({
+        where: {
+          gardenerId: gardener.id,
+          status: { notIn: ['REJECTED', 'CANCELLED'] },
+          booking: { scheduledStart: { gte: todayFrom, lt: todayTo }, status: { in: todayAndCompletedStatuses } }
+        },
+        include: {
+          booking: {
+            include: {
+              service: true,
+              address: true,
+              customer: { include: { user: { select: { fullName: true, phone: true } } } },
+              plants: { include: { plant: { select: {
+                id: true, name: true, type: true, healthStatus: true, nextCareAt: true,
+                careRecords: { orderBy: { recordedAt: 'desc' }, take: 5 }
+              } } } }
+            }
+          }
+        },
+        orderBy: { booking: { scheduledStart: 'asc' } },
+        take: 50
+      }),
+      prisma.gardenerAssignment.findMany({
+        where: { gardenerId: gardener.id, status: 'COMPLETED', completedAt: { gte: monthFrom, lt: monthTo } },
+        include: { booking: { select: { total: true } } },
+        orderBy: { completedAt: 'desc' },
+      }),
+      prisma.gardenerAssignment.findFirst({
+        where: { gardenerId: gardener.id, status: { in: ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'] }, booking: { status: { in: activeVisitStatuses }, OR: [{ scheduledStart: { gte: now } }, { status: 'SERVICE_STARTED' }] } },
+        include: {
+          booking: {
+            include: {
+              service: true,
+              address: true,
+              customer: { include: { user: { select: { fullName: true, phone: true } } } },
+              plants: { include: { plant: { select: { id: true, name: true, healthStatus: true } } } }
+            }
+          }
+        },
+        orderBy: { booking: { scheduledStart: 'asc' } }
+      }),
+      prisma.plantCareRecord.findMany({
+        where: {
+          bookingId: null,
+          plant: { bookingPlants: { some: { booking: { status: { in: activeVisitStatuses }, assignment: { is: { gardenerId: gardener.id } } } } } }
+        },
+        include: { plant: { select: { id: true, name: true, healthStatus: true } } },
+        orderBy: { recordedAt: 'desc' },
+        take: 10
+      }),
+      prisma.gardenerAvailability.count({ where: { gardenerId: gardener.id, isActive: true } })
+    ]);
+
+    const grossCompletedBookingValue = sumCompletedBookingValue(monthCompleted);
+    return res.json({
+      profile: { rating: gardener.rating == null ? null : Number(gardener.rating), kycStatus: gardener.kycStatus, serviceArea: gardener.serviceArea },
+      today: { count: todayJobs.length, jobs: todayJobs.map(serializeAssignment) },
+      month: { completedJobs: monthCompleted.length, grossCompletedBookingValue },
+      nextVisit: serializeAssignment(nextVisit),
+      recentCustomerPlantUpdates,
+      availability: { activeSlots: availability }
+    });
+  } catch (error) { next(error); }
+});
+
+router.get('/payouts', async (req, res, next) => {
+  try {
+    const gardener = await getGardener(req.auth.id);
+    const query = z.object({
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(25)
+    }).parse(req.query);
+    const where = { gardenerId: gardener.id };
+    const [payouts, total, paid, pending, lastPaid] = await Promise.all([
+      prisma.payout.findMany({ where, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }], skip: (query.page - 1) * query.limit, take: query.limit }),
+      prisma.payout.count({ where }),
+      prisma.payout.aggregate({ where: { ...where, status: 'PAID' }, _sum: { amount: true } }),
+      prisma.payout.aggregate({ where: { ...where, status: 'PENDING' }, _sum: { amount: true } }),
+      prisma.payout.findFirst({ where: { ...where, status: 'PAID', paidAt: { not: null } }, orderBy: { paidAt: 'desc' } })
+    ]);
+    const serializePayout = payout => ({ ...payout, amount: Number(payout.amount) });
+    return res.json({
+      payouts: payouts.map(serializePayout),
+      totals: { paid: Number(paid._sum.amount || 0), pending: Number(pending._sum.amount || 0) },
+      lastPaidPayout: lastPaid ? serializePayout(lastPaid) : null,
+      pagination: { page: query.page, limit: query.limit, total, pages: Math.ceil(total / query.limit) }
+    });
   } catch (error) { next(error); }
 });
 
@@ -347,7 +499,7 @@ router.get('/jobs', async (req, res, next) => {
               service: true,
               address: true,
               customer: { include: { user: { select: { fullName: true, phone: true } } } },
-              plants: { include: { plant: { select: { id: true, name: true, type: true, healthStatus: true } } } }
+              plants: { include: { plant: { select: { id: true, name: true, type: true, healthStatus: true, nextCareAt: true, careRecords: { orderBy: { recordedAt: 'desc' }, take: 5 } } } } }
             }
           }
         },
@@ -361,6 +513,70 @@ router.get('/jobs', async (req, res, next) => {
       jobs: assignments.map(serializeAssignment),
       pagination: { page: query.page, limit: query.limit, total, pages: Math.ceil(total / query.limit) }
     });
+  } catch (error) { next(error); }
+});
+
+async function getAssignedPlantContext(gardenerId, assignmentId) {
+  const assignment = await prisma.gardenerAssignment.findFirst({
+    where: { id: assignmentId, gardenerId },
+    include: { booking: { select: { id: true, customerId: true, status: true, reference: true, customer: { select: { userId: true } }, plants: { select: { plantId: true } } } } }
+  });
+  if (!assignment) throw Object.assign(new Error('Assigned job not found.'), { statusCode: 404, code: 'JOB_NOT_FOUND' });
+  return assignment;
+}
+
+// Gardeners can adjust the plant list for their assigned visit, but never create or
+// delete a customer's permanent plant record. Inventory ownership stays with Customer.
+router.get('/jobs/:id/plants/available', async (req, res, next) => {
+  try {
+    const gardener = await getGardener(req.auth.id);
+    const assignment = await getAssignedPlantContext(gardener.id, req.params.id);
+    const linkedIds = assignment.booking.plants.map(item => item.plantId);
+    const plants = await prisma.plant.findMany({
+      where: { customerId: assignment.booking.customerId, ...(linkedIds.length ? { id: { notIn: linkedIds } } : {}) },
+      select: { id: true, name: true, type: true, healthStatus: true, nextCareAt: true },
+      orderBy: { name: 'asc' },
+      take: 200
+    });
+    return res.json({ plants, canEdit: canEditVisitPlantList(assignment) });
+  } catch (error) { next(error); }
+});
+
+router.post('/jobs/:id/plants', async (req, res, next) => {
+  try {
+    const input = z.object({ plantId: z.string().trim().min(1) }).strict().parse(req.body);
+    const gardener = await getGardener(req.auth.id);
+    const assignment = await getAssignedPlantContext(gardener.id, req.params.id);
+    if (!canEditVisitPlantList(assignment)) return res.status(409).json({ error: 'VISIT_PLANT_LIST_LOCKED', message: 'The plant list can only be adjusted before service work starts.' });
+    const plant = await prisma.plant.findFirst({ where: { id: input.plantId, customerId: assignment.booking.customerId }, select: { id: true, name: true } });
+    if (!plant) return res.status(404).json({ error: 'CUSTOMER_PLANT_NOT_FOUND', message: 'Choose a plant from this customer’s plant collection.' });
+    const alreadyLinked = assignment.booking.plants.some(item => item.plantId === plant.id);
+    if (alreadyLinked) return res.status(409).json({ error: 'PLANT_ALREADY_ON_VISIT', message: 'This plant is already included in the visit.' });
+    await prisma.$transaction(async tx => {
+      await tx.bookingPlant.create({ data: { bookingId: assignment.booking.id, plantId: plant.id } });
+      await writeAudit(tx, { actorUserId: req.auth.id, action: 'UPDATE', entityType: 'BookingPlant', entityId: assignment.booking.id, metadata: { action: 'ADD_PLANT_TO_VISIT', plantId: plant.id, gardenerId: gardener.id } });
+    });
+    await notifyUserSafely({ userId: assignment.booking.customer.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Visit plant list updated', body: `${plant.name} was added to the plant list for visit ${assignment.booking.reference || ''}. Your plant collection itself was not changed.` });
+    return res.status(201).json({ plant, message: 'Plant added to this visit.' });
+  } catch (error) {
+    if (error?.code === 'P2002') return res.status(409).json({ error: 'PLANT_ALREADY_ON_VISIT', message: 'This plant is already included in the visit.' });
+    next(error);
+  }
+});
+
+router.delete('/jobs/:id/plants/:plantId', async (req, res, next) => {
+  try {
+    const gardener = await getGardener(req.auth.id);
+    const assignment = await getAssignedPlantContext(gardener.id, req.params.id);
+    if (!canEditVisitPlantList(assignment)) return res.status(409).json({ error: 'VISIT_PLANT_LIST_LOCKED', message: 'The plant list can only be adjusted before service work starts.' });
+    const linked = assignment.booking.plants.some(item => item.plantId === req.params.plantId);
+    if (!linked) return res.status(404).json({ error: 'VISIT_PLANT_NOT_FOUND', message: 'This plant is not part of the assigned visit.' });
+    await prisma.$transaction(async tx => {
+      await tx.bookingPlant.deleteMany({ where: { bookingId: assignment.booking.id, plantId: req.params.plantId } });
+      await writeAudit(tx, { actorUserId: req.auth.id, action: 'UPDATE', entityType: 'BookingPlant', entityId: assignment.booking.id, metadata: { action: 'REMOVE_PLANT_FROM_VISIT', plantId: req.params.plantId, gardenerId: gardener.id } });
+    });
+    await notifyUserSafely({ userId: assignment.booking.customer.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Visit plant list updated', body: `A plant was removed from visit ${assignment.booking.reference || ''}. The plant remains in your T-CARE collection.` });
+    return res.status(204).send();
   } catch (error) { next(error); }
 });
 

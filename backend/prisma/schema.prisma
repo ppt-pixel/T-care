@@ -650,6 +650,39 @@ model PlantKnowledge {
   @@index([scientificName])
 }
 
+model Product {
+  id              String                  @id @default(cuid())
+  sku             String                  @unique
+  name            String
+  description     String                  @default("")
+  category        String
+  kind            String?
+  imageUrl        String?
+  potColor        String?
+  price           Decimal                 @db.Decimal(10, 2)
+  compareAtPrice  Decimal?                @db.Decimal(10, 2)
+  stockQuantity   Int                     @default(0)
+  status          ServiceStatus           @default(ACTIVE)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  stockMovements  ProductStockMovement[]
+
+  @@index([status, category, name])
+  @@index([stockQuantity])
+}
+
+model ProductStockMovement {
+  id             String   @id @default(cuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantityChange Int
+  reason         String
+  actorUserId    String?
+  createdAt      DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
 model CmsContent {
   id          String        @id @default(cuid())
   key         String        @unique

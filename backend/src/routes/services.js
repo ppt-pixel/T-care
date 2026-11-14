@@ -57,6 +57,34 @@ router.get('/', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+// Most-booked services are derived only from saved, non-cancelled booking records.
+router.get('/popular', async (req, res, next) => {
+  try {
+    const query = z.object({ range: z.enum(['7d', '30d', 'all']).default('30d') }).parse(req.query);
+    const since = query.range === 'all' ? null : new Date(Date.now() - (query.range === '7d' ? 7 : 30) * 86400000);
+    const grouped = await prisma.booking.groupBy({
+      by: ['serviceId'],
+      where: { status: { not: 'CANCELLED' }, ...(since ? { createdAt: { gte: since } } : {}) },
+      _count: { serviceId: true },
+      orderBy: { _count: { serviceId: 'desc' } },
+      take: 6
+    });
+    const ids = grouped.map(item => item.serviceId);
+    if (!ids.length) return res.json({ services: [], range: query.range, generatedAt: new Date().toISOString() });
+    const now = new Date();
+    const records = await prisma.service.findMany({
+      where: { id: { in: ids }, status: 'ACTIVE' },
+      include: { prices: { where: { effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] }, orderBy: [{ minPlants: 'asc' }, { amount: 'asc' }] } }
+    });
+    const byId = new Map(records.map(item => [item.id, item]));
+    const services = grouped.flatMap(item => {
+      const service = byId.get(item.serviceId);
+      return service ? [{ ...serializeService(service), bookingCount: item._count.serviceId }] : [];
+    });
+    return res.json({ services, range: query.range, generatedAt: new Date().toISOString() });
+  } catch (error) { next(error); }
+});
+
 // Administrative catalog management.
 const admin = Router();
 admin.use(requireAuth, requireRole('ADMIN'));

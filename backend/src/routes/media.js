@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createSignedUploadUrl, createSignedDownloadUrl, removeObject } from '../lib/supabaseStorage.js';
+import { createSignedUploadUrl, createSignedDownloadUrl, removeObject, objectExists } from '../lib/supabaseStorage.js';
+import { assertUploadedObjectExists } from '../lib/mediaUploadRules.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -113,6 +114,7 @@ router.post('/:id/complete', async (req, res, next) => {
     if (!asset) throw fail(404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
     if (asset.ownerUserId !== req.auth.id && req.auth.role !== 'ADMIN') throw fail(403, 'FORBIDDEN', 'You cannot complete this media upload.');
     if (asset.status === 'DELETED') throw fail(410, 'MEDIA_DELETED', 'Media asset has been deleted.');
+    await assertUploadedObjectExists({ objectKey: asset.objectKey, objectExists });
     const updated = await prisma.mediaAsset.update({ where: { id: asset.id }, data: { status: 'UPLOADED' } });
     return res.json({ asset: updated });
   } catch (error) { next(error); }

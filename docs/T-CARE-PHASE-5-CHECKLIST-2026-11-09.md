@@ -1,7 +1,7 @@
 # T-CARE Phase 5 — Completion Checklist
 
-**Build source:** `T-care Final(1).zip` uploaded 9 November 2026.
-**Implementation status:** Phase 5 code changes are included in this build. Live verification against the owner's Supabase project is still required before release.
+**Build source:** `T-care Final(1).zip` uploaded 9 November 2026.  
+**Implementation status:** Phase 5 code changes are included in this build. Live verification against the owner's Supabase project is still required before release.  
 **Excluded:** Payment collection/processing, payment webhooks, refunds, payouts, and payment-dependent subscription billing.
 
 ## Ten requested workstreams

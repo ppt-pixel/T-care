@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { canTransitionBooking } from './bookings.js';
 import { notifyUserSafely } from '../lib/notifications.js';
+import { buildDailyBookingSeries, summarizeFinance } from '../lib/adminMetrics.js';
 
 const router = Router();
 router.use((req, res, next) => {
@@ -28,7 +29,12 @@ function serializeMoney(value) { return value == null ? value : Number(value); }
 // ---------- Dashboard / operational overview ----------
 router.get('/overview', async(req, res, next) => {
     try {
-        const [users, gardeners, customers, activeBookings, pendingKyc, pendingPayments, openIssues, pendingReviews] = await prisma.$transaction([
+        const start = new Date();
+        start.setUTCHours(0, 0, 0, 0);
+        start.setUTCDate(start.getUTCDate() - 13);
+        const [users, gardeners, customers, activeBookings, pendingKyc, pendingPayments, openIssues, pendingReviews,
+            paidAggregate, refundedAggregate, paidPayoutAggregate, pendingPayoutAggregate,
+            activeSubscriptions, pendingSubscriptions, totalBookings, recentBookings] = await prisma.$transaction([
             prisma.user.count(),
             prisma.user.count({ where: { role: 'GARDENER' } }),
             prisma.user.count({ where: { role: 'CUSTOMER' } }),
@@ -36,9 +42,57 @@ router.get('/overview', async(req, res, next) => {
             prisma.gardenerProfile.count({ where: { kycStatus: 'PENDING' } }),
             prisma.payment.count({ where: { status: { in: ['PENDING', 'AUTHORIZED'] } } }),
             prisma.issueReport.count({ where: { status: { in: ['OPEN', 'IN_REVIEW'] } } }),
-            prisma.review.count({ where: { status: 'PENDING' } })
+            prisma.review.count({ where: { status: 'PENDING' } }),
+            prisma.payment.aggregate({ where: { status: { in: ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'] } }, _sum: { amount: true }, _count: { _all: true } }),
+            prisma.refund.aggregate({ where: { status: { in: ['REFUNDED', 'PARTIALLY_REFUNDED'] } }, _sum: { amount: true } }),
+            prisma.payout.aggregate({ where: { status: 'PAID' }, _sum: { amount: true } }),
+            prisma.payout.aggregate({ where: { status: 'PENDING' }, _sum: { amount: true } }),
+            prisma.subscription.count({ where: { status: 'ACTIVE' } }),
+            prisma.subscription.count({ where: { status: 'PENDING' } }),
+            prisma.booking.count(),
+            prisma.booking.findMany({ where: { createdAt: { gte: start } }, select: { createdAt: true, status: true } })
         ]);
-        res.json({ overview: { users, customers, gardeners, activeBookings, pendingKyc, pendingPayments, openIssues, pendingReviews } });
+        const dailyBookings = buildDailyBookingSeries(recentBookings, { days: 14 });
+        const finance = summarizeFinance({
+            grossCollected: paidAggregate._sum.amount,
+            refunded: refundedAggregate._sum.amount,
+            paidPayouts: paidPayoutAggregate._sum.amount,
+            pendingPayouts: pendingPayoutAggregate._sum.amount,
+            paidTransactionCount: paidAggregate._count._all
+        });
+        res.json({ overview: {
+            users, customers, gardeners, activeBookings, pendingKyc, pendingPayments, openIssues, pendingReviews,
+            totalBookings, dailyBookings,
+            finance,
+            subscriptions: { active: activeSubscriptions, pending: pendingSubscriptions }
+        } });
+    } catch (error) { next(error); }
+});
+
+// ---------- Live operational widgets ----------
+router.get('/recent-activities', async(req, res, next) => {
+    try {
+        const query = z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) }).parse(req.query);
+        const logs = await prisma.auditLog.findMany({
+            include: { actor: { select: { id: true, fullName: true, email: true, role: true } } },
+            orderBy: { createdAt: 'desc' }, take: query.limit
+        });
+        res.json({ activities: logs });
+    } catch (error) { next(error); }
+});
+
+router.get('/popular-services', async(req, res, next) => {
+    try {
+        const query = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) }).parse(req.query);
+        const since = new Date(Date.now() - query.days * 86400000);
+        const grouped = await prisma.booking.groupBy({
+            by: ['serviceId'],
+            where: { createdAt: { gte: since }, status: { not: 'CANCELLED' } },
+            _count: { _all: true }, orderBy: { _count: { serviceId: 'desc' } }, take: 8
+        });
+        const services = grouped.length ? await prisma.service.findMany({ where: { id: { in: grouped.map(x => x.serviceId) } }, select: { id: true, name: true, category: true, status: true } }) : [];
+        const byId = new Map(services.map(service => [service.id, service]));
+        res.json({ services: grouped.map(item => ({ ...byId.get(item.serviceId), bookingCount: item._count._all })).filter(item => item.id), days: query.days, generatedAt: new Date().toISOString() });
     } catch (error) { next(error); }
 });
 

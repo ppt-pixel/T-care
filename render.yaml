@@ -4,10 +4,12 @@ services:
     runtime: node
     plan: free
     rootDir: backend
-    buildCommand: npm ci && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run prisma:generate
     startCommand: npm start
     healthCheckPath: /api/v1/health
     envVars:
+      - key: NODE_VERSION
+        value: "22.22.0"
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
@@ -30,6 +32,21 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: T-CARE
+      # Payment mutations/webhooks remain disabled until provider + concurrency tests pass.
+      - key: PAYMENTS_ENABLED
+        value: "false"
+      - key: PAYMENT_PROVIDER
+        value: razorpay
+      - key: BOOKING_CONVENIENCE_FEE
+        value: "0"
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMENT_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
       - key: OTP_TTL_MINUTES
         value: "10"
       - key: OTP_RESEND_COOLDOWN_SECONDS

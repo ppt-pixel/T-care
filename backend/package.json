@@ -13,7 +13,8 @@
     "prisma:format": "prisma format",
     "admin:provision": "node scripts/provision-admin.js",
     "email:verify": "node scripts/verify-smtp.js",
-    "auth:revoke-sessions": "node scripts/revoke-refresh-sessions.js"
+    "auth:revoke-sessions": "node scripts/revoke-refresh-sessions.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
@@ -39,5 +40,8 @@
     "@prisma/engines@6.19.3": true,
     "bcrypt@6.0.0": true,
     "prisma@6.19.3": true
+  },
+  "engines": {
+    "node": ">=22.22.0 <23"
   }
 }

@@ -4,8 +4,10 @@ import { z } from 'zod';
 const schema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(4000),
-    // Supabase PostgreSQL connection string. Use the pooled connection string
-    // recommended by Supabase for server-side/production workloads.
+    // Supabase PostgreSQL connection string. For this long-running Render service
+    // and Prisma CLI, use Supabase Shared Pooler SESSION mode (port 5432), or a
+    // direct IPv6-capable connection. Do not use transaction mode (port 6543)
+    // without adding a separate, tested Prisma CLI connection configuration.
     DATABASE_URL: z.string().min(1),
     // Supabase project URL + new server-only secret API key.
     // Secret keys bypass RLS and must never be exposed to the browser.
@@ -40,6 +42,7 @@ const schema = z.object({
     ADMIN_FULL_NAME: z.preprocess((value) => value === '' ? undefined : value, z.string().trim().min(2).max(100).optional()),
     ADMIN_INITIAL_PASSWORD: z.preprocess((value) => value === '' ? undefined : value, z.string().min(12).max(72).optional()),
     BOOKING_CONVENIENCE_FEE: z.coerce.number().finite().nonnegative().default(0),
+    PAYMENTS_ENABLED: z.preprocess(value => value === true || String(value ?? '').trim().toLowerCase() === 'true', z.boolean()).default(false),
     PAYMENT_PROVIDER: z.enum(['razorpay']).default('razorpay'),
     RAZORPAY_KEY_ID: z.string().min(1).optional(),
     RAZORPAY_KEY_SECRET: z.string().min(1).optional(),

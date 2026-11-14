@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { createSignedDownloadUrl, removeObject } from '../lib/supabaseStorage.js';
+import { notifyUserSafely } from '../lib/notifications.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('CUSTOMER'));
@@ -25,7 +26,8 @@ const plantSchema = z.object({
   type: z.string().trim().max(120).optional(),
   locationInHome: z.string().trim().max(160).optional(),
   notes: z.string().trim().max(2000).optional(),
-  nextCareAt: z.coerce.date().optional()
+  nextCareAt: z.coerce.date().nullable().optional(),
+  healthStatus: z.enum(['EXCELLENT', 'HEALTHY', 'NEEDS_ATTENTION', 'CRITICAL']).optional()
 });
 
 
@@ -181,11 +183,81 @@ router.delete('/plants/:id/photos/:photoId', async (req, res, next) => {
 router.patch('/plants/:id', async (req, res, next) => {
   try {
     const customer = await getCustomer(req.auth.id);
-    const input = plantSchema.partial().parse(req.body);
+    const input = plantSchema.partial().strict().parse(req.body);
     const existing = await prisma.plant.findFirst({ where: { id: req.params.id, customerId: customer.id } });
     if (!existing) return res.status(404).json({ error: 'PLANT_NOT_FOUND', message: 'Plant not found.' });
-    const plant = await prisma.plant.update({ where: { id: existing.id }, data: input });
-    return res.json({ plant });
+
+    const healthChanged = input.healthStatus !== undefined && input.healthStatus !== existing.healthStatus;
+    const notesChanged = input.notes !== undefined && input.notes !== existing.notes;
+    const nextCareChanged = input.nextCareAt !== undefined
+      && (input.nextCareAt?.getTime() ?? null) !== (existing.nextCareAt?.getTime() ?? null);
+    const careReportChanged = healthChanged || notesChanged || nextCareChanged;
+    const activeAssignments = careReportChanged ? await prisma.bookingPlant.findMany({
+      where: {
+        plantId: existing.id,
+        booking: {
+          status: { in: ['GARDENER_ASSIGNED', 'GARDENER_ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'SERVICE_STARTED'] },
+          assignment: { isNot: null }
+        }
+      },
+      select: {
+        booking: {
+          select: {
+            assignment: {
+              select: { gardener: { select: { userId: true } } }
+            }
+          }
+        }
+      }
+    }) : [];
+
+    const plant = await prisma.$transaction(async tx => {
+      const updated = await tx.plant.update({ where: { id: existing.id }, data: input });
+      if (careReportChanged) {
+        const title = healthChanged
+          ? `Customer-reported health: ${input.healthStatus.replaceAll('_', ' ').toLowerCase()}`
+          : 'Customer plant-care update';
+        await tx.plantCareRecord.create({
+          data: {
+            plantId: existing.id,
+            title,
+            notes: input.notes === undefined ? existing.notes ?? null : input.notes,
+            nextCareAt: input.nextCareAt === undefined ? existing.nextCareAt : input.nextCareAt,
+            recordedAt: new Date()
+          }
+        });
+        await tx.auditLog.create({
+          data: {
+            actorUserId: req.auth.id,
+            action: 'UPDATE',
+            entityType: healthChanged ? 'PlantHealth' : 'PlantCareRecord',
+            entityId: existing.id,
+            metadata: {
+              fromHealth: existing.healthStatus,
+              toHealth: input.healthStatus ?? existing.healthStatus,
+              changedFields: Object.keys(input).filter(field => ['healthStatus', 'notes', 'nextCareAt'].includes(field)),
+              source: 'CUSTOMER'
+            }
+          }
+        });
+      }
+      return updated;
+    });
+
+    const gardenerUserIds = [...new Set(activeAssignments.map(row => row.booking.assignment?.gardener?.userId).filter(Boolean))];
+    if (careReportChanged && gardenerUserIds.length) {
+      await Promise.all(gardenerUserIds.map(userId => notifyUserSafely({
+        userId,
+        type: 'PLANT_CARE',
+        channel: 'IN_APP',
+        title: healthChanged ? 'Customer updated plant health' : 'Customer updated plant-care notes',
+        body: healthChanged
+          ? `${plant.name} was updated to ${plant.healthStatus.replaceAll('_', ' ').toLowerCase()}. Review the plant record in the assigned job.`
+          : `The customer updated care observations for ${plant.name}. Review the plant record in the assigned job.`
+      })));
+    }
+
+    return res.json({ plant, careRecordCreated: careReportChanged, assignedGardenersNotified: careReportChanged ? gardenerUserIds.length : 0 });
   } catch (error) { next(error); }
 });
 

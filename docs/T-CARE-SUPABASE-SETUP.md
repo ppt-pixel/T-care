@@ -10,13 +10,13 @@ For now, use the Free plan.
 
 ## 2. Database
 
-Use the project's PostgreSQL database. Copy the server-side connection string from the Supabase Dashboard → Connect and place it in:
+Use the project's PostgreSQL database. For this long-running Render backend and the current Prisma configuration, copy the Supabase **Shared Pooler Session mode** connection string (port `5432`) from Dashboard → Connect. A direct database URI is also valid when the deployment network supports IPv6. Use the session-mode URI for both the application and Prisma CLI; the schema currently has one `DATABASE_URL` and no separate `DIRECT_URL`. Do not use the Shared/Transaction Pooler URI on port `6543` with this configuration.
 
 ```env
-DATABASE_URL="..."
+DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[PASSWORD]@[REGION].pooler.supabase.com:5432/postgres"
 ```
 
-Prisma uses this connection for T-CARE application tables.
+Prisma uses this connection for T-CARE application tables and migration CLI commands. URL-encode special characters in the password when required. Keep the complete URI server-side; never expose it to Vite or the browser.
 
 ## 3. Storage
 

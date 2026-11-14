@@ -19,6 +19,7 @@ import { notFound, errorHandler } from './middleware/error.js';
 import { requestSecurity, createRateLimiter, requireTrustedOrigin } from './middleware/security.js';
 import cmsRouter from './routes/cms.js';
 import analyticsRouter from './routes/analytics.js';
+import productsRouter from './routes/products.js';
 
 export const app = express();
 
@@ -53,6 +54,7 @@ app.use('/api/v1/notifications', notificationsRouter());
 app.use('/api/v1/admin', adminRouter());
 app.use('/api/v1/cms', cmsRouter());
 app.use('/api/v1/analytics', analyticsRouter());
+app.use('/api/v1/products', productsRouter());
 
 app.use(notFound);
 app.use(errorHandler);

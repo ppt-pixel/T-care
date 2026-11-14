@@ -5,6 +5,9 @@ import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { notifyUserSafely } from '../lib/notifications.js';
+import { addBillingPeriod } from '../lib/billingPeriod.js';
+import { serializeCustomerPayment } from '../lib/paymentView.js';
+import { assertPaymentsEnabled } from '../lib/paymentPolicy.js';
 
 const router = Router();
 const provider = 'razorpay';
@@ -31,6 +34,7 @@ function hmacHex(secret, value) {
 }
 
 function requireRazorpayConfig({ webhook = false } = {}) {
+  assertPaymentsEnabled(env.PAYMENTS_ENABLED);
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || (webhook && !env.RAZORPAY_WEBHOOK_SECRET)) {
     throw fail(503, 'PAYMENT_PROVIDER_NOT_CONFIGURED', 'Payment provider is not configured on the server.');
   }
@@ -66,15 +70,6 @@ async function razorpayRequest(path, { method = 'GET', body } = {}) {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function serializePayment(payment) {
-  if (!payment) return null;
-  return {
-    ...payment,
-    amount: Number(payment.amount),
-    refunds: payment.refunds?.map(refund => ({ ...refund, amount: Number(refund.amount) }))
-  };
 }
 
 async function getCustomer(req) {
@@ -162,7 +157,7 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
   const result = await prisma.$transaction(async tx => {
     await tx.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {}, processedAt: new Date() } });
 
-    const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { subscription: { include: { plan: true } } } });
+    const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { subscription: { include: { plan: true, customer: { select: { userId: true } } } } } });
     if (!current) return null;
     if (current.status === 'PAID' && normalizedStatus !== 'PAID') return current;
 
@@ -172,16 +167,17 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
       ...(normalizedStatus === 'PAID' ? { paidAt: current.paidAt ?? new Date() } : {})
     };
     const updated = await tx.payment.update({ where: { id: current.id }, data });
+    let activatedSubscription = null;
 
     if (normalizedStatus === 'PAID' && current.subscriptionId && current.subscription?.status === 'PENDING') {
       const start = new Date();
-      const renews = new Date(start);
-      const cycle = current.subscription.plan.billingCycle.toLowerCase();
-      if (cycle.includes('year')) renews.setUTCFullYear(renews.getUTCFullYear() + 1);
-      else if (cycle.includes('month')) renews.setUTCMonth(renews.getUTCMonth() + 1);
-      else if (cycle.includes('week')) renews.setUTCDate(renews.getUTCDate() + 7);
-      else throw fail(409, 'UNSUPPORTED_BILLING_CYCLE', 'Subscription billing cycle is not supported.');
-      await tx.subscription.update({ where: { id: current.subscriptionId }, data: { status: 'ACTIVE', startedAt: start, renewsAt: renews, cancelledAt: null, pausedAt: null } });
+      const renews = addBillingPeriod(start, current.subscription.plan.billingCycle);
+      if (!renews) throw fail(409, 'UNSUPPORTED_BILLING_CYCLE', 'Subscription billing cycle is not supported.');
+      activatedSubscription = await tx.subscription.update({
+        where: { id: current.subscriptionId },
+        data: { status: 'ACTIVE', startedAt: start, renewsAt: renews, cancelledAt: null, pausedAt: null },
+        include: { plan: true, customer: { select: { userId: true } } }
+      });
     }
 
     await tx.auditLog.create({
@@ -193,13 +189,23 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
         metadata: { eventType, providerStatus, normalizedStatus, providerPaymentId: providerPaymentId ?? null }
       }
     });
-    return updated;
+    return { payment: updated, activatedSubscription };
   });
-  return { payment: result };
+  if (result?.activatedSubscription?.customer?.userId) {
+    await notifyUserSafely({
+      userId: result.activatedSubscription.customer.userId,
+      type: 'SUBSCRIPTION',
+      channel: 'IN_APP',
+      title: 'Subscription activated',
+      body: `${result.activatedSubscription.plan.name} is active. Your next renewal date is ${result.activatedSubscription.renewsAt.toISOString().slice(0, 10)}.`
+    });
+  }
+  return { payment: result?.payment ?? null };
 }
 
 async function verifyClientPayment(req, res, next) {
   try {
+    requireRazorpayConfig();
     const input = z.object({
       razorpayOrderId: z.string().min(1).max(100),
       razorpayPaymentId: z.string().min(1).max(100),
@@ -213,7 +219,7 @@ async function verifyClientPayment(req, res, next) {
     const customer = await getCustomer(req);
     const owns = payment.booking?.customerId === customer.id || payment.subscription?.customerId === customer.id;
     if (!owns) throw fail(403, 'FORBIDDEN', 'You cannot verify this payment.');
-    if (payment.status === 'PAID') return res.json({ payment: serializePayment(payment), verified: true });
+    if (payment.status === 'PAID') return res.json({ payment: serializeCustomerPayment(payment), verified: true });
 
     const expected = hmacHex(env.RAZORPAY_KEY_SECRET ?? '', `${input.razorpayOrderId}|${input.razorpayPaymentId}`);
     if (!timingSafeHexEqual(expected, input.razorpaySignature)) throw fail(400, 'INVALID_PAYMENT_SIGNATURE', 'Payment signature verification failed.');
@@ -223,7 +229,7 @@ async function verifyClientPayment(req, res, next) {
     if (Number(remote.amount) !== amountToPaise(payment.amount) || remote.currency !== payment.currency) throw fail(400, 'PAYMENT_AMOUNT_MISMATCH', 'Paid amount or currency does not match the server payment record.');
 
     const result = await markPaymentFromProvider({ providerOrderId: payment.providerOrderId, providerPaymentId: input.razorpayPaymentId, providerStatus: remote.status, rawEvent: { source: 'client_verification', payment: remote }, eventType: `client.payment.${remote.status}` });
-    return res.json({ payment: serializePayment(result.payment), verified: result.payment?.status === 'PAID' });
+    return res.json({ payment: serializeCustomerPayment(result.payment), verified: result.payment?.status === 'PAID' });
   } catch (error) { next(error); }
 }
 
@@ -301,6 +307,7 @@ customer.use(requireAuth, requireRole('CUSTOMER'));
 
 customer.post('/booking/:bookingId/order', async (req, res, next) => {
   try {
+    requireRazorpayConfig();
     const idempotencyKey = req.get('Idempotency-Key');
     if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) throw fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'A valid Idempotency-Key header is required.');
     const customerProfile = await getCustomer(req);
@@ -311,12 +318,13 @@ customer.post('/booking/:bookingId/order', async (req, res, next) => {
     const { payment } = await findOrCreatePayment({ req, target: { type: 'BOOKING', id: booking.id }, amount: booking.total, idempotencyKey });
     const orderId = await createProviderOrder(payment, `TC-${booking.reference}-${payment.id}`);
     const latest = await prisma.payment.findUnique({ where: { id: payment.id }, include: { refunds: true } });
-    return res.status(200).json({ payment: serializePayment(latest), checkout: { keyId: env.RAZORPAY_KEY_ID, orderId, amount: amountToPaise(latest.amount), currency: latest.currency } });
+    return res.status(200).json({ payment: serializeCustomerPayment(latest), checkout: { keyId: env.RAZORPAY_KEY_ID, orderId, amount: amountToPaise(latest.amount), currency: latest.currency } });
   } catch (error) { next(error); }
 });
 
 customer.post('/subscription/:subscriptionId/order', async (req, res, next) => {
   try {
+    requireRazorpayConfig();
     const idempotencyKey = req.get('Idempotency-Key');
     if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) throw fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'A valid Idempotency-Key header is required.');
     const customerProfile = await getCustomer(req);
@@ -327,7 +335,7 @@ customer.post('/subscription/:subscriptionId/order', async (req, res, next) => {
     const { payment } = await findOrCreatePayment({ req, target: { type: 'SUBSCRIPTION', id: subscription.id }, amount: subscription.plan.price, idempotencyKey });
     const orderId = await createProviderOrder(payment, `TC-SUB-${subscription.id}-${payment.id}`);
     const latest = await prisma.payment.findUnique({ where: { id: payment.id }, include: { refunds: true } });
-    return res.status(200).json({ payment: serializePayment(latest), checkout: { keyId: env.RAZORPAY_KEY_ID, orderId, amount: amountToPaise(latest.amount), currency: latest.currency } });
+    return res.status(200).json({ payment: serializeCustomerPayment(latest), checkout: { keyId: env.RAZORPAY_KEY_ID, orderId, amount: amountToPaise(latest.amount), currency: latest.currency } });
   } catch (error) { next(error); }
 });
 
@@ -336,17 +344,32 @@ customer.post('/:id/verify', verifyClientPayment);
 customer.get('/', async (req, res, next) => {
   try {
     const customerProfile = await getCustomer(req);
-    const payments = await prisma.payment.findMany({ where: { OR: [{ booking: { customerId: customerProfile.id } }, { subscription: { customerId: customerProfile.id } }] }, include: { refunds: true }, orderBy: { createdAt: 'desc' } });
-    return res.json({ payments: payments.map(serializePayment) });
+    const payments = await prisma.payment.findMany({
+      where: { OR: [{ booking: { customerId: customerProfile.id } }, { subscription: { customerId: customerProfile.id } }] },
+      include: {
+        refunds: { select: { id: true, amount: true, reason: true, status: true, createdAt: true, processedAt: true } },
+        booking: { select: { reference: true, service: { select: { name: true } } } },
+        subscription: { select: { plan: { select: { name: true, billingCycle: true } } } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json({ payments: payments.map(serializeCustomerPayment) });
   } catch (error) { next(error); }
 });
 
 customer.get('/:id', async (req, res, next) => {
   try {
     const customerProfile = await getCustomer(req);
-    const payment = await prisma.payment.findFirst({ where: { id: req.params.id, OR: [{ booking: { customerId: customerProfile.id } }, { subscription: { customerId: customerProfile.id } }] }, include: { refunds: true } });
+    const payment = await prisma.payment.findFirst({
+      where: { id: req.params.id, OR: [{ booking: { customerId: customerProfile.id } }, { subscription: { customerId: customerProfile.id } }] },
+      include: {
+        refunds: { select: { id: true, amount: true, reason: true, status: true, createdAt: true, processedAt: true } },
+        booking: { select: { reference: true, service: { select: { name: true } } } },
+        subscription: { select: { plan: { select: { name: true, billingCycle: true } } } }
+      }
+    });
     if (!payment) throw fail(404, 'PAYMENT_NOT_FOUND', 'Payment not found.');
-    return res.json({ payment: serializePayment(payment) });
+    return res.json({ payment: serializeCustomerPayment(payment) });
   } catch (error) { next(error); }
 });
 
@@ -355,6 +378,7 @@ admin.use(requireAuth, requireRole('ADMIN'));
 
 admin.post('/:id/refund', async (req, res, next) => {
   try {
+    requireRazorpayConfig();
     const idempotencyKey = req.get('Idempotency-Key');
     if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) throw fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'A valid Idempotency-Key header is required.');
     const input = z.object({ amount: z.number().positive().finite().optional(), reason: z.string().trim().max(1000).optional() }).strict().parse(req.body ?? {});

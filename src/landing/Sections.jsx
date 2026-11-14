@@ -1,18 +1,19 @@
 import React from 'react';
 import {motion,AnimatePresence} from 'framer-motion';
 import {Link} from 'react-router-dom';
-import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Smartphone,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2} from 'lucide-react';
+import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2} from 'lucide-react';
 import HeroPlant from '../HeroPlant.jsx';
 import {ProductSvg,ShowcaseArt,TransformScene} from './Scenes.jsx';
 import * as C from './content.js';
+import { usePublicList } from './publicData.js';
 import './landing.css';
 
 /* ---------- small helpers ---------- */
-const money=n=>'₹'+n.toLocaleString('en-IN');
-const L=({to,children,className,onClick,toast})=>to==='soon'
-  ?<button type="button" className={className} onClick={()=>toast?.('This page is coming soon.')}>{children}</button>
-  :to.startsWith('#')?<a href={to} className={className} onClick={onClick}>{children}</a>:<Link to={to} className={className} onClick={onClick}>{children}</Link>;
-const LBtn=({to,children,variant='gold',onClick,toast,full})=>{const c=`lb lb-${variant}${full?' full':''}`;return to?<L to={to} className={c} toast={toast} onClick={onClick}>{children}</L>:<button type="button" className={c} onClick={onClick}>{children}</button>};
+const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
+const L=({to,children,className,onClick})=>to.startsWith('#')
+  ?<a href={to} className={className} onClick={onClick}>{children}</a>
+  :<Link to={to} className={className} onClick={onClick}>{children}</Link>;
+const LBtn=({to,children,variant='gold',onClick,full})=>{const c=`lb lb-${variant}${full?' full':''}`;return to?<L to={to} className={c} onClick={onClick}>{children}</L>:<button type="button" className={c} onClick={onClick}>{children}</button>};
 const Reveal=({children,delay=0,className='',as='div'})=>{const M=motion[as];return <M className={className} initial={{opacity:0,y:28}} whileInView={{opacity:1,y:0}} viewport={{once:true,margin:'-40px'}} transition={{duration:.6,delay,ease:[.22,1,.36,1]}}>{children}</M>};
 const Head=({eyebrow,children,sub,center,light})=><div className={'lhead'+(center?' c':'')+(light?' light':'')}><i className="lline"/><span className="eyebrow">{eyebrow}</span><h2>{children}</h2>{sub&&<p>{sub}</p>}</div>;
 const ICON={health:Stethoscope,water:Droplets,prune:Scissors,pest:Bug,soil:Sprout,pin:MapPin,calendar:CalendarDays,leaf:Leaf,shield:ShieldCheck,star:Star,sprout:Sprout,heart:Heart};
@@ -34,7 +35,7 @@ export function useCart(toast){
   // stable identity until the cart really changes, so unrelated context updates don't re-render every cart consumer
   return React.useMemo(()=>({items,add,setQty,open,setOpen,count:items.reduce((n,x)=>n+x.qty,0),total:items.reduce((n,x)=>n+x.qty*x.price,0)}),[items,add,setQty,open]);
 }
-export function CartDrawer({cart,toast}){
+export function CartDrawer({cart}){
   React.useEffect(()=>{if(!cart.open)return;const k=e=>e.key==='Escape'&&cart.setOpen(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[cart.open]);
   return <AnimatePresence>{cart.open&&<>
     <motion.div key="ov" className="ld-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>cart.setOpen(false)}/>
@@ -42,24 +43,21 @@ export function CartDrawer({cart,toast}){
       <div className="ld-head"><h3>Your cart <small>({cart.count})</small></h3><button className="ib" onClick={()=>cart.setOpen(false)} aria-label="Close cart"><X size={17}/></button></div>
       {cart.items.length?<>
         <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label="Decrease"><Minus size={13}/></button><i>{x.qty}</i><button onClick={()=>cart.setQty(x.id,x.qty+1)} aria-label="Increase"><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
-        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><LBtn variant="dark" full onClick={()=>toast?.('Checkout connects with the backend later.')}>Checkout</LBtn><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
+        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Checkout and order fulfilment are not enabled yet. Your cart is saved for browsing.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
       </>:<div className="cart-empty"><ShoppingBag size={34}/><p>Your cart is empty.</p><LBtn variant="gold" to="#market" onClick={()=>cart.setOpen(false)}>Browse the market</LBtn></div>}
     </motion.aside></>}</AnimatePresence>;
 }
 
 /* ---------- navigation ---------- */
-export function LandingNav({theme,toggleTheme,cart,toast}){
+export function LandingNav({theme,toggleTheme,cart}){
   const [menu,setMenu]=React.useState(false);
   React.useEffect(()=>{if(!menu)return;const k=e=>e.key==='Escape'&&setMenu(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[menu]);
-  const app=()=>toast?.('The T-Care app is coming soon.');
   return <>
     <header className="lnav2">
       <Link to="/" className="brand"><Leaf size={20}/><b>T-CARE</b></Link>
       <nav className="ln-links" aria-label="Main">{C.NAV_LINKS.map(([t,to])=><L key={t} to={to}>{t}</L>)}</nav>
       <div className="ln-right">
         <Link to="/garden/shop" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
-        <button className="ln-pill ln-store" onClick={app}><Smartphone size={13}/>App Store</button>
-        <button className="ln-pill ln-store" onClick={app}><Smartphone size={13}/>Play Store</button>
         <button className="ib" onClick={toggleTheme} aria-label="Toggle theme">{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</button>
         <button className="ib ln-cart" onClick={()=>cart.setOpen(true)} aria-label={`Open cart, ${cart.count} items`}><ShoppingBag size={17}/>{cart.count>0&&<i>{cart.count}</i>}</button>
         <Link to="/login" className="tl ln-sign">Sign in</Link>
@@ -71,7 +69,7 @@ export function LandingNav({theme,toggleTheme,cart,toast}){
       <motion.aside key="mn" className="ld-panel menu" role="dialog" aria-label="Menu" initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'tween',duration:.35,ease:[.22,1,.36,1]}}>
         <div className="ld-head"><span className="brand"><Leaf size={18}/><b>T-CARE</b></span><button className="ib" onClick={()=>setMenu(false)} aria-label="Close menu"><X size={17}/></button></div>
         <nav className="menu-links">{C.NAV_LINKS.map(([t,to],i)=><motion.div key={t} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} transition={{delay:.08+i*.05}}><L to={to} onClick={()=>setMenu(false)}>{t}<ArrowUpRight size={17}/></L></motion.div>)}</nav>
-        <div className="menu-foot"><LBtn to="/garden/shop" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn><div className="two"><button className="ln-pill ln-store" onClick={app}><Smartphone size={13}/>App Store</button><button className="ln-pill ln-store" onClick={app}><Smartphone size={13}/>Play Store</button></div><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn></div>
+        <div className="menu-foot"><LBtn to="/garden/shop" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn></div>
       </motion.aside></>}</AnimatePresence>
   </>;
 }
@@ -99,9 +97,9 @@ function HeroImpl({theme}){
       <div className="h2-stats">{C.HERO_STATS.map(([ic,v,l],k)=>{const I=ICON[ic]||Star;return <motion.div key={l} className="h2-stat" initial={{opacity:0,y:18}} animate={{opacity:1,y:0}} transition={{delay:.9+k*.08}}><I size={14}/><b>{v}</b><span>{l}</span></motion.div>})}</div>
     </div>
     <div className="art"><HeroPlant theme={theme}/>
-      <motion.div className="tag t1" animate={{y:[0,-8,0]}} transition={{repeat:Infinity,duration:4}}><Droplets size={16}/>Next watering <b>Today, 6 PM</b></motion.div>
-      <motion.div className="tag t2" animate={{y:[0,8,0]}} transition={{repeat:Infinity,duration:5}}><Heart size={16}/>Plant health <b>Thriving 96%</b></motion.div>
-      <motion.div className="tag t3" animate={{y:[0,-6,0]}} transition={{repeat:Infinity,duration:6}}><Sun size={16}/>Light <b>Bright · indirect</b></motion.div>
+      <motion.div className="tag t1" animate={{y:[0,-8,0]}} transition={{repeat:Infinity,duration:4}}><Droplets size={16}/>Care notes <b>After each visit</b></motion.div>
+      <motion.div className="tag t2" animate={{y:[0,8,0]}} transition={{repeat:Infinity,duration:5}}><Heart size={16}/>Plant health <b>Tracked in your account</b></motion.div>
+      <motion.div className="tag t3" animate={{y:[0,-6,0]}} transition={{repeat:Infinity,duration:6}}><Sun size={16}/>Care tips <b>For each plant</b></motion.div>
     </div>
   </section>;
 }
@@ -121,57 +119,61 @@ function WhyChooseImpl(){
         <ShowcaseArt kind={s.kind}/><div className="why-cap"><b>{s.title}</b><span>{s.text}</span></div>
       </motion.div></AnimatePresence>
       <div className="why-dots" role="tablist" aria-label="Highlights">{C.WHY.map((x,k)=><button key={x.kind} role="tab" aria-selected={k===i} aria-label={x.title} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
-      <div className="why-badge"><b>4.9/5</b><span>User satisfaction</span></div>
+      <div className="why-badge"><b>Care records</b><span>Linked to your garden</span></div>
     </div>
   </section>;
 }
 
 /* ---------- what every visit includes ---------- */
 function IncludedImpl(){
-  return <section className="lsec incl"><Head center eyebrow="Every visit includes" sub="One expert visit covers everything below.">Care that goes <em>beyond watering</em></Head>
+  return <section className="lsec incl"><Head center eyebrow="Care areas" sub="The actual scope depends on the service and the booking confirmed with T-Care.">Thoughtful care for <em>your plants</em></Head>
     <div className="incl-grid">{C.INCLUDED.map(([ic,t,d],i)=>{const I=ICON[ic];return <Reveal key={t} delay={i*.06} className="incl-card"><span className="ic"><I size={20}/></span><h3>{t}</h3><p>{d}</p></Reveal>})}</div></section>;
 }
 
 /* ---------- three steps ---------- */
 function StepsImpl(){
-  return <section className="lsec steps2" id="how"><Head center eyebrow="How it works">Three quiet <em>steps.</em></Head>
+  return <section className="lsec steps2" id="how"><Head center eyebrow="How bookings work">Three clear <em>steps.</em></Head>
     <div className="steps2-grid">{C.STEPS.map(([ic,t,d],i)=>{const I=ICON[ic];return <Reveal key={t} delay={i*.1} className={'step-card'+(i===1?' dark':'')}><span className="step-pill"><i/>Step 0{i+1}</span><span className="step-ic"><I size={22}/></span><h3>{t}</h3><p>{d}</p></Reveal>})}</div></section>;
 }
 
 /* ---------- not sure which service ---------- */
-export function ServiceBanner({services}){
-  const rows=[['Plant Care','Routine care, pruning and nourishment','Popular'],['Maintenance','Reliable recurring care for your collection','Best value'],['Plant Setup','Create a healthy green space from scratch','Custom']];
+export function ServiceBanner({services=[]}){
+  const {items:popular,loading,error,retry}=usePublicList('/services/popular?range=30d','services');
+  if(!loading&&!error&&!popular.length)return null;
   return <section className="lsec nsure"><Reveal className="nsure-card">
-    <div><h2>Not sure where <em>to start?</em></h2><p>Explore all {services.length} services, compare what each one covers and find the right fit before you book.</p></div>
-    <div className="nsure-side"><div className="nsure-rows">{rows.map(([t,d,b])=><div key={t}><i/><div><b>{t}</b><span>{d}</span></div><em>{b}</em></div>)}</div>
-      <div className="nsure-cta"><LBtn to="/garden/shop" variant="mint">See all {services.length} services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="glass">Book a visit</LBtn></div></div>
+    <div><h2>Popular with <em>plant parents</em></h2><p>Service highlights are calculated from saved, non-cancelled bookings over the last 30 days.</p></div>
+    <div className="nsure-side">
+      {loading&&!popular.length?<div className="public-state">Loading booking trends…</div>:null}
+      {error&&!popular.length?<div className="public-state" role="alert"><p>Popular services are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
+      {!!popular.length&&<div className="nsure-rows">{popular.slice(0,3).map(item=><div key={item.id}><i/><div><b>{item.name}</b><span>{item.description}</span></div><em>{item.bookingCount} bookings</em></div>)}</div>}
+      <div className="nsure-cta"><LBtn to="/services" variant="mint">Browse active services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="glass">Book a visit</LBtn></div>
+    </div>
   </Reveal></section>;
 }
 
 /* ---------- plans ---------- */
 export function Plans(){
+  const {items:plans,loading,error,retry}=usePublicList('/subscriptions/plans','plans');
   return <section className="lsec plans" id="plans"><Head center eyebrow="Plans & pricing">Care plans that <em>grow with you</em></Head>
-    <div className="plan-grid">{C.PLANS.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(p.dark?' dark':'')}>
-      <small>{p.tag}</small><h3>{p.name}</h3><p>{p.blurb}</p>
-      {p.features.length>0&&<ul>{p.features.map(f=><li key={f}><Leaf size={13}/>{f}</li>)}</ul>}
-      <div className="plan-price"><b>{money(p.price)}</b><span>{p.per}</span></div>
-      <LBtn to={p.to} variant={p.dark?'gold':'dark'} full>{p.cta} <ArrowRight size={14}/></LBtn></Reveal>)}</div>
-    <div className="plan-more"><LBtn to="/garden/plan" variant="outline">Explore subscriptions</LBtn></div></section>;
+    {loading&&!plans.length?<div className="public-state" role="status">Loading current subscription plans…</div>:null}
+    {error&&!plans.length?<div className="public-state" role="alert"><p>Live subscription plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
+    {!loading&&!error&&!plans.length?<div className="public-state"><p>No active subscription plans are published yet.</p><span>Check back after the T-Care team publishes its plans.</span></div>:null}
+    {!!plans.length&&<div className="plan-grid">{plans.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(i===1?' dark':'')}>
+      <small>Subscription</small><h3>{p.name}</h3><p>{p.description||'A T-Care plan for your plant collection.'}</p>
+      <ul><li><Leaf size={13}/>{p.billingCycle} billing cycle</li>{p.plantLimit==null?<li><Leaf size={13}/>Plant limit set with the care team</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
+      <div className="plan-price"><b>{money(p.price)}</b><span>/ {p.billingCycle}</span></div>
+      <LBtn to="/garden/plan" variant={i===1?'gold':'dark'} full>Request this plan <ArrowRight size={14}/></LBtn>
+    </Reveal>)}</div>}
+    <p className="catalog-note">Plan requests are recorded in your account. Online payment is not enabled in this catalogue flow; a request remains pending until payment is verified.</p>
+    <div className="plan-more"><LBtn to="/garden/plan" variant="outline">Open your subscription account</LBtn></div></section>;
 }
 
-/* ---------- mid-page call to action ---------- */
-function CtaCardImpl({toast}){
-  return <section className="lsec cta1"><Reveal className="cta-card"><Leaf className="cta-leaf a" size={120} strokeWidth={.8}/><Leaf className="cta-leaf b" size={80} strokeWidth={.8}/>
-    <h2>Ready for happier, <em>healthier plants?</em></h2><p>Book a visit in minutes and let a verified gardener take it from there.</p>
-    <div className="cta-btns"><LBtn to="/garden/book" variant="gold">Book now <ArrowRight size={15}/></LBtn><WaBtn toast={toast} variant="outline">Chat with us</WaBtn></div></Reveal></section>;
-}
-function WaBtn({toast,children,variant='outline'}){
-  const href=C.WHATSAPP_NUMBER?`https://wa.me/${C.WHATSAPP_NUMBER}`:null;
-  return href?<a className={`lb lb-${variant}`} href={href} target="_blank" rel="noreferrer"><MessageCircle size={15}/>{children}</a>
-    :<button type="button" className={`lb lb-${variant}`} onClick={()=>toast?.('Add your WhatsApp number in landing/content.js to enable chat.')}><MessageCircle size={15}/>{children}</button>;
+function WaBtn({children,variant='outline'}){
+  const href=/^[1-9]\d{7,14}$/.test(C.WHATSAPP_NUMBER)?`https://wa.me/${C.WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello T-Care, I would like to know more about your plant care services.')}`:null;
+  return href?<a className={`lb lb-${variant}`} href={href} target="_blank" rel="noreferrer"><MessageCircle size={15}/>{children}</a>:null;
 }
 
-/* ---------- real transformations ---------- */
+/* ---------- illustrative makeover concepts (not customer project photos) ---------- */
 export function Transformations(){
   const [i,setI]=React.useState(0),[hold,setHold]=React.useState(false);
   React.useEffect(()=>{if(hold||reduceMotion())return;const id=setInterval(()=>setI(n=>(n+1)%C.TRANSFORMS.length),5200);return()=>clearInterval(id)},[hold]);
@@ -183,7 +185,7 @@ export function Transformations(){
       <div className="trans-dots">{C.TRANSFORMS.map((x,k)=><button key={x.id} aria-label={x.tab} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
       <div className="trans-thumbs">{C.TRANSFORMS.map((x,k)=><button key={x.id} className={k===i?'on':''} onClick={()=>setI(k)}><span className="thumb-art"><TransformScene id={x.id}/></span><em>{x.tab}</em></button>)}</div>
     </div>
-    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See how plants change a balcony, a living room or a terrace — one thoughtful makeover at a time.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Makeovers from ₹3,499</span><LBtn to="/garden/shop" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
+    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See how plants change a balcony, a living room or a terrace — one thoughtful makeover at a time.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative makeover concepts</span><LBtn to="/garden/shop" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
   </div></section>;
 }
 
@@ -200,45 +202,71 @@ function Row({children,label}){
   return <div className="row-wrap"><button className="row-arrow l" onClick={()=>go(-1)} aria-label={`Previous ${label}`}><ChevronLeft size={17}/></button><div className="row-track" ref={ref} tabIndex={0} aria-label={label}>{children}</div><button className="row-arrow r" onClick={()=>go(1)} aria-label={`Next ${label}`}><ChevronRight size={17}/></button></div>;
 }
 export function Market({cart}){
-  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Healthy plants, handsome pots and everyday essentials.">Everything your <em>plants</em> need</Head><LBtn to="/garden/shop" variant="outline">Explore marketplace</LBtn></div>
-    <Row label="products">{C.PRODUCTS.map(p=><article className="pcard" key={p.id}><span className="off">{p.off}% OFF</span><div className="pimg"><ProductSvg kind={p.kind} pot={p.pot}/></div><div className="pbody"><small>{p.cat}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b><s>{money(p.mrp)}</s></div><button className="add" onClick={()=>cart.add(p)}>Add to Cart</button></div></div></article>)}</Row></section>;
+  const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
+  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Plants and essentials listed in the live product catalogue.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
+    {loading&&!products.length?<div className="public-state">Loading current products…</div>:null}
+    {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
+    {!loading&&!error&&!products.length?<div className="public-state">No products are currently listed.</div>:null}
+    {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
+  </section>;
+}
+
+export function ProductArt({product}){
+  const [failed,setFailed]=React.useState(false);
+  return <div className="pimg">{product.imageUrl&&!failed?<img src={product.imageUrl} alt={product.name} loading="lazy" onError={()=>setFailed(true)}/>:<ProductSvg kind={product.kind||'snake'} pot={product.potColor||'#e8e1d2'}/>}</div>;
 }
 function ReviewsImpl(){
-  return <section className="lsec reviews"><Head center eyebrow="Kind words">Loved by <em>plant parents in Ahmedabad</em></Head>
-    <Row label="reviews">{C.REVIEWS.map(r=><figure className="review" key={r.n}><div className="stars" aria-label={`${r.s} out of 5`}>{[0,1,2,3,4].map(k=><Star key={k} size={13} className={k<r.s?'on':''}/>)}</div><blockquote>“{r.t}”</blockquote><figcaption><span className="av">{r.n[0]}</span><div><b>{r.n}</b><small>{r.a}</small></div></figcaption></figure>)}</Row></section>;
+  const {items:reviews,loading,error,retry}=usePublicList('/reviews-issues/public','reviews');
+  return <section className="lsec reviews"><Head center eyebrow="Published customer feedback">Experiences shared by <em>T-Care customers</em></Head>
+    {loading&&!reviews.length?<div className="public-state">Loading published reviews…</div>:null}
+    {error&&!reviews.length?<div className="public-state" role="alert"><p>Published reviews are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
+    {!loading&&!error&&!reviews.length?<div className="public-state">Customer reviews will appear here after they are approved for publication.</div>:null}
+    {!!reviews.length&&<Row label="published customer reviews">{reviews.map(r=><figure className="review" key={r.id}><div className="stars" aria-label={`${r.rating} out of 5`}>{[0,1,2,3,4].map(k=><Star key={k} size={13} className={k<r.rating?'on':''}/>)}</div>
+      {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Rated this completed T-Care service.</blockquote>}
+      <figcaption><span className="av">T</span><div><b>T-Care customer</b><small>{r.booking?.service?.name||'Completed service'}{r.booking?.assignment?.gardener?.user?.fullName?` · Gardener ${r.booking.assignment.gardener.user.fullName}`:''}</small><small>{new Date(r.createdAt).toLocaleDateString('en-IN')}</small></div></figcaption></figure>)}</Row>}
+  </section>;
 }
 
 /* ---------- final call to action + footer ---------- */
-function FinalCtaImpl({toast}){
-  return <section className="lsec cta2"><Reveal className="cta2-card"><div><span className="eyebrow">Let’s get growing</span><h2>Give your plants a <em>happier home</em></h2></div><div className="cta-btns"><LBtn to="/garden/book" variant="gold">Book now <ArrowRight size={15}/></LBtn><WaBtn toast={toast} variant="outline">WhatsApp us</WaBtn></div></Reveal></section>;
+function FinalCtaImpl(){
+  return <section className="lsec cta2"><Reveal className="cta2-card"><div><span className="eyebrow">Let’s get growing</span><h2>Give your plants a <em>happier home</em></h2></div><div className="cta-btns"><LBtn to="/garden/book" variant="gold">Book now <ArrowRight size={15}/></LBtn><WaBtn variant="outline">WhatsApp us</WaBtn></div></Reveal></section>;
 }
-function SiteFooterImpl({toast}){
+function safeSocialUrl(value){
+  try{
+    const url=new URL(String(value||''));
+    return url.protocol==='https:'?url.href:null;
+  }catch{return null;}
+}
+const SOCIAL_LINKS=Object.entries({
+  instagram:import.meta.env.VITE_INSTAGRAM_URL,
+  youtube:import.meta.env.VITE_YOUTUBE_URL,
+  facebook:import.meta.env.VITE_FACEBOOK_URL,
+  linkedin:import.meta.env.VITE_LINKEDIN_URL
+}).map(([name,value])=>({name,url:safeSocialUrl(value)})).filter(item=>item.url&&Social[item.name]);
+function SiteFooterImpl(){
   return <footer className="lfoot"><div className="lfoot-top">
-    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Plant care, thoughtfully delivered. Verified gardeners, living care records and gentle reminders.</p>
-      <div className="socials">{Object.entries(Social).map(([k,v])=><button key={k} onClick={()=>toast?.('Social links go live once your accounts are added.')} aria-label={k}>{v}</button>)}<button onClick={()=>toast?.('Add your WhatsApp number in landing/content.js to enable chat.')} aria-label="whatsapp"><MessageCircle size={17}/></button></div></div>
-    <div className="lfoot-cols">{C.FOOTER_COLS.map(([h,ls])=><div key={h}><h5>{h}</h5>{ls.map(([t,to])=><L key={t} to={to} toast={toast}>{t}</L>)}</div>)}</div></div>
+    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Plant-care services, verified Gardener profiles and living care records in one place.</p>
+      {SOCIAL_LINKS.length>0&&<div className="socials">{SOCIAL_LINKS.map(({name,url})=><a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{Social[name]}</a>)}</div>}</div>
+    <div className="lfoot-cols">{C.FOOTER_COLS.map(([heading,links])=><div key={heading}><h5>{heading}</h5>{links.map(([label,to])=><L key={label} to={to}>{label}</L>)}</div>)}</div></div>
     <div className="lfoot-bot"><span>© {new Date().getFullYear()} T-Care. All rights reserved.</span><span>Made with care for plants and the people who love them.</span></div></footer>;
 }
 
 /* ---------- floating WhatsApp button ---------- */
-function WhatsAppFabImpl({toast}){
-  const href=C.WHATSAPP_NUMBER?`https://wa.me/${C.WHATSAPP_NUMBER}`:null;
-  const inner=<><i className="fab-ring"/><MessageCircle size={26}/></>;
-  return href?<a className="fab" href={href} target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp">{inner}</a>
-    :<button className="fab" onClick={()=>toast?.('Add your WhatsApp number in landing/content.js to enable chat.')} aria-label="Chat on WhatsApp">{inner}</button>;
+function WhatsAppFabImpl(){
+  const href=/^[1-9]\d{7,14}$/.test(C.WHATSAPP_NUMBER)?`https://wa.me/${C.WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello T-Care, I would like to know more about your plant care services.')}`:null;
+  if(!href)return null;
+  return <a className="fab" href={href} target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp"><i className="fab-ring"/><MessageCircle size={26}/></a>;
 }
 
 
 /* shared building blocks reused by the standalone pages (landing/Pages.jsx) */
 export {L,LBtn,Reveal,Head,ICON,money,Row,WaBtn};
 
-/* Memoised exports: these sections only depend on `theme`/`toast` (both referentially stable), so cart/toast/plant
-   context updates no longer re-render the whole landing tree (incl. the large HeroPlant SVG). */
+/* Memoised exports keep the public landing tree stable during local cart and theme updates. */
 export const Hero=React.memo(HeroImpl);
 export const WhyChoose=React.memo(WhyChooseImpl);
 export const Included=React.memo(IncludedImpl);
 export const Steps=React.memo(StepsImpl);
-export const CtaCard=React.memo(CtaCardImpl);
 export const Reviews=React.memo(ReviewsImpl);
 export const FinalCta=React.memo(FinalCtaImpl);
 export const SiteFooter=React.memo(SiteFooterImpl);

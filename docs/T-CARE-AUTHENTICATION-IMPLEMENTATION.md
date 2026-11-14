@@ -42,7 +42,7 @@ Set:
 - `ADMIN_FULL_NAME` (defaults to `T-CARE Administrator` if omitted)
 - `ADMIN_INITIAL_PASSWORD` (optional; if omitted, the CLI generates a cryptographically random one-time password and prints it once)
 
-Run `npm run admin:provision`. The script refuses to elevate an existing non-admin account and will not overwrite an existing account/password. Store the generated password securely. A self-service password-change endpoint must be completed and verified before production launch.
+Run `npm run admin:provision`. The script refuses to elevate an existing non-admin account and will not overwrite an existing account/password. Store the generated password securely. The authenticated password-change API exists below, but the current Customer/Gardener/Admin profile UI does not yet expose a password-change form; add and test that UI before public launch.
 
 ## Change password
 
@@ -55,7 +55,7 @@ Run `npm run admin:provision`. The script refuses to elevate an existing non-adm
 }
 ```
 
-The new password must be at least 12 characters. Existing refresh sessions are revoked and a fresh session is issued.
+The new password must be at least 12 characters. Existing refresh sessions are revoked and a fresh session is issued. This endpoint is API-only in the current frontend. A forgotten-password/email recovery flow is not implemented.
 
 ## API contracts
 
