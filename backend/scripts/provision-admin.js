@@ -19,6 +19,9 @@ async function provisionAdmin() {
       throw new Error('The configured ADMIN_EMAIL already belongs to a non-admin account. No changes were made.');
     }
     console.log('An account with this email already has the ADMIN role. No changes were made.');
+    if (ADMIN_INITIAL_PASSWORD) {
+      console.log('The configured initial password is not applied to existing accounts. Use npm run admin:reset-password for an explicit reset.');
+    }
     return;
   }
 

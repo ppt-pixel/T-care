@@ -66,6 +66,14 @@ npm run admin:provision
 
 The CLI creates a verified ACTIVE ADMIN account only when that email does not already exist. If the email already belongs to a Customer or Gardener, provisioning stops without changing the account. Public registration cannot create Admin users. Do not commit or share the `.env` file.
 
+Provisioning never changes an existing account's password. To explicitly reset an existing Admin account, set `ADMIN_EMAIL` and `ADMIN_RESET_PASSWORD` privately in `backend/.env`, then run:
+
+```bash
+npm run admin:reset-password
+```
+
+The command refuses non-Admin accounts, stores a bcrypt hash, revokes active refresh sessions and records an audit event. It does not print the password. Remove `ADMIN_RESET_PASSWORD` from the environment after use. Passwords must be at least 12 characters and no more than 72 UTF-8 bytes.
+
 
 ## Revoke exposed test sessions
 

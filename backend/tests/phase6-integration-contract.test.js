@@ -167,6 +167,19 @@ test('session bootstrap and refresh treat guests or stale cookies as normal unau
   assert.match(frontend, /response\.status===401\|\|payload\?\.refreshRequired/);
 });
 
+test('Admin password reset is explicit, role-checked, audited and revokes refresh sessions', () => {
+  const reset = read('backend/scripts/reset-admin-password.js');
+  const env = read('backend/src/config/env.js');
+  const packageJson = JSON.parse(read('backend/package.json'));
+  assert.equal(packageJson.scripts['admin:reset-password'], 'node scripts/reset-admin-password.js');
+  assert.match(env, /ADMIN_RESET_PASSWORD:/);
+  assert.match(reset, /existing\.role !== 'ADMIN'/);
+  assert.match(reset, /Buffer\.byteLength\(ADMIN_RESET_PASSWORD, 'utf8'\) > 72/);
+  assert.match(reset, /refreshSession\.updateMany/);
+  assert.match(reset, /ADMIN_PASSWORD_RESET_BY_CLI/);
+  assert.doesNotMatch(reset, /console\.log\(\s*ADMIN_RESET_PASSWORD\s*\)/);
+});
+
 test('production write requests require the configured frontend origin', () => {
   const security = read('backend/src/middleware/security.js');
   assert.match(security, /export function requireTrustedOrigin/);

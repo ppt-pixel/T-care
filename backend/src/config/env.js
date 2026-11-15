@@ -37,10 +37,11 @@ const schema = z.object({
     OTP_TTL_MINUTES: z.coerce.number().int().min(5).max(30).default(10),
     OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(30).max(600).default(60),
     OTP_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(10).default(5),
-    // Used only by the one-time CLI admin provisioner. Never expose to frontend.
+    // Used only by CLI Admin provisioning/reset commands. Never expose to frontend.
     ADMIN_EMAIL: z.preprocess((value) => value === '' ? undefined : value, z.string().email().optional()),
     ADMIN_FULL_NAME: z.preprocess((value) => value === '' ? undefined : value, z.string().trim().min(2).max(100).optional()),
     ADMIN_INITIAL_PASSWORD: z.preprocess((value) => value === '' ? undefined : value, z.string().min(12).max(72).optional()),
+    ADMIN_RESET_PASSWORD: z.preprocess((value) => value === '' ? undefined : value, z.string().min(12).max(72).optional()),
     BOOKING_CONVENIENCE_FEE: z.coerce.number().finite().nonnegative().default(0),
     PAYMENTS_ENABLED: z.preprocess(value => value === true || String(value ?? '').trim().toLowerCase() === 'true', z.boolean()).default(false),
     PAYMENT_PROVIDER: z.enum(['razorpay']).default('razorpay'),

@@ -46,7 +46,7 @@ Set:
 - `ADMIN_FULL_NAME` (defaults to `T-CARE Administrator` if omitted)
 - `ADMIN_INITIAL_PASSWORD` (optional; if omitted, the CLI generates a cryptographically random one-time password and prints it once)
 
-Run `npm run admin:provision`. The script refuses to elevate an existing non-admin account and will not overwrite an existing account/password. Store the generated password securely. The authenticated password-change API exists below, but the current Customer/Gardener/Admin profile UI does not yet expose a password-change form; add and test that UI before public launch.
+Run `npm run admin:provision`. The script refuses to elevate an existing non-admin account and will not overwrite an existing account/password. If `ADMIN_INITIAL_PASSWORD` is changed after provisioning, it does not update the existing hash. For an explicit reset, set `ADMIN_EMAIL` and `ADMIN_RESET_PASSWORD` in `backend/.env` and run `npm run admin:reset-password`; the command verifies the account is an Admin, hashes the new password, revokes refresh sessions and writes an audit event without printing the secret. Remove the reset variable after use. The authenticated password-change API exists below, but the current Customer/Gardener/Admin profile UI does not yet expose a password-change form.
 
 ## Change password
 
