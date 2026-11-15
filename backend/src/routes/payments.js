@@ -80,61 +80,90 @@ async function getCustomer(req) {
 
 async function findOrCreatePayment({ req, target, amount, idempotencyKey }) {
   const customer = await getCustomer(req);
-  const existingByKey = await prisma.payment.findUnique({ where: { idempotencyKey }, include: { refunds: true } });
-  if (existingByKey) {
-    const ownsTarget = target.type === 'BOOKING'
-      ? existingByKey.bookingId === target.id
-      : existingByKey.subscriptionId === target.id;
-    if (!ownsTarget) throw fail(409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for another payment.');
-    return { payment: existingByKey, customer, reused: true };
-  }
+  const createOrReuse = () => prisma.$transaction(async tx => {
+    if (target.type === 'BOOKING') {
+      await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${target.id} FOR UPDATE`;
+      const booking = await tx.booking.findUnique({ where: { id: target.id }, select: { status: true } });
+      if (!booking || booking.status === 'CANCELLED') throw fail(409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be paid.');
+    } else {
+      await tx.$queryRaw`SELECT "id" FROM "Subscription" WHERE "id" = ${target.id} FOR UPDATE`;
+      const subscription = await tx.subscription.findUnique({ where: { id: target.id }, select: { status: true } });
+      if (!subscription || subscription.status !== 'PENDING') throw fail(409, 'SUBSCRIPTION_NOT_PAYABLE', 'Only pending subscriptions can be paid.');
+    }
 
-  const where = target.type === 'BOOKING' ? { bookingId: target.id } : { subscriptionId: target.id };
-  const existing = await prisma.payment.findFirst({ where, include: { refunds: true } });
-  if (existing) {
-    if (existing.status === 'PAID' || existing.status === 'AUTHORIZED') {
-      throw fail(409, 'PAYMENT_ALREADY_PROCESSED', 'This payment has already been processed.');
+    const existingByKey = await tx.payment.findUnique({ where: { idempotencyKey }, include: { refunds: true } });
+    if (existingByKey) {
+      const ownsTarget = target.type === 'BOOKING'
+        ? existingByKey.bookingId === target.id
+        : existingByKey.subscriptionId === target.id;
+      if (!ownsTarget) throw fail(409, 'IDEMPOTENCY_KEY_REUSED', 'This idempotency key was already used for another payment.');
+      return { payment: existingByKey, reused: true };
     }
-    if (existing.status === 'PENDING') return { payment: existing, customer, reused: true };
-    if (existing.status === 'FAILED' || existing.status === 'CANCELLED') {
-      const reset = await prisma.payment.update({
-        where: { id: existing.id },
-        data: { status: 'PENDING', idempotencyKey, providerOrderId: null, providerPaymentId: null, paidAt: null }
-      });
-      return { payment: reset, customer, reused: true };
-    }
-  }
 
-  const payment = await prisma.payment.create({
-    data: {
-      ...(target.type === 'BOOKING' ? { bookingId: target.id } : { subscriptionId: target.id }),
-      amount,
-      currency: 'INR',
-      method: 'ONLINE',
-      status: 'PENDING',
-      provider,
-      idempotencyKey
+    const where = target.type === 'BOOKING' ? { bookingId: target.id } : { subscriptionId: target.id };
+    const existing = await tx.payment.findFirst({ where, include: { refunds: true } });
+    if (existing) {
+      if (existing.status === 'PAID' || existing.status === 'AUTHORIZED') {
+        throw fail(409, 'PAYMENT_ALREADY_PROCESSED', 'This payment has already been processed.');
+      }
+      if (existing.status === 'PENDING') return { payment: existing, reused: true };
+      if (existing.status === 'FAILED' || existing.status === 'CANCELLED') {
+        const reset = await tx.payment.update({
+          where: { id: existing.id },
+          data: { status: 'PENDING', idempotencyKey, providerOrderId: null, providerPaymentId: null, paidAt: null }
+        });
+        return { payment: reset, reused: true };
+      }
     }
+
+    const payment = await tx.payment.create({
+      data: {
+        ...(target.type === 'BOOKING' ? { bookingId: target.id } : { subscriptionId: target.id }),
+        amount,
+        currency: 'INR',
+        method: 'ONLINE',
+        status: 'PENDING',
+        provider,
+        idempotencyKey
+      }
+    });
+    return { payment, reused: false };
   });
-  return { payment, customer, reused: false };
+
+  try {
+    return { ...(await createOrReuse()), customer };
+  } catch (error) {
+    if (error?.code === 'P2002' && target.type === 'SUBSCRIPTION') {
+      const payment = await prisma.payment.findFirst({ where: { subscriptionId: target.id }, include: { refunds: true } });
+      if (payment?.status === 'PENDING') return { payment, customer, reused: true };
+    }
+    throw error;
+  }
 }
 
 async function createProviderOrder(payment, receipt) {
-  if (payment.providerOrderId) return payment.providerOrderId;
-  const order = await razorpayRequest('/orders', {
-    method: 'POST',
-    body: {
-      amount: amountToPaise(payment.amount),
-      currency: payment.currency,
-      receipt,
-      notes: { tcarePaymentId: payment.id }
+  return prisma.$transaction(async tx => {
+    // Keep remote order creation under the row lock so concurrent retries reuse one provider order.
+    await tx.$queryRaw`SELECT "id" FROM "Payment" WHERE "id" = ${payment.id} FOR UPDATE`;
+    const current = await tx.payment.findUnique({ where: { id: payment.id } });
+    if (!current) throw fail(404, 'PAYMENT_NOT_FOUND', 'Payment record not found.');
+    if (current.providerOrderId) return current.providerOrderId;
+
+    const order = await razorpayRequest('/orders', {
+      method: 'POST',
+      body: {
+        amount: amountToPaise(current.amount),
+        currency: current.currency,
+        receipt,
+        notes: { tcarePaymentId: current.id }
+      }
+    });
+    if (!order?.id || Number(order.amount) !== amountToPaise(current.amount) || order.currency !== current.currency) {
+      throw fail(502, 'PAYMENT_PROVIDER_INVALID_ORDER', 'Payment provider returned an invalid order.');
     }
+    await tx.payment.update({ where: { id: current.id }, data: { providerOrderId: order.id, status: 'PENDING' } });
+    return order.id;
   });
-  if (!order?.id || Number(order.amount) !== amountToPaise(payment.amount) || order.currency !== payment.currency) {
-    throw fail(502, 'PAYMENT_PROVIDER_INVALID_ORDER', 'Payment provider returned an invalid order.');
-  }
-  await prisma.payment.update({ where: { id: payment.id }, data: { providerOrderId: order.id, status: 'PENDING' } });
-  return order.id;
 }
 
 async function markPaymentFromProvider({ providerOrderId, providerPaymentId, providerStatus, rawEvent, eventType }) {

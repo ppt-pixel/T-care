@@ -523,6 +523,7 @@ model Payment {
 
   @@index([status, createdAt])
   @@index([provider, providerPaymentId])
+  // Partial uniqueness for active subscription payments is maintained in SQL migration.
   @@index([subscriptionId, status])
 }
 

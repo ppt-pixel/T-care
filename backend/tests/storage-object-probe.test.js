@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildStorageObjectInfoUrl, probeStorageObjectExists } from '../src/lib/storageObjectProbe.js';
+import { buildStorageObjectInfoUrl, probeStorageObjectExists, probeStorageObjectInfo } from '../src/lib/storageObjectProbe.js';
 
 test('Supabase metadata probe uses the object-info HEAD endpoint and encodes each path segment', () => {
   assert.equal(
@@ -21,6 +21,19 @@ test('Storage existence probe issues HEAD with the server API key and accepts an
     'https://project.supabase.co/storage/v1/object/info/tcare-media/user-1/a.webp',
     { method: 'HEAD', headers: { apikey: 'server-secret' } }
   ]]);
+});
+
+test('Storage metadata probe returns actual size and content type from response headers', async () => {
+  const info = await probeStorageObjectInfo({
+    url: 'https://project.supabase.co/storage/v1/object/info/tcare-media/user-1/a.webp',
+    apiKey: 'server-secret',
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: key => ({ 'content-length': '123', 'content-type': 'image/webp' }[key] ?? null) }
+    })
+  });
+  assert.deepEqual(info, { sizeBytes: 123, contentType: 'image/webp' });
 });
 
 test('Storage existence probe treats only HTTP 404 as a missing object', async () => {

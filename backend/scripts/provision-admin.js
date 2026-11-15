@@ -55,7 +55,7 @@ async function provisionAdmin() {
   } else {
     console.log('The configured initial password was hashed and was not printed.');
   }
-  console.log('Store the initial password securely. A self-service password-change endpoint is still to be completed before production launch.');
+  console.log('Store the initial password securely. The authenticated password-change API exists, but no settings form or forgotten-password flow is available yet.');
 }
 
 try {

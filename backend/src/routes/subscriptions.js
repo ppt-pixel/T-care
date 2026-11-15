@@ -131,12 +131,22 @@ customer.post('/:id/cancel', async (req, res, next) => {
       throw httpError(409, 'SUBSCRIPTION_NOT_CANCELLABLE', 'This subscription cannot be cancelled in its current state.');
     }
     const updated = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Subscription" WHERE "id" = ${existing.id} FOR UPDATE`;
+      const current = await tx.subscription.findUnique({ where: { id: existing.id }, select: { status: true } });
+      if (!current || !['PENDING', 'ACTIVE', 'PAUSED'].includes(current.status)) {
+        throw httpError(409, 'SUBSCRIPTION_NOT_CANCELLABLE', 'This subscription cannot be cancelled in its current state.');
+      }
+      const payment = await tx.payment.findFirst({
+        where: { subscriptionId: existing.id, status: { in: ['PENDING', 'AUTHORIZED'] } },
+        select: { id: true }
+      });
+      if (payment) throw httpError(409, 'PAYMENT_PENDING', 'A pending payment must be resolved before this subscription can be cancelled.');
       const item = await tx.subscription.update({
         where: { id: existing.id },
         data: { status: 'CANCELLED', cancelledAt: new Date() },
         include: { plan: true }
       });
-      await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: existing.status, toStatus: 'CANCELLED' } } });
+      await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Subscription', entityId: item.id, metadata: { fromStatus: current.status, toStatus: 'CANCELLED' } } });
       return item;
     });
     await notifyUserSafely({ userId: req.auth.id, type: 'SUBSCRIPTION', channel: 'IN_APP', title: 'Subscription cancelled', body: `${existing.plan.name} has been cancelled.` });

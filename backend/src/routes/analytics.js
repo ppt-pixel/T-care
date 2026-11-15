@@ -26,7 +26,7 @@ router.get('/overview', async (req, res, next) => {
       prisma.booking.count({ where: { createdAt, status: 'CANCELLED' } }),
       prisma.payment.count({ where: { createdAt } }),
       prisma.payment.aggregate({ where: { createdAt, status: { in: ['PAID', 'PARTIALLY_REFUNDED'] } }, _sum: { amount: true } }),
-      prisma.refund.aggregate({ where: { createdAt, status: { in: ['PAID', 'PARTIALLY_REFUNDED'] } }, _sum: { amount: true } }),
+      prisma.refund.aggregate({ where: { createdAt, status: { in: ['REFUNDED', 'PARTIALLY_REFUNDED'] } }, _sum: { amount: true } }),
       prisma.subscription.count({ where: { createdAt } }),
       prisma.issueReport.count({ where: { createdAt } }),
       prisma.review.count({ where: { createdAt } })

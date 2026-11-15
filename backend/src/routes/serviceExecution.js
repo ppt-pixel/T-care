@@ -5,9 +5,10 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { createSignedDownloadUrl, removeObject } from '../lib/supabaseStorage.js';
 import { canTransitionBooking } from './bookings.js';
 import { notifyUserSafely } from '../lib/notifications.js';
+import { requireVerifiedGardener } from '../middleware/requireVerifiedGardener.js';
 
 const router = Router();
-router.use(requireAuth, requireRole('GARDENER'));
+router.use(requireAuth, requireRole('GARDENER'), requireVerifiedGardener);
 
 const healthStatus = z.enum(['EXCELLENT', 'HEALTHY', 'NEEDS_ATTENTION', 'CRITICAL']);
 const reportSchema = z.object({

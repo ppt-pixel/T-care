@@ -169,23 +169,31 @@ router.post('/:id/cancel', async (req, res, next) => {
     });
     if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
     if (!allowedTransitions[booking.status]?.has('CANCELLED')) return res.status(409).json({ error: 'BOOKING_CANNOT_CANCEL', message: `Booking cannot be cancelled from ${booking.status}.` });
-    const payment = await prisma.payment.findUnique({ where: { bookingId: booking.id }, select: { id: true, status: true } });
-    if (payment?.status === 'PAID' || payment?.status === 'PARTIALLY_REFUNDED') {
-      return res.status(409).json({ error: 'REFUND_REQUIRED', message: 'This booking has a processed payment and must go through the refund workflow before cancellation.' });
-    }
-    const updated = await prisma.$transaction(async tx => {
+    const { updated, fromStatus } = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
+      const current = await tx.booking.findUnique({ where: { id: booking.id }, select: { status: true } });
+      if (!current || !allowedTransitions[current.status]?.has('CANCELLED')) {
+        throw Object.assign(new Error('This booking cannot be cancelled in its current state.'), { statusCode: 409, code: 'BOOKING_CANNOT_CANCEL' });
+      }
+      const payment = await tx.payment.findUnique({ where: { bookingId: booking.id }, select: { status: true } });
+      if (payment?.status === 'PENDING' || payment?.status === 'AUTHORIZED') {
+        throw Object.assign(new Error('A pending payment must be resolved before this booking can be cancelled.'), { statusCode: 409, code: 'PAYMENT_PENDING' });
+      }
+      if (payment?.status === 'PAID' || payment?.status === 'PARTIALLY_REFUNDED') {
+        throw Object.assign(new Error('This booking has a processed payment and must go through the refund workflow before cancellation.'), { statusCode: 409, code: 'REFUND_REQUIRED' });
+      }
       const nextBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: 'CANCELLED' } });
       if (booking.assignment) {
         await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { status: 'CANCELLED' } });
       }
-      await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: 'CANCELLED', changedBy: req.auth.id, note: 'Cancelled by customer.' } });
-      return nextBooking;
+      await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: current.status, toStatus: 'CANCELLED', changedBy: req.auth.id, note: 'Cancelled by customer.' } });
+      return { updated: nextBooking, fromStatus: current.status };
     });
     await notifyUserSafely({ userId: req.auth.id, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} has been cancelled.` });
     if (booking.assignment?.gardener?.userId) {
       await notifyUserSafely({ userId: booking.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by the Customer.` });
     }
-    await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: booking.id, metadata: { fromStatus: booking.status, toStatus: 'CANCELLED' } } });
+    await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: booking.id, metadata: { fromStatus, toStatus: 'CANCELLED' } } });
     return res.json({ booking: updated });
   } catch (error) { next(error); }
 });

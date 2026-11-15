@@ -57,7 +57,7 @@ export function LandingNav({theme,toggleTheme,cart}){
       <Link to="/" className="brand"><Leaf size={20}/><b>T-CARE</b></Link>
       <nav className="ln-links" aria-label="Main">{C.NAV_LINKS.map(([t,to])=><L key={t} to={to}>{t}</L>)}</nav>
       <div className="ln-right">
-        <Link to="/garden/shop" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
+        <Link to="/makeover" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
         <button className="ib" onClick={toggleTheme} aria-label="Toggle theme">{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</button>
         <button className="ib ln-cart" onClick={()=>cart.setOpen(true)} aria-label={`Open cart, ${cart.count} items`}><ShoppingBag size={17}/>{cart.count>0&&<i>{cart.count}</i>}</button>
         <Link to="/login" className="tl ln-sign">Sign in</Link>
@@ -69,7 +69,7 @@ export function LandingNav({theme,toggleTheme,cart}){
       <motion.aside key="mn" className="ld-panel menu" role="dialog" aria-label="Menu" initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'tween',duration:.35,ease:[.22,1,.36,1]}}>
         <div className="ld-head"><span className="brand"><Leaf size={18}/><b>T-CARE</b></span><button className="ib" onClick={()=>setMenu(false)} aria-label="Close menu"><X size={17}/></button></div>
         <nav className="menu-links">{C.NAV_LINKS.map(([t,to],i)=><motion.div key={t} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} transition={{delay:.08+i*.05}}><L to={to} onClick={()=>setMenu(false)}>{t}<ArrowUpRight size={17}/></L></motion.div>)}</nav>
-        <div className="menu-foot"><LBtn to="/garden/shop" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn></div>
+        <div className="menu-foot"><LBtn to="/makeover" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn></div>
       </motion.aside></>}</AnimatePresence>
   </>;
 }

@@ -490,7 +490,8 @@ function GardenerProfile(){
 /* ---------- authentication workflow ---------- */
 function Auth(){
   const nav=useNavigate();
-  const {pathname}=useLocation();
+  const location=useLocation();
+  const {pathname}=location;
   const {toast,setAuthUser}=useApp();
   const [mode,setMode]=React.useState(pathname==='/register'?'register':'login');
   const [accountType,setAccountType]=React.useState('CUSTOMER');
@@ -512,7 +513,13 @@ function Auth(){
   const goToWorkspace=user=>{
     setAuthUser(user);
     toast(`Signed in as ${user.role.toLowerCase()}.`);
-    nav(workspaceForRole(user.role),{replace:true});
+    const rolePrefix=user.role==='ADMIN'?'/hq':user.role==='GARDENER'?'/crew':'/garden';
+    const requestedPath=location.state?.from;
+    const destination=typeof requestedPath==='string'
+      && (requestedPath===rolePrefix||requestedPath.startsWith(`${rolePrefix}/`))
+      ? requestedPath
+      : workspaceForRole(user.role);
+    nav(destination,{replace:true});
   };
 
   const submit=async event=>{
@@ -613,7 +620,7 @@ function Auth(){
           <button className="text-btn auth-resend" type="button" onClick={resend} disabled={busy||resendSeconds>0}>
             {resendSeconds>0?`Resend code in ${resendSeconds}s`:'Resend verification code'}
           </button>
-          <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setError('');setCode('')}}>Back to sign in</button>
+          <button className="text-btn auth-resend" type="button" onClick={()=>{setMode('login');setStep('form');setError('');setCode('')}}>Back to sign in</button>
         </form>
       </> : <>
         <div className="auth-heading">
@@ -654,7 +661,7 @@ function ProtectedRole({role,children}){
   const location=useLocation();
   React.useEffect(()=>{
     if(!authReady)return;
-    if(!authUser)nav('/login',{replace:true,state:{from:location.pathname}});
+    if(!authUser)nav('/login',{replace:true,state:{from:`${location.pathname}${location.search}${location.hash}`}});
     else if(authUser.role!==role)nav(workspaceForRole(authUser.role),{replace:true});
   },[authReady,authUser,role,nav,location.pathname]);
   if(!authReady||!authUser||authUser.role!==role)return <div className="auth-loading" role="status">Checking your secure T-CARE session…</div>;

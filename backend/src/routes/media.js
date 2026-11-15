@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createSignedUploadUrl, createSignedDownloadUrl, removeObject, objectExists } from '../lib/supabaseStorage.js';
-import { assertUploadedObjectExists } from '../lib/mediaUploadRules.js';
+import { createSignedUploadUrl, createSignedDownloadUrl, removeObject, objectInfo } from '../lib/supabaseStorage.js';
+import { assertUploadedObjectMatchesIntent } from '../lib/mediaUploadRules.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -52,8 +52,13 @@ async function canAccessTarget(user, targetType, targetId) {
     return;
   }
   if (targetType === 'BOOKING') {
-    const booking = await prisma.booking.findUnique({ where: { id: targetId }, select: { customer: { select: { userId: true } }, assignment: { select: { gardener: { select: { userId: true } } } } } });
-    if (!booking || (booking.customer.userId !== user.id && booking.assignment?.gardener?.userId !== user.id)) throw fail(403, 'FORBIDDEN', 'You cannot manage media for this booking.');
+    const booking = await prisma.booking.findUnique({ where: { id: targetId }, select: { customer: { select: { userId: true } }, assignment: { select: { gardener: { select: { userId: true, kycStatus: true } } } } } });
+    if (booking?.customer.userId === user.id) return;
+    if (booking?.assignment?.gardener?.userId === user.id) {
+      if (booking.assignment.gardener.kycStatus !== 'VERIFIED') throw fail(403, 'GARDENER_KYC_REQUIRED', 'Verified Gardener status is required to manage assigned booking media.');
+      return;
+    }
+    throw fail(403, 'FORBIDDEN', 'You cannot manage media for this booking.');
     return;
   }
   if (targetType === 'KYC_DOCUMENT') {
@@ -62,8 +67,13 @@ async function canAccessTarget(user, targetType, targetId) {
     return;
   }
   if (targetType === 'SERVICE_REPORT') {
-    const report = await prisma.serviceReport.findUnique({ where: { id: targetId }, select: { booking: { select: { customer: { select: { userId: true } }, assignment: { select: { gardener: { select: { userId: true } } } } } } } });
-    if (!report || (report.booking.customer.userId !== user.id && report.booking.assignment?.gardener?.userId !== user.id)) throw fail(403, 'FORBIDDEN', 'You cannot manage media for this service report.');
+    const report = await prisma.serviceReport.findUnique({ where: { id: targetId }, select: { booking: { select: { customer: { select: { userId: true } }, assignment: { select: { gardener: { select: { userId: true, kycStatus: true } } } } } } } });
+    if (report?.booking.customer.userId === user.id) return;
+    if (report?.booking.assignment?.gardener?.userId === user.id) {
+      if (report.booking.assignment.gardener.kycStatus !== 'VERIFIED') throw fail(403, 'GARDENER_KYC_REQUIRED', 'Verified Gardener status is required to manage service report media.');
+      return;
+    }
+    throw fail(403, 'FORBIDDEN', 'You cannot manage media for this service report.');
     return;
   }
   if (targetType === 'MAKEOVER' || targetType === 'SERVICE') {
@@ -114,7 +124,7 @@ router.post('/:id/complete', async (req, res, next) => {
     if (!asset) throw fail(404, 'MEDIA_NOT_FOUND', 'Media asset not found.');
     if (asset.ownerUserId !== req.auth.id && req.auth.role !== 'ADMIN') throw fail(403, 'FORBIDDEN', 'You cannot complete this media upload.');
     if (asset.status === 'DELETED') throw fail(410, 'MEDIA_DELETED', 'Media asset has been deleted.');
-    await assertUploadedObjectExists({ objectKey: asset.objectKey, objectExists });
+    await assertUploadedObjectMatchesIntent({ asset, objectInfo });
     const updated = await prisma.mediaAsset.update({ where: { id: asset.id }, data: { status: 'UPLOADED' } });
     return res.json({ asset: updated });
   } catch (error) { next(error); }

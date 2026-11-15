@@ -1,5 +1,5 @@
 import { env } from '../config/env.js';
-import { buildStorageObjectInfoUrl, probeStorageObjectExists } from './storageObjectProbe.js';
+import { buildStorageObjectInfoUrl, probeStorageObjectInfo } from './storageObjectProbe.js';
 
 const baseUrl = `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1`;
 
@@ -55,13 +55,13 @@ export async function removeObject(objectKey) {
 
 
 /** Return whether a private Storage object exists without downloading its bytes. */
-export async function objectExists(objectKey) {
+export async function objectInfo(objectKey) {
     const url = buildStorageObjectInfoUrl({
         baseUrl,
         bucket: env.SUPABASE_STORAGE_BUCKET,
         objectKey
     });
-    return probeStorageObjectExists({ url, apiKey: env.SUPABASE_SECRET_KEY });
+    return probeStorageObjectInfo({ url, apiKey: env.SUPABASE_SECRET_KEY });
 }
 
 export async function createSignedUploadUrl(objectKey, upsert = false) {

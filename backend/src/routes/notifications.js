@@ -116,6 +116,9 @@ admin.post('/send', async (req, res, next) => {
       title: z.string().trim().min(1).max(160),
       body: z.string().trim().min(1).max(4000)
     }).strict().parse(req.body);
+    if (input.channel !== 'IN_APP') {
+      return res.status(501).json({ error: 'NOTIFICATION_CHANNEL_UNAVAILABLE', message: 'Only in-app notifications are currently supported.' });
+    }
 
     const user = await prisma.user.findUnique({ where: { id: input.userId }, select: { id: true, status: true } });
     if (!user || user.status !== 'ACTIVE') {

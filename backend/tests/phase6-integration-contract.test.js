@@ -17,6 +17,49 @@ test('all role workspaces use client route guards and role-specific prefixes', (
   assert.match(main, /role\s*\?\s*<ProtectedRole role=\{role\}>/);
 });
 
+test('protected-route login restores only a destination within the authenticated role workspace', () => {
+  const main = read('src/main.jsx');
+  assert.match(main, /location\.state\?\.from/);
+  assert.match(main, /requestedPath===rolePrefix\|\|requestedPath\.startsWith\(`\$\{rolePrefix\}\/`\)/);
+  assert.match(main, /state:\{from:`\$\{location\.pathname\}\$\{location\.search\}\$\{location\.hash\}`\}/);
+  assert.match(main, /setMode\('login'\);setStep\('form'\)/);
+});
+
+test('public makeover links do not route guests into the protected services workspace', () => {
+  const sections = read('src/landing/Sections.jsx');
+  assert.equal((sections.match(/to="\/makeover"/g) || []).length, 2);
+  assert.doesNotMatch(sections, /Green Makeover[\s\S]{0,80}to="\/garden\/shop"/);
+});
+
+test('Gardener assigned work and service reports require current KYC verification', () => {
+  const gardener = read('backend/src/routes/gardener.js');
+  const serviceExecution = read('backend/src/routes/serviceExecution.js');
+  const media = read('backend/src/routes/media.js');
+  assert.match(gardener, /router\.use\(\['\/dashboard', '\/jobs', '\/history'\], requireVerifiedGardener\)/);
+  assert.match(serviceExecution, /router\.use\(requireAuth,\s*requireRole\('GARDENER'\),\s*requireVerifiedGardener\)/);
+  assert.match(media, /kycStatus !== 'VERIFIED'/);
+});
+
+test('subscription payments have a database active-payment uniqueness guard and cancellation guard', () => {
+  const migration = read('backend/prisma/migrations/20261115000100_harden_active_subscription_payments/migration.sql');
+  const payment = read('backend/src/routes/payments.js');
+  const subscriptions = read('backend/src/routes/subscriptions.js');
+  const bookings = read('backend/src/routes/bookings.js');
+  assert.match(migration, /CREATE UNIQUE INDEX[\s\S]*"subscriptionId"[\s\S]*'PENDING', 'AUTHORIZED'/);
+  assert.match(payment, /FOR UPDATE/);
+  assert.match(payment, /SELECT "id" FROM "Payment" WHERE "id" = \$\{payment\.id\} FOR UPDATE/);
+  assert.match(subscriptions, /status: \{ in: \['PENDING', 'AUTHORIZED'\] \}/);
+  assert.match(bookings, /payment\?\.status === 'PENDING' \|\| payment\?\.status === 'AUTHORIZED'/);
+});
+
+test('refund analytics count successful full and partial refunds, and unsupported channels fail explicitly', () => {
+  const analytics = read('backend/src/routes/analytics.js');
+  const notifications = read('backend/src/routes/notifications.js');
+  assert.match(analytics, /status: \{ in: \['REFUNDED', 'PARTIALLY_REFUNDED'\] \}/);
+  assert.match(notifications, /NOTIFICATION_CHANNEL_UNAVAILABLE/);
+  assert.match(notifications, /input\.channel !== 'IN_APP'/);
+});
+
 test('backend enforces database-backed role guards on Customer, Gardener and Admin APIs', () => {
   const customer = read('backend/src/routes/customer.js');
   const bookings = read('backend/src/routes/bookings.js');
@@ -47,8 +90,8 @@ test('production API routing retains same-origin Netlify proxy and SPA fallback'
   assert.match(redirects, /\/\*\s+\/index\.html\s+200/);
   const api = read('src/phase5Api.js');
   assert.match(api, /import\.meta\.env\.PROD\s*\?\s*''/);
-  const guide = read('README-DEPLOY-NETLIFY-RENDER.md');
-  assert.match(guide, /Do not set `VITE_API_BASE_URL` in Netlify production/);
+  const readme = read('README.md');
+  assert.match(readme, /same-origin Netlify API proxy: leave `VITE_API_BASE_URL` unset in Netlify/);
 });
 
 test('Customer billing route now consumes the authenticated customer payment ledger', () => {
@@ -159,15 +202,13 @@ test('backend and frontend env examples are present and production migration ins
 test('Supabase database guidance matches the current single-URL Prisma session-pooler setup', () => {
   const schema = read('backend/prisma/schema.prisma');
   const envExample = read('backend/.env.example');
-  const deploy = read('README-DEPLOY-NETLIFY-RENDER.md');
   const setup = read('docs/T-CARE-SUPABASE-SETUP.md');
   assert.match(schema, /url\s*=\s*env\("DATABASE_URL"\)/);
   assert.doesNotMatch(schema, /directUrl\s*=/);
   assert.match(envExample, /SESSION mode \(port 5432\)/);
   assert.match(envExample, /PROJECT_REF.*5432|PROJECT_REF.*pooler/);
-  assert.match(deploy, /Session mode on port 5432/);
-  assert.match(deploy, /Do \*\*not\*\* use Shared\/Transaction Pooler port `6543`/);
-  assert.match(setup, /Session mode/);
+  assert.match(setup, /Session mode.*port `5432`/);
+  assert.match(setup, /Do not use the Shared\/Transaction Pooler URI on port `6543`/);
   assert.match(setup, /no separate `DIRECT_URL`/);
 });
 

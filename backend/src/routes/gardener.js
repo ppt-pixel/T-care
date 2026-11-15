@@ -6,6 +6,7 @@ import { canTransitionBooking } from './bookings.js';
 import { removeObject } from '../lib/supabaseStorage.js';
 import { notifyUserSafely } from '../lib/notifications.js';
 import { canEditVisitPlantList, sumCompletedBookingValue } from '../lib/gardenerRules.js';
+import { requireVerifiedGardener } from '../middleware/requireVerifiedGardener.js';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.get('/public', async (req, res, next) => {
 });
 
 router.use(requireAuth, requireRole('GARDENER'));
+router.use(['/dashboard', '/jobs', '/history'], requireVerifiedGardener);
 
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const timeSchema = z.string().regex(timePattern, 'Time must use HH:mm format.');
