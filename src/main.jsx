@@ -76,14 +76,13 @@ function Provider({children}){
     const restore=async()=>{
       try{
         let response=await readSession();
-        if(response.status===401){
+        let payload=response.ok?await response.json():null;
+        if(response.status===401||payload?.refreshRequired){
           const refresh=await fetch(`${API_V1}/auth/refresh`,{method:'POST',credentials:'include'});
-          response=refresh.ok?await readSession():null;
+          payload=refresh.ok?await refresh.json():null;
         }
-        if(response?.ok){
-          const payload=await response.json();
-          if(active)setAuthUser(payload.user||null);
-        }
+        const user=payload?.authenticated===false?null:payload?.user||null;
+        if(active&&user)setAuthUser(user);
       }catch{
         // Public pages remain available while the API is offline; protected pages stay guarded.
       }finally{

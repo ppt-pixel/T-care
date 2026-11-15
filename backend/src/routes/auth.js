@@ -529,7 +529,7 @@ export default function authRouter(router) {
         try {
             const refreshToken = req.cookies?.tcare_refresh;
             if (!refreshToken) {
-                return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Refresh session is required.' });
+                return res.json({ authenticated: false, user: null });
             }
 
             const session = await prisma.refreshSession.findUnique({
@@ -540,7 +540,7 @@ export default function authRouter(router) {
             if (!session || session.revokedAt || session.expiresAt <= new Date() ||
                 session.user.status !== 'ACTIVE' || !session.user.emailVerifiedAt) {
                 clearAuthCookies(res);
-                return res.status(401).json({ error: 'INVALID_REFRESH_SESSION', message: 'Refresh session is invalid, expired or not verified.' });
+                return res.json({ authenticated: false, user: null });
             }
 
             const replacementToken = createRefreshToken();
@@ -560,7 +560,7 @@ export default function authRouter(router) {
             ]);
 
             setAuthCookies(res, createAccessToken(session.user), replacementToken);
-            return res.json({ user: publicUser(session.user) });
+            return res.json({ authenticated: true, user: publicUser(session.user) });
         } catch (error) {
             next(error);
         }
@@ -597,9 +597,8 @@ export default function authRouter(router) {
         }
     });
 
-    // Frontend session bootstrap: a visitor with no cookies is a normal guest,
-    // not an API error. If only a refresh cookie remains, return 401 so the
-    // frontend can rotate it through POST /refresh and retry this endpoint.
+    // Session restoration is a public bootstrap operation; missing or stale
+    // access tokens are represented as state, not HTTP authentication errors.
     router.get('/session', async(req, res, next) => {
         res.set('Cache-Control', 'no-store');
         try {
@@ -608,10 +607,7 @@ export default function authRouter(router) {
 
             if (!accessToken) {
                 if (refreshToken) {
-                    return res.status(401).json({
-                        error: 'ACCESS_TOKEN_MISSING',
-                        message: 'An access token needs to be restored from the refresh session.'
-                    });
+                    return res.json({ authenticated: false, user: null, refreshRequired: true });
                 }
                 return res.json({ authenticated: false, user: null });
             }
@@ -624,10 +620,7 @@ export default function authRouter(router) {
                 });
             } catch (tokenError) {
                 if (refreshToken) {
-                    return res.status(401).json({
-                        error: 'ACCESS_TOKEN_EXPIRED',
-                        message: 'The access token needs to be refreshed.'
-                    });
+                    return res.json({ authenticated: false, user: null, refreshRequired: true });
                 }
                 clearAuthCookies(res);
                 return res.json({ authenticated: false, user: null });
@@ -635,7 +628,7 @@ export default function authRouter(router) {
 
             if (typeof payload !== 'object' || !payload.sub) {
                 if (refreshToken) {
-                    return res.status(401).json({ error: 'INVALID_ACCESS_TOKEN', message: 'The access token needs to be refreshed.' });
+                    return res.json({ authenticated: false, user: null, refreshRequired: true });
                 }
                 clearAuthCookies(res);
                 return res.json({ authenticated: false, user: null });

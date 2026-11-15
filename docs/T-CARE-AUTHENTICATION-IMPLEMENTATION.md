@@ -22,6 +22,10 @@
 
 Defaults: 10-minute OTP expiry, 5 attempts, 60-second resend cooldown. These are configurable through `OTP_TTL_MINUTES`, `OTP_MAX_ATTEMPTS`, and `OTP_RESEND_COOLDOWN_SECONDS`. Auth endpoints also have IP-based rate limits. The in-memory IP limiter is per-process; production deployments with multiple instances should move distributed rate-limit state to a shared store.
 
+## Session bootstrap
+
+`GET /api/v1/auth/session` is a public bootstrap endpoint and represents guests or stale access cookies with a successful JSON response rather than an HTTP 401. When a refresh cookie may restore the session, it returns `refreshRequired: true`; the frontend then calls `POST /api/v1/auth/refresh`. A missing, expired, revoked or otherwise invalid refresh cookie resolves to `{ authenticated: false, user: null }`. Protected APIs and `/auth/me` continue to return 401 when authentication is required.
+
 ## SMTP setup
 
 Set these in `backend/.env` using the dedicated T-CARE sender account:

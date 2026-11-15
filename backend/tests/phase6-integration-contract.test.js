@@ -154,6 +154,19 @@ test('production auth cookies are HttpOnly and Secure with explicit SameSite beh
   assert.match(auth, /sameSite,/);
 });
 
+test('session bootstrap and refresh treat guests or stale cookies as normal unauthenticated state', () => {
+  const auth = read('backend/src/routes/auth.js');
+  const frontend = read('src/main.jsx');
+  const sessionHandler = auth.slice(auth.indexOf("router.get('/session'"), auth.indexOf("router.get('/me'"));
+  const refreshHandler = auth.slice(auth.indexOf("router.post('/refresh'"), auth.indexOf("router.post('/logout'"));
+  assert.doesNotMatch(sessionHandler, /status\(401\)/);
+  assert.match(sessionHandler, /authenticated: false, user: null, refreshRequired: true/);
+  assert.match(refreshHandler, /authenticated: false, user: null/);
+  assert.match(refreshHandler, /authenticated: true, user: publicUser\(session\.user\)/);
+  assert.match(frontend, /payload\?\.refreshRequired/);
+  assert.match(frontend, /response\.status===401\|\|payload\?\.refreshRequired/);
+});
+
 test('production write requests require the configured frontend origin', () => {
   const security = read('backend/src/middleware/security.js');
   assert.match(security, /export function requireTrustedOrigin/);
