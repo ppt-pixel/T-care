@@ -116,6 +116,8 @@
 .public-state{max-width:900px;margin:22px auto;padding:22px 24px;border:1px solid var(--line);border-radius:20px;background:var(--card);color:var(--mut);text-align:center;line-height:1.6}
 .public-state p{margin:0 0 8px}.public-state span{font-size:.9rem}
 .public-state button{background:none;border:0;color:var(--g);font:inherit;font-weight:700;cursor:pointer;text-decoration:underline}
+.public-state-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:16px}
+.public-state-actions .lb{white-space:normal}
 .catalog-note{max-width:900px;margin:22px auto 0;text-align:center;color:var(--mut);font-size:.9rem;line-height:1.55}
 .pimg img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
 .product-desc{color:var(--mut);font-size:.85rem;line-height:1.45;margin:4px 0 0;min-height:2.5em}

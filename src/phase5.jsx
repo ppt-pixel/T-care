@@ -13,16 +13,25 @@ const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', curre
 const dateTime = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not scheduled';
 const dateOnly = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : '—';
 const statusLabel = value => String(value || 'UNKNOWN').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
-const errorText = error => error?.message || 'Something went wrong. Please try again.';
+const errorText = error => {
+  if (error?.authRefreshFailed) return 'Your session could not be refreshed. Please sign in again.';
+  if (Array.isArray(error?.details) && error.details.length) {
+    return error.details.map(issue => `${issue.path?.length ? issue.path.join('.') : 'Request'}: ${issue.message}`).join(' ');
+  }
+  if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
+    return 'T-CARE could not be reached. Check your connection and try again.';
+  }
+  return error?.message || 'Something went wrong. Please try again.';
+};
 
 function Notice({ error, success }) {
   if (!error && !success) return null;
-  return <div className={`p5-notice ${error ? 'is-error' : 'is-success'}`} role={error ? 'alert' : 'status'}>{error || success}</div>;
+  return <div className={`p5-notice ${error ? 'is-error' : 'is-success'}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true">{error || success}</div>;
 }
 function State({ loading, error, empty, onRetry }) {
-  if (loading) return <div className="p5-state"><span className="p5-spinner"/>Loading live T-CARE data…</div>;
-  if (error) return <div className="p5-state p5-error"><b>Unable to load this section</b><p>{error}</p><button className="p5-button" onClick={onRetry}>Try again</button></div>;
-  if (empty) return <div className="p5-state"><b>Nothing here yet</b><p>Records will appear here when they are created in T-CARE.</p></div>;
+  if (loading) return <div className="p5-state" role="status" aria-live="polite"><span className="p5-spinner"/>Loading live T-CARE data…</div>;
+  if (error) return <div className="p5-state p5-error" role="alert"><b>Unable to load this section</b><p>{error}</p><button className="p5-button" onClick={onRetry}>Try again</button></div>;
+  if (empty) return <div className="p5-state" role="status"><b>Nothing here yet</b><p>Records will appear here when they are created in T-CARE.</p></div>;
   return null;
 }
 function useLoad(path, fallbackKey, pollMs = 0) {
@@ -74,6 +83,38 @@ function useLoad(path, fallbackKey, pollMs = 0) {
 function PageTitle({ eyebrow = 'T-CARE', title, sub, action }) {
   return <div className="p5-page-title"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2>{sub && <p>{sub}</p>}</div>{action}</div>;
 }
+export function AccountSecurityPage({ Shell }) {
+  const [form,setForm]=React.useState({currentPassword:'',newPassword:'',confirmPassword:''});
+  const [error,setError]=React.useState('');
+  const [success,setSuccess]=React.useState('');
+  const [busy,setBusy]=React.useState(false);
+  const update=(key,value)=>setForm(current=>({...current,[key]:value}));
+  const submit=async event=>{
+    event.preventDefault();
+    setError('');setSuccess('');
+    if(form.newPassword!==form.confirmPassword){setError('The new passwords do not match.');return;}
+    setBusy(true);
+    try{
+      const result=await request('/auth/change-password',{method:'POST',body:json({currentPassword:form.currentPassword,newPassword:form.newPassword})});
+      setForm({currentPassword:'',newPassword:'',confirmPassword:''});
+      setSuccess(result?.message||'Your password has been changed.');
+    }catch(requestError){setError(errorText(requestError));}
+    finally{setBusy(false);}
+  };
+  return <Shell title="Security & password" sub="Change your password without leaving your T-CARE account.">
+    <Notice error={error} success={success}/>
+    <Panel title="Change password" sub="Use at least 12 characters. Changing your password signs out other active sessions.">
+      <form onSubmit={submit}>
+        <Field label="Current password"><input required type="password" autoComplete="current-password" maxLength={72} value={form.currentPassword} onChange={event=>update('currentPassword',event.target.value)}/></Field>
+        <FormGrid>
+          <Field label="New password"><input required type="password" autoComplete="new-password" minLength={12} maxLength={72} value={form.newPassword} onChange={event=>update('newPassword',event.target.value)}/></Field>
+          <Field label="Confirm new password"><input required type="password" autoComplete="new-password" minLength={12} maxLength={72} value={form.confirmPassword} onChange={event=>update('confirmPassword',event.target.value)}/></Field>
+        </FormGrid>
+        <div className="p5-actions"><Button type="submit" disabled={busy}>{busy?'Changing password…':'Change password'}</Button></div>
+      </form>
+    </Panel>
+  </Shell>;
+}
 function Panel({ title, sub, children, action }) {
   return <section className="p5-panel"><div className="p5-panel-head"><div>{title && <h3>{title}</h3>}{sub && <p>{sub}</p>}</div>{action}</div>{children}</section>;
 }
@@ -82,7 +123,7 @@ function Empty({ title = 'No records yet', text = 'Records will appear here once
 function Field({ label, children, hint }) { return <label className="p5-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
 function Button({ children, onClick, type = 'button', disabled, variant = 'primary' }) { return <button type={type} className={`p5-button ${variant}`} disabled={disabled} onClick={onClick}>{children}</button>; }
 function FormGrid({ children }) { return <div className="p5-form-grid">{children}</div>; }
-function RecordTable({ headers, children }) { return <div className="p5-table-wrap"><table className="p5-table"><thead><tr>{headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
+function RecordTable({ headers, children }) { return <div className="p5-table-wrap" role="region" aria-label="Data table; scroll horizontally to view all columns" tabIndex={0}><table className="p5-table"><thead><tr>{headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
 
 export async function uploadToStorage(file, { kind, targetType, targetId }) {
   if (!file) throw new Error('Choose a file first.');
@@ -339,6 +380,8 @@ export function CustomerBookingCreatePage({ Shell }) {
   React.useEffect(() => { if (!addressId && addresses.length) setAddressId(addresses.find(a => a.isDefault)?.id || addresses[0].id); }, [addresses, addressId]);
   React.useEffect(() => { if (!serviceId && services.length) setServiceId(services[0].id); }, [services, serviceId]);
   const selectedService = services.find(s => s.id === serviceId);
+  const selectedAddress = addresses.find(item => item.id === addressId);
+  const selectedPlants = plants.filter(item => plantIds.includes(item.id));
   const selectedPrice = (selectedService?.prices || [])
     .filter(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants))
     .sort((a, b) => {
@@ -368,8 +411,20 @@ export function CustomerBookingCreatePage({ Shell }) {
         {showAddress && <div className="p5-address-editor"><FormGrid><Field label="Label"><input required value={address.label} onChange={e => setAddress({ ...address, label: e.target.value })}/></Field><Field label="Address type"><select value={address.type} onChange={e => setAddress({ ...address, type: e.target.value })}><option>HOME</option><option>OFFICE</option><option>OTHER</option></select></Field><Field label="Address line 1"><input required value={address.line1} onChange={e => setAddress({ ...address, line1: e.target.value })}/></Field><Field label="Address line 2"><input value={address.line2} onChange={e => setAddress({ ...address, line2: e.target.value })}/></Field><Field label="City"><input required value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })}/></Field><Field label="State"><input required value={address.state} onChange={e => setAddress({ ...address, state: e.target.value })}/></Field><Field label="Postal code"><input required value={address.postalCode} onChange={e => setAddress({ ...address, postalCode: e.target.value })}/></Field></FormGrid><Button onClick={createAddress} disabled={busy}>Save address</Button></div>}
       </Panel>
       <Field label="Special instructions"><textarea maxLength="2000" value={specialInstructions} onChange={e => setSpecialInstructions(e.target.value)} placeholder="Access notes, plant-care priorities or other details"/></Field>
-      <div className="p5-booking-summary"><div><span>Selected plants</span><b>{plantIds.length}</b></div><div><span>Price estimate</span><b>{selectedPrice ? money(selectedPrice.amount) : 'Price unavailable'}</b></div><small>Estimate uses the current price tier for the selected plant count. The server recalculates the final amount at submission. This booking request does not collect payment.</small></div>
-      <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !selectedPrice}>{busy ? 'Creating booking…' : 'Confirm booking'}</Button></div>
+      <section className="p5-booking-review" aria-labelledby="booking-review-title">
+        <h3 id="booking-review-title">Review your booking request</h3>
+        <dl>
+          <div><dt>Service</dt><dd>{selectedService?.name || 'Choose a service'}</dd></div>
+          <div><dt>Scope and duration</dt><dd>{selectedService ? `${selectedService.description || 'As described in the service catalogue'}${selectedService.durationLabel ? ` · ${selectedService.durationLabel}` : ''}` : 'Shown after you choose a service'}</dd></div>
+          <div><dt>Plants</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'Select at least one plant'}</dd></div>
+          <div><dt>Visit time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
+          <div><dt>Service address</dt><dd>{selectedAddress ? `${selectedAddress.label} · ${[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}` : 'Choose or add an address'}</dd></div>
+          <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
+          <div><dt>Estimated price</dt><dd>{selectedPrice ? money(selectedPrice.amount) : 'Price unavailable for this plant count'}</dd></div>
+        </dl>
+      </section>
+      <p className="p5-booking-policy">Submitting creates a booking request and does not collect payment. The displayed price is an estimate; the server recalculates the total on submission. Final service scope and cancellation or rescheduling terms are not published here—check the <Link to="/contact">Contact page</Link> for configured channels to confirm them before the visit is finalized.</p>
+      <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !selectedPrice}>{busy ? 'Submitting request…' : 'Submit booking request'}</Button></div>
     </form>}
   </Shell>;
 }

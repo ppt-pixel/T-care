@@ -126,7 +126,7 @@ const FAQ_PLANS=[
 export function PlansPage(){
   return <>
     <PageHero eyebrow="Plans & pricing" title={<>Care plans that <em>grow with you</em></>} sub="Compare the active plans currently published by T-Care. Plan duration, plant limits and price come directly from the subscription catalogue.">
-      <LBtn to="/garden/plan" variant="gold">Open subscriptions <ArrowRight size={15}/></LBtn>
+      <LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn>
     </PageHero>
     <Plans/>
     <section className="lsec perks"><div className="perk-row">{[[ShieldCheck,'Verified gardeners'],[RotateCcw,'Plan status in your account'],[Heart,'Plant-care records'],[Clock,'Scheduled visits']].map(([I,t],i)=><Reveal key={t} delay={i*.06} className="perk"><I size={20}/><b>{t}</b></Reveal>)}</div></section>
@@ -169,7 +169,7 @@ export function StorePage({cart}){
     </section>
     <section className="lsec perks"><Head center eyebrow="Shop with clarity">Current stock, <em>clear pricing</em></Head>
       <div className="commit-grid four">{STORE_PERKS.map(([I,t,d],i)=><Reveal key={t} delay={i*.06} className="commit-card"><span className="ic"><I size={22}/></span><h3>{t}</h3><p>{d}</p></Reveal>)}</div></section>
-    <section className="lsec guide"><Reveal className="guide-card"><div><span className="eyebrow">Not sure what to pick?</span><h2>Let a gardener <em>choose with you</em></h2><p>Share your light, space and routine with T-Care, then choose plants that suit your home.</p></div><div className="cta-btns"><LBtn to="/garden/shop" variant="gold">Explore care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="outline">Book a consultation</LBtn></div></Reveal></section>
+    <section className="lsec guide"><Reveal className="guide-card"><div><span className="eyebrow">Not sure what to pick?</span><h2>Let a gardener <em>choose with you</em></h2><p>Share your light, space and routine with T-Care, then choose plants that suit your home.</p></div><div className="cta-btns"><LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="outline">Book a consultation</LBtn></div></Reveal></section>
     <p className="catalog-note">The cart is a browsing aid in this release. Online product checkout and payment are not enabled yet.</p>
   </>;
 }

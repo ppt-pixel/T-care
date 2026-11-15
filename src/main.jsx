@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 're
 import { motion, AnimatePresence, MotionConfig, useMotionValue, animate } from 'framer-motion';
 import {AppBackground,AuthScenery} from './Backgrounds.jsx';
 import {useCart,CartDrawer,LandingNav,Hero,WhyChoose,Included,Steps,Market,Reviews,FinalCta,SiteFooter,WhatsAppFab} from './landing/Sections.jsx';
-import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, Star,
+import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, Star, X, CircleAlert,
   LayoutGrid, CalendarDays, Flower2, Sprout, WalletCards, CreditCard, UserRound, Stethoscope, Users, Package, BarChart3, FileText,
   ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft } from 'lucide-react';
 import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage} from './landing/Pages.jsx';
@@ -60,6 +60,8 @@ function PerformanceManager(){
 
 function Provider({children}){
   const [toasts,setToasts]=React.useState([]);
+  const toastSequence=React.useRef(0);
+  const toastTimers=React.useRef(new Map());
   const [paletteOpen,setPaletteOpen]=React.useState(false);
   const [authUser,setAuthUser]=React.useState(null);
   const [authReady,setAuthReady]=React.useState(false);
@@ -110,11 +112,20 @@ function Provider({children}){
     return()=>removeEventListener('keydown',onShortcut);
   },[]);
 
-  const toast=React.useCallback(message=>{
-    const id=Math.random();
-    setToasts(current=>[...current,{id,message}]);
-    setTimeout(()=>setToasts(current=>current.filter(item=>item.id!==id)),3200);
+  const dismissToast=React.useCallback(id=>{
+    const timer=toastTimers.current.get(id);
+    if(timer)clearTimeout(timer);
+    toastTimers.current.delete(id);
+    setToasts(current=>current.filter(item=>item.id!==id));
   },[]);
+  const toast=React.useCallback((message,{type='success',duration}={})=>{
+    const id=++toastSequence.current;
+    const toastType=['success','warning','error'].includes(type)?type:'success';
+    const timeout=Number.isFinite(duration)?Math.max(0,duration):toastType==='error'?8000:toastType==='warning'?6000:4500;
+    setToasts(current=>[...current,{id,message,type:toastType}]);
+    if(timeout>0)toastTimers.current.set(id,setTimeout(()=>dismissToast(id),timeout));
+  },[dismissToast]);
+  React.useEffect(()=>()=>{for(const timer of toastTimers.current.values())clearTimeout(timer);toastTimers.current.clear()},[]);
   const cart=useCart(toast);
   const toggleTheme=React.useCallback(()=>setTheme(current=>current==='dark'?'light':'dark'),[]);
   const openPalette=React.useCallback(()=>setPaletteOpen(true),[]);
@@ -129,7 +140,9 @@ function Provider({children}){
     <PerformanceManager/>
     {children}
     <AnimatePresence>{paletteOpen&&<Palette onClose={()=>setPaletteOpen(false)}/>}</AnimatePresence>
-    <div className="toasts"><AnimatePresence>{toasts.map(item=><motion.div key={item.id} className="toast" layout initial={{opacity:0,y:40,scale:.9}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,scale:.9}}><Check size={16}/>{item.message}</motion.div>)}</AnimatePresence></div>
+    <div className="toasts" aria-label="Notifications"><AnimatePresence>{toasts.map(item=><motion.div key={item.id} className={`toast is-${item.type}`} role={item.type==='error'?'alert':'status'} aria-live={item.type==='error'?'assertive':'polite'} aria-atomic="true" layout initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}}>
+      {item.type==='success'?<Check size={16}/>:<CircleAlert size={16}/>}<span>{item.message}</span><button type="button" className="toast-close" aria-label="Dismiss notification" onClick={()=>dismissToast(item.id)}><X size={15}/></button>
+    </motion.div>)}</AnimatePresence></div>
   </Ctx.Provider>;
 }
 
@@ -202,7 +215,7 @@ function Bloom({children}){const {pathname}=useLocation();
     if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){clip.set('none');return undefined}
     const r=Math.max(innerWidth,innerHeight)*1.6;
     clip.set(`circle(0px at ${x}px ${y}px)`);
-    const a=animate(clip,`circle(${r}px at ${x}px ${y}px)`,{duration:.9,ease:[.22,1,.36,1],onComplete:()=>clip.set('none')});
+    const a=animate(clip,`circle(${r}px at ${x}px ${y}px)`,{duration:.45,ease:[.22,1,.36,1],onComplete:()=>clip.set('none')});
     return()=>a.stop();
   },[pathname,clip]);
   return <motion.div key={pathname} style={{minHeight:'100vh',clipPath:clip}}>{children}</motion.div>}
@@ -222,12 +235,12 @@ function AccountMenu({role}){
   const profileTarget=role==='hq'?R.base:`${R.base}/me`;
   const initials=(authUser?.fullName||'T').trim().split(/\s+/).slice(0,2).map(part=>part[0]?.toUpperCase()||'').join('');
   const signOut=async()=>{await logout();setOpen(false);nav('/login',{replace:true})};
-  return <div className="account"><button className="avatar" onClick={()=>setOpen(v=>!v)} aria-label="Open account menu" title="Account menu">{initials||'T'}</button><AnimatePresence>{open&&<motion.div className="account-menu" initial={{opacity:0,y:8,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.96}}><strong>{R.label} workspace</strong><span className="account-name">{authUser?.fullName||'Account'}</span><span className="account-email">{authUser?.email||''}</span><Link to={profileTarget} onClick={()=>setOpen(false)}>Profile & preferences</Link><Link to={secondary[1]} onClick={()=>setOpen(false)}>{secondary[0]}</Link><button type="button" onClick={signOut} className="danger">Sign out</button></motion.div>}</AnimatePresence></div>
+  return <div className="account"><button className="avatar" onClick={()=>setOpen(v=>!v)} aria-expanded={open} aria-label="Open account menu" title="Account menu">{initials||'T'}</button><AnimatePresence>{open&&<motion.div className="account-menu" initial={{opacity:0,y:8,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.96}}><strong>{R.label} workspace</strong><span className="account-name">{authUser?.fullName||'Account'}</span><span className="account-email">{authUser?.email||''}</span><Link to={profileTarget} onClick={()=>setOpen(false)}>{role==='hq'?'Admin overview':'Profile & preferences'}</Link><Link to={secondary[1]} onClick={()=>setOpen(false)}>{secondary[0]}</Link><Link to={`${R.base}/security`} onClick={()=>setOpen(false)}>Security & password</Link><button type="button" onClick={signOut} className="danger">Sign out</button></motion.div>}</AnimatePresence></div>
 }
 const Dock=React.memo(function Dock({R,pathname}){const [hover,setHover]=React.useState(null);const dockRef=React.useRef(null);
   React.useEffect(()=>{const c=dockRef.current,a=c?.querySelector('a.on');if(c&&a)c.scrollTo({left:Math.max(0,a.offsetLeft-(c.clientWidth-a.offsetWidth)/2)})},[pathname]);
   return <nav className="dock" ref={dockRef} aria-label={`${R.label} navigation`}>{R.nav.map(([p,l,I],i)=>{const to=R.base+(p?'/'+p:''),on=pathname===to||(p&&pathname.startsWith(to+'/'));const d=hover===null?0:Math.abs(hover-i);
-      return <Link key={to} to={to} className={on?'on':''} aria-label={l} onMouseEnter={()=>setHover(i)} onMouseLeave={()=>setHover(null)}><motion.span animate={{scale:hover===null?1:d===0?1.35:d===1?1.15:1,y:hover===null?0:d===0?-8:d===1?-3:0}} transition={{type:'spring',stiffness:500,damping:26}}><I size={20}/></motion.span><em>{l}</em><span className="dock-label">{l}</span></Link>})}</nav>});
+      return <Link key={to} to={to} className={on?'on':''} aria-label={l} aria-current={on?'page':undefined} title={l} onMouseEnter={()=>setHover(i)} onMouseLeave={()=>setHover(null)}><motion.span animate={{scale:hover===null?1:d===0?1.35:d===1?1.15:1,y:hover===null?0:d===0?-8:d===1?-3:0}} transition={{type:'spring',stiffness:500,damping:26}}><I size={20}/></motion.span><em>{l}</em><span className="dock-label">{l}</span></Link>})}</nav>});
 function Shell({title,sub,action,children}){
   const {pathname}=useLocation();const rk=roleOf(pathname),R=roles[rk];const {theme,toggleTheme,openPalette,authUser}=useApp();
   return <div className="shell"><AppBackground role={rk}/>
@@ -318,9 +331,9 @@ function GardenBackground({theme}){
   return <div className="gbg" aria-hidden="true"><i className="gb-orb o1"/><i className="gb-orb o2"/><i className="gb-orb o3"/><i className="gb-rays"/><i className="gb-grain"/><canvas ref={ref} className="gb-canvas"/></div>;
 }
 function PublicPage({children}){
-  const {theme,toggleTheme,cart}=useApp();
+  const {theme,toggleTheme,cart,authUser,logout}=useApp();
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout}/>
     <main>{children}</main>
     <FinalCta/>
     <SiteFooter/>
@@ -344,9 +357,9 @@ const MakeoverRoute=()=><PublicPage><MakeoverPage/></PublicPage>;
 const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
 const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
 function Home(){
-  const {theme,toggleTheme,cart}=useApp();
+  const {theme,toggleTheme,cart,authUser,logout}=useApp();
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout}/>
     <Hero theme={theme}/>
     <WhyChoose/>
     <Included/>
@@ -647,7 +660,9 @@ function Auth(){
           {error&&<p className="auth-alert" role="alert">{error}</p>}
           <button className="btn full" type="submit" disabled={busy}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in to workspace':'Create account')} <ArrowUpRight size={16}/></button>
         </form>
-        <p className="auth-note">Email verification is required before an account can sign in. Admin accounts are provisioned separately.</p>
+        <p className="auth-note">{location.state?.from?.startsWith('/garden/book')
+          ? 'A Customer account is required to book. After you sign in or verify your Customer account, we will return you to the booking form.'
+          : 'Email verification is required before an account can sign in. Admin accounts are provisioned separately.'}</p>
       </>}
       <Link className="back-home" to="/">← Back to T-CARE home</Link>
     </div>
@@ -657,9 +672,9 @@ function Auth(){
 /* ---------- routes ---------- */
 function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><Leaf size={64} strokeWidth={1}/><h1>Lost in the <em>undergrowth</em></h1><p>This page doesn't exist — let's get you back to greener ground.</p><Btn to="/">Back home</Btn></div>}
 const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
-['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],
-['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],
-['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
+['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
+['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],['/crew/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
+['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
 function ProtectedRole({role,children}){
   const {authUser,authReady}=useApp();
   const nav=useNavigate();

@@ -28,7 +28,16 @@
 .p5-subscription-row{display:flex;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid var(--p5-line,var(--line))}
 .p5-subscription-row:last-child{border-bottom:0}.p5-subscription-row>div:first-child{display:grid;gap:5px}.p5-subscription-row small,.p5-muted{color:var(--p5-muted,var(--mut))}
 .p5-subscription-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.p5-booking-review{margin:1rem 0;padding:1rem;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.p5-booking-review h3{margin:0 0 .7rem;font-size:1.05rem}
+.p5-booking-review dl{margin:0}
+.p5-booking-review dl>div{display:grid;grid-template-columns:minmax(110px,.35fr) minmax(0,1fr);gap:12px;padding:.55rem 0;border-top:1px solid var(--line)}
+.p5-booking-review dt{color:var(--mut);font-size:.88rem}
+.p5-booking-review dd{margin:0;overflow-wrap:anywhere}
+.p5-booking-policy{padding:.8rem 1rem;border-radius:12px;background:var(--p5-tint);color:var(--mut);line-height:1.55}
+.p5-booking-policy a{color:var(--accent);font-weight:700}
 @media(max-width:640px){.p5-popular-service,.p5-subscription-row{flex-direction:column;align-items:stretch}.p5-popular-action{align-items:flex-start}.p5-subscription-actions{justify-content:flex-start}}
+@media(max-width:400px){.p5-booking-review dl>div{grid-template-columns:1fr;gap:2px}}
 
 /* ---- Theme-aware overrides (light + dark) ---------------------------------------------------------------- */
 .p5-notice{background:var(--p5-ok-bg)}
@@ -66,3 +75,4 @@ a.p5-list-row:hover{background:var(--p5-tint)}
 .p5-state,.p5-empty,.p5-notice{animation:p5in .28s ease both}
 @keyframes p5in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.p5-button,.p5-filter,.p5-card,.p5-booking-row,.p5-subscription-card,.p5-notification,.p5-metric,.p5-metrics>div{transition:none}.p5-button:hover:not(:disabled),.p5-filter:hover,a.p5-booking-row:hover,.p5-card:hover,.p5-subscription-card:hover{transform:none}}
+.p5-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}

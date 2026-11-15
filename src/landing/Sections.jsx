@@ -1,11 +1,12 @@
 import React from 'react';
 import {motion,AnimatePresence} from 'framer-motion';
 import {Link} from 'react-router-dom';
-import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2} from 'lucide-react';
+import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2,UserRound} from 'lucide-react';
 import HeroPlant from '../HeroPlant.jsx';
 import {ProductSvg,ShowcaseArt,TransformScene} from './Scenes.jsx';
 import * as C from './content.js';
 import { usePublicList } from './publicData.js';
+import { parseStoredCart } from '../cartStorage.js';
 import './landing.css';
 
 /* ---------- small helpers ---------- */
@@ -29,7 +30,22 @@ const Social={
 
 /* ---------- cart ---------- */
 export function useCart(toast){
-  const [items,setItems]=React.useState([]),[open,setOpen]=React.useState(false);
+  const [items,setItems]=React.useState(()=> {
+    try { return parseStoredCart(localStorage.getItem('tcare-cart')); }
+    catch { return []; }
+  }),[open,setOpen]=React.useState(false);
+  const storageWarningShown=React.useRef(false);
+  React.useEffect(()=>{
+    try {
+      localStorage.setItem('tcare-cart',JSON.stringify(items));
+      storageWarningShown.current=false;
+    } catch {
+      if(!storageWarningShown.current){
+        storageWarningShown.current=true;
+        toast?.('Your cart could not be saved in this browser.',{type:'warning'});
+      }
+    }
+  },[items,toast]);
   const add=React.useCallback(p=>{setItems(a=>a.find(x=>x.id===p.id)?a.map(x=>x.id===p.id?{...x,qty:x.qty+1}:x):[...a,{id:p.id,name:p.name,price:p.price,kind:p.kind,pot:p.pot,qty:1}]);toast?.('Added to cart')},[toast]);
   const setQty=React.useCallback((id,q)=>setItems(a=>q<=0?a.filter(x=>x.id!==id):a.map(x=>x.id===id?{...x,qty:q}:x)),[]);
   // stable identity until the cart really changes, so unrelated context updates don't re-render every cart consumer
@@ -43,15 +59,29 @@ export function CartDrawer({cart}){
       <div className="ld-head"><h3>Your cart <small>({cart.count})</small></h3><button className="ib" onClick={()=>cart.setOpen(false)} aria-label="Close cart"><X size={17}/></button></div>
       {cart.items.length?<>
         <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label="Decrease"><Minus size={13}/></button><i>{x.qty}</i><button onClick={()=>cart.setQty(x.id,x.qty+1)} aria-label="Increase"><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
-        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Checkout and order fulfilment are not enabled yet. Your cart is saved for browsing.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
+        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Checkout and order fulfilment are not enabled yet. Your cart is saved in this browser for later browsing.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
       </>:<div className="cart-empty"><ShoppingBag size={34}/><p>Your cart is empty.</p><LBtn variant="gold" to="#market" onClick={()=>cart.setOpen(false)}>Browse the market</LBtn></div>}
     </motion.aside></>}</AnimatePresence>;
 }
 
 /* ---------- navigation ---------- */
-export function LandingNav({theme,toggleTheme,cart}){
+export function LandingNav({theme,toggleTheme,cart,authUser,logout}){
   const [menu,setMenu]=React.useState(false);
+  const [accountOpen,setAccountOpen]=React.useState(false);
+  const accountRef=React.useRef(null);
   React.useEffect(()=>{if(!menu)return;const k=e=>e.key==='Escape'&&setMenu(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[menu]);
+  React.useEffect(()=>{
+    if(!accountOpen)return;
+    const onPointerDown=event=>{if(!accountRef.current?.contains(event.target))setAccountOpen(false)};
+    const onKeyDown=event=>{if(event.key==='Escape')setAccountOpen(false)};
+    addEventListener('pointerdown',onPointerDown);
+    addEventListener('keydown',onKeyDown);
+    return()=>{removeEventListener('pointerdown',onPointerDown);removeEventListener('keydown',onKeyDown)};
+  },[accountOpen]);
+  const workspace=authUser?.role==='ADMIN'?'/hq':authUser?.role==='GARDENER'?'/crew':'/garden';
+  const profile=authUser?.role==='ADMIN'?'/hq':authUser?.role==='GARDENER'?'/crew/me':'/garden/me';
+  const initials=(authUser?.fullName||'').trim().split(/\s+/).slice(0,2).map(part=>part[0]?.toUpperCase()||'').join('');
+  const signOut=async()=>{await logout?.();setAccountOpen(false);setMenu(false)};
   return <>
     <header className="lnav2">
       <Link to="/" className="brand"><Leaf size={20}/><b>T-CARE</b></Link>
@@ -60,7 +90,18 @@ export function LandingNav({theme,toggleTheme,cart}){
         <Link to="/makeover" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
         <button className="ib" onClick={toggleTheme} aria-label="Toggle theme">{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</button>
         <button className="ib ln-cart" onClick={()=>cart.setOpen(true)} aria-label={`Open cart, ${cart.count} items`}><ShoppingBag size={17}/>{cart.count>0&&<i>{cart.count}</i>}</button>
-        <Link to="/login" className="tl ln-sign">Sign in</Link>
+        {authUser
+          ? <div className="ln-account" ref={accountRef}>
+              <button className="ln-profile" type="button" aria-label={`Account options for ${authUser.fullName||'your account'}`} aria-expanded={accountOpen} onClick={()=>setAccountOpen(value=>!value)}>{initials||<UserRound size={17}/>}</button>
+              <AnimatePresence>{accountOpen&&<motion.div className="ln-account-menu" initial={{opacity:0,y:8,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:6,scale:.98}}>
+                <strong>{authUser.fullName||'Your account'}</strong><small>{authUser.email}</small>
+                <Link to={workspace} onClick={()=>setAccountOpen(false)}>Open workspace</Link>
+                <Link to={profile} onClick={()=>setAccountOpen(false)}>{authUser.role==='ADMIN'?'Admin overview':'Profile'}</Link>
+                <Link to={`${workspace}/security`} onClick={()=>setAccountOpen(false)}>Security & password</Link>
+                <button type="button" onClick={signOut}>Sign out</button>
+              </motion.div>}</AnimatePresence>
+            </div>
+          : <Link to="/login" className="tl ln-sign">Sign in</Link>}
         <button className="ib ln-burger" onClick={()=>setMenu(true)} aria-label="Open menu"><Menu size={18}/></button>
       </div>
     </header>
@@ -69,7 +110,12 @@ export function LandingNav({theme,toggleTheme,cart}){
       <motion.aside key="mn" className="ld-panel menu" role="dialog" aria-label="Menu" initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'tween',duration:.35,ease:[.22,1,.36,1]}}>
         <div className="ld-head"><span className="brand"><Leaf size={18}/><b>T-CARE</b></span><button className="ib" onClick={()=>setMenu(false)} aria-label="Close menu"><X size={17}/></button></div>
         <nav className="menu-links">{C.NAV_LINKS.map(([t,to],i)=><motion.div key={t} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} transition={{delay:.08+i*.05}}><L to={to} onClick={()=>setMenu(false)}>{t}<ArrowUpRight size={17}/></L></motion.div>)}</nav>
-        <div className="menu-foot"><LBtn to="/makeover" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn></div>
+        <div className="menu-foot">
+          <LBtn to="/makeover" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn>
+          {authUser
+            ? <><LBtn to={workspace} variant="ghost" onClick={()=>setMenu(false)}>Open workspace</LBtn><LBtn to={profile} variant="ghost" onClick={()=>setMenu(false)}>{authUser.role==='ADMIN'?'Admin overview':'Profile'}</LBtn><LBtn to={`${workspace}/security`} variant="ghost" onClick={()=>setMenu(false)}>Security & password</LBtn><button className="lb lb-ghost" type="button" onClick={signOut}>Sign out</button></>
+            : <><LBtn to="/login" variant="ghost" onClick={()=>setMenu(false)}>Sign in</LBtn><LBtn to="/register" variant="outline" onClick={()=>setMenu(false)}>Create account</LBtn></>}
+        </div>
       </motion.aside></>}</AnimatePresence>
   </>;
 }
@@ -92,7 +138,7 @@ function HeroImpl({theme}){
       <h1 className="h2-title"><span className="w"><motion.span style={{display:'inline-block'}} initial={{y:'110%'}} animate={{y:0}} transition={{delay:.2,duration:.8,ease:[.22,1,.36,1]}}>T-Care</motion.span></span></h1>
       <motion.p className="h2-sub" initial={{opacity:0}} animate={{opacity:1}} transition={{delay:.7}}><em>every leaf has a keeper.</em></motion.p>
       <p className="h2-text">Expert gardeners, living care records and gentle reminders — one calm home for every plant you love.</p>
-      <div className="h2-cta"><LBtn to="/garden/book" variant="gold">Book a visit <ArrowRight size={15}/></LBtn><LBtn to="/garden/shop" variant="ghost"><Leaf size={15}/>See our services</LBtn></div>
+      <div className="h2-cta"><LBtn to="/garden/book" variant="gold">Book a visit <ArrowRight size={15}/></LBtn><LBtn to="/services" variant="ghost"><Leaf size={15}/>See our services</LBtn></div>
       <ul className="h2-ticks">{C.HERO_TICKS.map(x=><li key={x}><Check size={14}/>{x}</li>)}</ul>
       <div className="h2-stats">{C.HERO_STATS.map(([ic,v,l],k)=>{const I=ICON[ic]||Star;return <motion.div key={l} className="h2-stat" initial={{opacity:0,y:18}} animate={{opacity:1,y:0}} transition={{delay:.9+k*.08}}><I size={14}/><b>{v}</b><span>{l}</span></motion.div>})}</div>
     </div>
@@ -157,7 +203,7 @@ export function Plans(){
   return <section className="lsec plans" id="plans"><Head center eyebrow="Plans & pricing">Care plans that <em>grow with you</em></Head>
     {loading&&!plans.length?<div className="public-state" role="status">Loading current subscription plans…</div>:null}
     {error&&!plans.length?<div className="public-state" role="alert"><p>Live subscription plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!plans.length?<div className="public-state"><p>No active subscription plans are published yet.</p><span>Check back after the T-Care team publishes its plans.</span></div>:null}
+    {!loading&&!error&&!plans.length?<div className="public-state"><p>No active subscription plans are published yet.</p><span>Check back after the T-Care team publishes its plans, or explore individual care services in the meantime.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
     {!!plans.length&&<div className="plan-grid">{plans.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(i===1?' dark':'')}>
       <small>Subscription</small><h3>{p.name}</h3><p>{p.description||'A T-Care plan for your plant collection.'}</p>
       <ul><li><Leaf size={13}/>{p.billingCycle} billing cycle</li>{p.plantLimit==null?<li><Leaf size={13}/>Plant limit set with the care team</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
@@ -185,7 +231,7 @@ export function Transformations(){
       <div className="trans-dots">{C.TRANSFORMS.map((x,k)=><button key={x.id} aria-label={x.tab} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
       <div className="trans-thumbs">{C.TRANSFORMS.map((x,k)=><button key={x.id} className={k===i?'on':''} onClick={()=>setI(k)}><span className="thumb-art"><TransformScene id={x.id}/></span><em>{x.tab}</em></button>)}</div>
     </div>
-    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See how plants change a balcony, a living room or a terrace — one thoughtful makeover at a time.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative makeover concepts</span><LBtn to="/garden/shop" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
+    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See how plants change a balcony, a living room or a terrace — one thoughtful makeover at a time.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative makeover concepts</span><LBtn to="/services" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
   </div></section>;
 }
 
@@ -206,7 +252,7 @@ export function Market({cart}){
   return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Plants and essentials listed in the live product catalogue.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
     {loading&&!products.length?<div className="public-state">Loading current products…</div>:null}
     {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!products.length?<div className="public-state">No products are currently listed.</div>:null}
+    {!loading&&!error&&!products.length?<div className="public-state"><p>No products are currently listed.</p><span>Explore T-Care's plant-care services while the store catalogue is being prepared.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
   </section>;
 }
@@ -220,7 +266,7 @@ function ReviewsImpl(){
   return <section className="lsec reviews"><Head center eyebrow="Published customer feedback">Experiences shared by <em>T-Care customers</em></Head>
     {loading&&!reviews.length?<div className="public-state">Loading published reviews…</div>:null}
     {error&&!reviews.length?<div className="public-state" role="alert"><p>Published reviews are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!reviews.length?<div className="public-state">Customer reviews will appear here after they are approved for publication.</div>:null}
+    {!loading&&!error&&!reviews.length?<div className="public-state"><p>Customer reviews will appear here after they are approved for publication.</p><span>Learn what T-Care offers while customer feedback is being prepared.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!reviews.length&&<Row label="published customer reviews">{reviews.map(r=><figure className="review" key={r.id}><div className="stars" aria-label={`${r.rating} out of 5`}>{[0,1,2,3,4].map(k=><Star key={k} size={13} className={k<r.rating?'on':''}/>)}</div>
       {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Rated this completed T-Care service.</blockquote>}
       <figcaption><span className="av">T</span><div><b>T-Care customer</b><small>{r.booking?.service?.name||'Completed service'}{r.booking?.assignment?.gardener?.user?.fullName?` · Gardener ${r.booking.assignment.gardener.user.fullName}`:''}</small><small>{new Date(r.createdAt).toLocaleDateString('en-IN')}</small></div></figcaption></figure>)}</Row>}
