@@ -1,28 +1,13 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { API_V1 } from './phase5Api.js';
+import { createApiRequest } from './apiRequest.js';
 import './phase5.css';
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API_V1}${path}`, {
-    credentials: 'include',
-    cache: 'no-store',
-    ...options,
-    headers: { ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) }
-  });
-  if (response.status === 204) return null;
-  const raw = await response.text();
-  let data = {};
-  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { message: raw || 'Unexpected server response.' }; }
-  if (!response.ok) {
-    const error = new Error(data.message || data.error || `Request failed (${response.status}).`);
-    error.status = response.status;
-    error.code = data.error;
-    error.details = data.details;
-    throw error;
-  }
-  return data;
-}
+const request = createApiRequest({
+  apiV1: API_V1,
+  onSessionExpired: () => window.dispatchEvent(new Event('tcare:session-expired'))
+});
 const json = value => JSON.stringify(value);
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
 const dateTime = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not scheduled';
@@ -45,13 +30,15 @@ function useLoad(path, fallbackKey, pollMs = 0) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const inFlight = React.useRef(false);
+  const pollingPaused = React.useRef(false);
   // Every request gets a ticket. Only the newest ticket may write state, so a slow response for an old path
   // (previous page, previous job id) can never overwrite the view the person is looking at now.
   const ticket = React.useRef(0);
   const load = React.useCallback(async ({ silent = false } = {}) => {
     // Background polling is skipped while another request runs; an explicit load (first load, path change,
     // retry, refresh after saving) always runs and supersedes whatever was in flight.
-    if (silent && inFlight.current) return null;
+    if (silent && (inFlight.current || pollingPaused.current)) return null;
+    if (!silent) pollingPaused.current = false;
     const mine = ++ticket.current;
     inFlight.current = true;
     if (!silent) setLoading(true);
@@ -61,7 +48,10 @@ function useLoad(path, fallbackKey, pollMs = 0) {
       if (mine === ticket.current) setData(result);
       return result;
     } catch (e) {
-      if (mine === ticket.current) setError(errorText(e));
+      if (mine === ticket.current) {
+        setError(errorText(e));
+        if ([401, 403].includes(e.status) || e.authRefreshFailed) pollingPaused.current = true;
+      }
       return null;
     } finally {
       if (mine === ticket.current) { inFlight.current = false; setLoading(false); }

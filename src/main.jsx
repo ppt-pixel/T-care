@@ -94,6 +94,12 @@ function Provider({children}){
   },[]);
 
   React.useEffect(()=>{
+    const onSessionExpired=()=>setAuthUser(null);
+    window.addEventListener('tcare:session-expired',onSessionExpired);
+    return()=>window.removeEventListener('tcare:session-expired',onSessionExpired);
+  },[]);
+
+  React.useEffect(()=>{
     const onShortcut=event=>{
       if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){
         event.preventDefault();
