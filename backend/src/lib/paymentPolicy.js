@@ -6,3 +6,9 @@ export function assertPaymentsEnabled(enabled) {
     throw error;
   }
 }
+
+const finalPaymentStatuses = new Set(['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED']);
+
+export function isFinalPaymentStatus(status) {
+  return finalPaymentStatuses.has(status);
+}

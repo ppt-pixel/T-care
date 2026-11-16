@@ -110,6 +110,28 @@ test('customer payment projection is used by every customer-facing payment respo
   assert.match(payment, /payments\.map\(serializeCustomerPayment\)/);
   assert.match(payment, /payment: serializeCustomerPayment\(payment\)/);
   assert.doesNotMatch(payment, /function serializePayment\(/);
+  assert.match(payment, /isFinalPaymentStatus\(current\.status\)/);
+  assert.match(payment, /return \{ payment: current, activatedSubscription: null \}/);
+});
+
+test('booking APIs use the safe customer payment projection', () => {
+  const bookings = read('backend/src/routes/bookings.js');
+  assert.equal((bookings.match(/serializeCustomerPayment\(/g) || []).length, 2);
+  assert.match(bookings, /payment:\s*\{\s*include:\s*\{\s*refunds:\s*true\s*\}\s*\}/);
+  assert.doesNotMatch(bookings, /payment:\s*b\.payment\s*\?\s*\{\s*\.\.\.b\.payment/);
+  assert.doesNotMatch(bookings, /payment:\s*hydrated\.payment\s*\?\s*\{\s*\.\.\.hydrated\.payment/);
+});
+
+test('booking checkout is customer-scoped and uses server-created orders and verified callbacks', () => {
+  const payment = read('backend/src/routes/payments.js');
+  const phase = read('src/phase5.jsx');
+  assert.match(payment, /customer\.get\('\/availability'/);
+  assert.match(payment, /enabled:\s*env\.PAYMENTS_ENABLED === true && Boolean\(env\.RAZORPAY_KEY_ID && env\.RAZORPAY_KEY_SECRET\)/);
+  assert.match(payment, /customer\.post\('\/booking\/:bookingId\/order'/);
+  assert.match(phase, /payments\/customer\/availability/);
+  assert.match(phase, /payments\/customer\/booking\/\$\{encodeURIComponent\(id\)\}\/order/);
+  assert.match(phase, /payments\/customer\/\$\{encodeURIComponent\(payment\.id\)\}\/verify/);
+  assert.match(phase, /razorpaySignature:\s*result\.razorpay_signature/);
 });
 
 

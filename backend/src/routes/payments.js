@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { notifyUserSafely } from '../lib/notifications.js';
 import { addBillingPeriod } from '../lib/billingPeriod.js';
 import { serializeCustomerPayment } from '../lib/paymentView.js';
-import { assertPaymentsEnabled } from '../lib/paymentPolicy.js';
+import { assertPaymentsEnabled, isFinalPaymentStatus } from '../lib/paymentPolicy.js';
 
 const router = Router();
 const provider = 'razorpay';
@@ -188,7 +188,9 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
 
     const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { subscription: { include: { plan: true, customer: { select: { userId: true } } } } } });
     if (!current) return null;
-    if (current.status === 'PAID' && normalizedStatus !== 'PAID') return current;
+    if (isFinalPaymentStatus(current.status)) {
+      return { payment: current, activatedSubscription: null };
+    }
 
     const data = {
       status: normalizedStatus,
@@ -333,6 +335,12 @@ export async function razorpayWebhook(req, res) {
 
 const customer = Router();
 customer.use(requireAuth, requireRole('CUSTOMER'));
+
+customer.get('/availability', (req, res) => {
+  return res.json({
+    enabled: env.PAYMENTS_ENABLED === true && Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET)
+  });
+});
 
 customer.post('/booking/:bookingId/order', async (req, res, next) => {
   try {

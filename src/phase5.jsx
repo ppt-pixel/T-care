@@ -13,6 +13,31 @@ const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', curre
 const dateTime = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not scheduled';
 const dateOnly = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : '—';
 const statusLabel = value => String(value || 'UNKNOWN').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+let razorpayCheckoutPromise;
+function loadRazorpayCheckout() {
+  if (typeof window.Razorpay === 'function') return Promise.resolve();
+  if (!razorpayCheckoutPromise) {
+    razorpayCheckoutPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => {
+        if (typeof window.Razorpay === 'function') resolve();
+        else {
+          razorpayCheckoutPromise = null;
+          reject(new Error('Razorpay Checkout did not initialize.'));
+        }
+      };
+      script.onerror = () => {
+        razorpayCheckoutPromise = null;
+        script.remove();
+        reject(new Error('Razorpay Checkout could not be loaded. Check your connection and try again.'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return razorpayCheckoutPromise;
+}
 const errorText = error => {
   if (error?.authRefreshFailed) return 'Your session could not be refreshed. Please sign in again.';
   if (Array.isArray(error?.details) && error.details.length) {
@@ -501,15 +526,75 @@ export function CustomerBookingsPage({ Shell }) {
 export function CustomerBookingDetailPage({ Shell }) {
   const { id } = useParams();
   const { data, loading, error, load } = useLoad(`/bookings/${id}`, null, 12000);
+  const { data: paymentAvailability, error: paymentAvailabilityError } = useLoad('/payments/customer/availability', null);
   const [busy, setBusy] = React.useState(false), [message, setMessage] = React.useState(''), [review, setReview] = React.useState({ rating: 5, comment: '' }), [issue, setIssue] = React.useState({ subject: '', description: '' });
   const booking = data?.booking;
+  const canPay = booking?.status !== 'CANCELLED' && !['AUTHORIZED', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking?.payment?.status);
   const cancel = async () => { if (!window.confirm('Cancel this booking?')) return; setBusy(true); setMessage(''); try { await request(`/bookings/${id}/cancel`, { method: 'POST', body: '{}' }); setMessage('Booking cancelled.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
+  const startBookingPayment = async () => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const idempotencyKey = window.crypto?.randomUUID?.();
+      if (!idempotencyKey) throw new Error('Secure payment setup is not available in this browser.');
+      const { payment, checkout } = await request(`/payments/customer/booking/${encodeURIComponent(id)}/order`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: '{}'
+      });
+      await loadRazorpayCheckout();
+      const instance = new window.Razorpay({
+        key: checkout.keyId,
+        amount: checkout.amount,
+        currency: checkout.currency,
+        name: 'T-CARE',
+        description: `Booking ${booking.reference}`,
+        order_id: checkout.orderId,
+        handler: async result => {
+          try {
+            const verification = await request(`/payments/customer/${encodeURIComponent(payment.id)}/verify`, {
+              method: 'POST',
+              body: json({
+                razorpayOrderId: result.razorpay_order_id,
+                razorpayPaymentId: result.razorpay_payment_id,
+                razorpaySignature: result.razorpay_signature
+              })
+            });
+            if (!verification.verified) throw new Error('Payment has not been confirmed yet. Refresh the booking before retrying.');
+            setMessage('Payment confirmed.');
+            await load();
+          } catch (e) {
+            setMessage(errorText(e));
+            await load();
+          } finally {
+            setBusy(false);
+          }
+        },
+        modal: { ondismiss: () => setBusy(false) },
+        theme: { color: '#91b75d' }
+      });
+      instance.on('payment.failed', event => {
+        setMessage(event?.error?.description || 'Payment was not completed. You can try again.');
+        setBusy(false);
+      });
+      instance.open();
+    } catch (e) {
+      setMessage(errorText(e));
+      setBusy(false);
+    }
+  };
   const submitReview = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/reviews', { method: 'POST', body: json({ bookingId: id, rating: Number(review.rating), comment: review.comment || null }) }); setMessage('Review submitted for moderation.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   const submitIssue = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/issues', { method: 'POST', body: json({ bookingId: id, ...issue }) }); setIssue({ subject: '', description: '' }); setMessage('Issue report submitted.'); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   return <Shell title={booking?.reference || 'Booking detail'} sub="Live booking record, service status, assignment and report.">
-    <Notice error={error || (message && /failed|cannot|not found|invalid|requires|must/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid|requires|must/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
+    <Notice error={error || paymentAvailabilityError || (message && /failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {booking && <><div className="p5-booking-head"><div><Pill>{statusLabel(booking.status)}</Pill><h2>{booking.service?.name}</h2><p>{dateTime(booking.scheduledStart)} · {booking.address?.label} · {booking.address?.line1}, {booking.address?.city}</p></div><strong>{money(booking.total)}</strong></div>
       <div className="p5-metrics"><div><small>Subtotal</small><b>{money(booking.subtotal)}</b></div><div><small>Convenience fee</small><b>{money(booking.convenienceFee)}</b></div><div><small>Total</small><b>{money(booking.total)}</b></div></div>
+      {paymentAvailability?.enabled && <Panel title="Booking payment" sub="Payments are processed securely by Razorpay.">
+        <div className="p5-list-row"><span>Payment status</span><Pill tone={booking.payment?.status === 'PAID' ? 'success' : 'warning'}>{statusLabel(booking.payment?.status || 'UNPAID')}</Pill></div>
+        {booking.payment?.status === 'AUTHORIZED' && <p>Payment is authorized and awaiting confirmation. Do not retry while this status is shown.</p>}
+        {booking.payment?.refunds?.length > 0 && booking.payment.refunds.map(refund => <div className="p5-list-row" key={refund.id}><span>Refund · {refund.reason || statusLabel(refund.status)}</span><b>{money(refund.amount)}</b></div>)}
+        {canPay && <div className="p5-actions"><Button onClick={startBookingPayment} disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${money(booking.total)}`}</Button></div>}
+      </Panel>}
       <Panel title="Plants in this booking">{booking.plants?.map(x => <div className="p5-list-row" key={x.plantId}><b>{x.plant?.name}</b><small>{statusLabel(x.plant?.healthStatus)}</small></div>)}</Panel>
       <Panel title="Gardener assignment">{booking.assignment ? <div className="p5-list-row"><div><b>{booking.assignment.gardener?.user?.fullName}</b><small>{booking.assignment.gardener?.user?.phone || 'Contact details not shared'}</small></div><Pill>{statusLabel(booking.assignment.status)}</Pill></div> : <Empty title="Awaiting assignment" text="A KYC-verified Gardener will be assigned by T-CARE operations."/>}</Panel>
       <Panel title="Booking timeline">{booking.statusHistory?.length ? <div className="p5-timeline">{booking.statusHistory.map(h => <div key={h.id}><i/><div><b>{statusLabel(h.toStatus)}</b><small>{dateTime(h.createdAt)}{h.note ? ` · ${h.note}` : ''}</small></div></div>)}</div> : <Empty/>}</Panel>

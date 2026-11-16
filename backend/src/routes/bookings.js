@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { env } from '../config/env.js';
 import { notifyUserSafely } from '../lib/notifications.js';
 import { createSignedDownloadUrl } from '../lib/supabaseStorage.js';
+import { serializeCustomerPayment } from '../lib/paymentView.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('CUSTOMER'));
@@ -143,10 +144,16 @@ router.get('/', async (req, res, next) => {
     const customer = await getCustomer(req.auth.id);
     const bookings = await prisma.booking.findMany({
       where: { customerId: customer.id },
-      include: { service: true, address: true, plants: { include: { plant: true } }, assignment: { include: { gardener: { include: { user: { select: { fullName: true, phone: true } } } } } }, payment: true },
+      include: { service: true, address: true, plants: { include: { plant: true } }, assignment: { include: { gardener: { include: { user: { select: { fullName: true, phone: true } } } } } }, payment: { include: { refunds: true } } },
       orderBy: { scheduledStart: 'desc' }
     });
-    return res.json({ bookings: bookings.map(b => ({ ...b, subtotal: Number(b.subtotal), convenienceFee: Number(b.convenienceFee), total: Number(b.total), payment: b.payment ? { ...b.payment, amount: Number(b.payment.amount) } : null })) });
+    return res.json({ bookings: bookings.map(b => ({
+      ...b,
+      subtotal: Number(b.subtotal),
+      convenienceFee: Number(b.convenienceFee),
+      total: Number(b.total),
+      payment: b.payment ? serializeCustomerPayment({ ...b.payment, booking: { reference: b.reference, service: b.service } }) : null
+    })) });
   } catch (error) { next(error); }
 });
 
@@ -159,7 +166,13 @@ router.get('/:id', async (req, res, next) => {
     });
     if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
     const hydrated = await withSignedReportPhotos(booking);
-    return res.json({ booking: { ...hydrated, subtotal: Number(hydrated.subtotal), convenienceFee: Number(hydrated.convenienceFee), total: Number(hydrated.total), payment: hydrated.payment ? { ...hydrated.payment, amount: Number(hydrated.payment.amount), refunds: hydrated.payment.refunds.map(r => ({ ...r, amount: Number(r.amount) })) } : null } });
+    return res.json({ booking: {
+      ...hydrated,
+      subtotal: Number(hydrated.subtotal),
+      convenienceFee: Number(hydrated.convenienceFee),
+      total: Number(hydrated.total),
+      payment: hydrated.payment ? serializeCustomerPayment({ ...hydrated.payment, booking: { reference: hydrated.reference, service: hydrated.service } }) : null
+    } });
   } catch (error) { next(error); }
 });
 

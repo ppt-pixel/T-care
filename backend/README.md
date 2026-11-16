@@ -27,7 +27,9 @@ The application is designed so moving from Supabase Free to Pro does not require
 
 ## Payments
 
-The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. The current Customer UI exposes read-only payment history only; it does not start checkout. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server, and leave the Razorpay credentials unset until test-mode checkout, webhook and refund verification are completed. Never expose secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
+The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. Booking checkout is available in the Customer booking detail view only when the backend payment flag and Razorpay API credentials are configured. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server. Never expose secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
+
+For local booking-payment testing, create an ignored `backend/.env.test` file using an isolated local database on `localhost:55432/tcare_payment_test`, keep `PAYMENTS_ENABLED=false`, and set `PAYMENT_TEST_CUSTOMER_EMAIL` to a synthetic `example.invalid` address plus `PAYMENT_TEST_CUSTOMER_PASSWORD` (12-72 UTF-8 bytes). Run `npm run payments:seed-test` from `backend/` to create a verified synthetic Customer, plant, address, active service and future booking. The script refuses any database URL other than the exact local test target and sends no email or Razorpay requests. Keep the existing `backend/.env` unchanged.
 
 
 ## Authentication and email verification
