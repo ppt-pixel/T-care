@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildStorageObjectInfoUrl, probeStorageObjectExists, probeStorageObjectInfo } from '../src/lib/storageObjectProbe.js';
 
-test('Supabase metadata probe uses the object-info HEAD endpoint and encodes each path segment', () => {
+test('Supabase metadata probe builds the object-info endpoint and encodes each path segment', () => {
   assert.equal(
     buildStorageObjectInfoUrl({ baseUrl: 'https://project.supabase.co/storage/v1/', bucket: 'tcare media', objectKey: 'user-1/plants/a b.webp' }),
     'https://project.supabase.co/storage/v1/object/info/tcare%20media/user-1/plants/a%20b.webp'
@@ -16,7 +16,7 @@ test('Storage existence probe uses the object-info JSON endpoint with the server
     apiKey: 'server-secret',
     fetchImpl: async (...args) => {
       calls.push(args);
-      return { ok: true, status: 200, json: async () => ({ metadata: { size: 123, mimetype: 'image/webp' } }) };
+      return { ok: true, status: 200, json: async () => ({ size: 123, mimetype: 'image/webp' }) };
     }
   });
   assert.equal(exists, true);
@@ -26,14 +26,14 @@ test('Storage existence probe uses the object-info JSON endpoint with the server
   ]]);
 });
 
-test('Storage metadata probe parses size and MIME type from the Supabase info response', async () => {
+test('Storage metadata probe parses top-level size and MIME type from the Supabase info response', async () => {
   const info = await probeStorageObjectInfo({
     url: 'https://project.supabase.co/storage/v1/object/info/tcare-media/user-1/a.webp',
     apiKey: 'server-secret',
     fetchImpl: async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ metadata: { size: 123, mimetype: 'image/webp' } })
+      json: async () => ({ id: 'object-1', size: 123, mimetype: 'image/webp' })
     })
   });
   assert.deepEqual(info, { sizeBytes: 123, contentType: 'image/webp' });

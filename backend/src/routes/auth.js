@@ -169,6 +169,22 @@ async function createAndSendOtp(user) {
     const expiresAt = new Date(now.getTime() + otpTtlMs);
 
     const otpRecord = await prisma.$transaction(async(tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+        const currentUser = await tx.user.findUnique({
+            where: { id: user.id },
+            select: { status: true, emailVerifiedAt: true }
+        });
+        if (!currentUser || currentUser.emailVerifiedAt || ['BLOCKED', 'INACTIVE'].includes(currentUser.status)) {
+            return null;
+        }
+        const latestOtp = await tx.emailOtp.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: 'desc' }
+        });
+        if (latestOtp && now.getTime() - latestOtp.createdAt.getTime() < env.OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+            return null;
+        }
+
         await tx.emailOtp.updateMany({
             where: { userId: user.id, consumedAt: null },
             data: { consumedAt: now }
@@ -182,6 +198,8 @@ async function createAndSendOtp(user) {
             }
         });
     });
+
+    if (!otpRecord) return false;
 
     try {
         await sendEmailVerificationCode({
@@ -206,6 +224,7 @@ async function createAndSendOtp(user) {
         deliveryError.accountCreated = true;
         throw deliveryError;
     }
+    return true;
 }
 
 export default function authRouter(router) {
@@ -362,6 +381,18 @@ export default function authRouter(router) {
             }
 
             const verifiedUser = await prisma.$transaction(async(tx) => {
+                await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+                const currentUser = await tx.user.findUnique({
+                    where: { id: user.id },
+                    select: { status: true, emailVerifiedAt: true }
+                });
+                if (!currentUser || ['BLOCKED', 'INACTIVE'].includes(currentUser.status)) {
+                    throw Object.assign(new Error('This account is not currently active.'), { statusCode: 403, code: 'ACCOUNT_UNAVAILABLE' });
+                }
+                if (currentUser.emailVerifiedAt) {
+                    return null;
+                }
+
                 const consumed = await tx.emailOtp.updateMany({
                     where: {
                         id: otp.id,
@@ -543,21 +574,32 @@ export default function authRouter(router) {
                 return res.json({ authenticated: false, user: null });
             }
 
-            const replacementToken = createRefreshToken();
-            const replacementHash = hashToken(replacementToken);
             const now = new Date();
 
-            await prisma.$transaction([
-                prisma.refreshSession.update({ where: { id: session.id }, data: { revokedAt: now, lastUsedAt: now } }),
-                prisma.refreshSession.create({
+            const replacementToken = createRefreshToken();
+            const replacementHash = hashToken(replacementToken);
+            const rotated = await prisma.$transaction(async(tx) => {
+                const revoked = await tx.refreshSession.updateMany({
+                    where: { id: session.id, revokedAt: null, expiresAt: { gt: now } },
+                    data: { revokedAt: now, lastUsedAt: now }
+                });
+                if (revoked.count !== 1) return false;
+
+                await tx.refreshSession.create({
                     data: {
                         userId: session.userId,
                         tokenHash: replacementHash,
                         expiresAt: new Date(now.getTime() + refreshTtlMs),
                         lastUsedAt: now
                     }
-                })
-            ]);
+                });
+                return true;
+            });
+
+            if (!rotated) {
+                clearAuthCookies(res);
+                return res.json({ authenticated: false, user: null });
+            }
 
             setAuthCookies(res, createAccessToken(session.user), replacementToken);
             return res.json({ authenticated: true, user: publicUser(session.user) });

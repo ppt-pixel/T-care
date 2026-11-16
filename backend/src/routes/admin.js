@@ -308,20 +308,32 @@ router.patch('/bookings/:id/status', async(req, res, next) => {
         if (input.status === 'CANCELLED' && ['PAID', 'PARTIALLY_REFUNDED'].includes(booking.payment?.status)) {
             return res.status(409).json({ error: 'REFUND_REQUIRED', message: 'A processed payment must go through the refund workflow before this booking can be cancelled.' });
         }
-        const updated = await prisma.$transaction(async tx => {
-            const b = await tx.booking.update({ where: { id: booking.id }, data: { status: input.status } });
-            if (input.status === 'CANCELLED' && booking.assignment) {
-                await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { status: 'CANCELLED' } });
+        const transition = await prisma.$transaction(async tx => {
+            await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
+            const current = await tx.booking.findUnique({
+                where: { id: booking.id },
+                include: { assignment: { include: { gardener: { select: { userId: true } } } }, payment: { select: { status: true } } }
+            });
+            if (!current) throw Object.assign(new Error('Booking not found.'), { statusCode: 404, code: 'BOOKING_NOT_FOUND' });
+            if (!canTransitionBooking(current.status, input.status)) {
+                throw Object.assign(new Error(`Booking cannot transition from ${current.status} to ${input.status}.`), { statusCode: 409, code: 'INVALID_BOOKING_TRANSITION' });
             }
-            await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: input.status, changedBy: req.auth.id, note: input.note || 'Administrative status change.' } });
-            return b;
+            if (input.status === 'CANCELLED' && ['PAID', 'PARTIALLY_REFUNDED'].includes(current.payment?.status)) {
+                throw Object.assign(new Error('A processed payment must go through the refund workflow before this booking can be cancelled.'), { statusCode: 409, code: 'REFUND_REQUIRED' });
+            }
+            const updated = await tx.booking.update({ where: { id: current.id }, data: { status: input.status } });
+            if (input.status === 'CANCELLED' && current.assignment) {
+                await tx.gardenerAssignment.update({ where: { id: current.assignment.id }, data: { status: 'CANCELLED' } });
+            }
+            await tx.bookingStatusHistory.create({ data: { bookingId: current.id, fromStatus: current.status, toStatus: input.status, changedBy: req.auth.id, note: input.note || 'Administrative status change.' } });
+            await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: current.id, metadata: { from: current.status, to: input.status, note: input.note } } });
+            return { booking: updated, assignment: current.assignment };
         });
-        await audit(req.auth.id, 'STATUS_CHANGE', 'Booking', booking.id, { from: booking.status, to: input.status, note: input.note });
         if (input.status === 'CANCELLED') {
             await notifyUserSafely({ userId: booking.customer.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
-            if (booking.assignment?.gardener?.userId) await notifyUserSafely({ userId: booking.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
+            if (transition.assignment?.gardener?.userId) await notifyUserSafely({ userId: transition.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
         }
-        res.json({ booking: updated });
+        res.json({ booking: transition.booking });
     } catch (error) { next(error); }
 });
 
@@ -329,14 +341,21 @@ router.post('/bookings/:id/assign', async(req, res, next) => {
     try {
         const input = z.object({ gardenerId: z.string().min(1) }).strict().parse(req.body);
         const result = await prisma.$transaction(async tx => {
+            await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${req.params.id} FOR UPDATE`;
             const booking = await tx.booking.findUnique({ where: { id: req.params.id }, include: { assignment: true, customer: { select: { userId: true } } } });
             if (!booking) throw Object.assign(new Error('Booking not found.'), { statusCode: 404, code: 'BOOKING_NOT_FOUND' });
             if (!['CONFIRMED', 'GARDENER_ASSIGNED'].includes(booking.status)) throw Object.assign(new Error('Booking is not assignable in its current state.'), { statusCode: 409, code: 'BOOKING_NOT_ASSIGNABLE' });
-            const gardener = await tx.gardenerProfile.findUnique({ where: { id: input.gardenerId }, include: { user: { select: { id: true, status: true } } } });
+            let gardener = await tx.gardenerProfile.findUnique({ where: { id: input.gardenerId }, include: { user: { select: { id: true, status: true } } } });
+            if (!gardener) throw Object.assign(new Error('Gardener not found.'), { statusCode: 404, code: 'GARDENER_NOT_FOUND' });
+            await tx.$queryRaw`SELECT "id" FROM "GardenerProfile" WHERE "id" = ${gardener.id} FOR UPDATE`;
+            gardener = await tx.gardenerProfile.findUnique({ where: { id: input.gardenerId }, include: { user: { select: { id: true, status: true } } } });
             if (!gardener) throw Object.assign(new Error('Gardener not found.'), { statusCode: 404, code: 'GARDENER_NOT_FOUND' });
             if (gardener.user.status !== 'ACTIVE') throw Object.assign(new Error('Gardener account is not active.'), { statusCode: 409, code: 'GARDENER_INACTIVE' });
             if (gardener.kycStatus !== 'VERIFIED') throw Object.assign(new Error('Only KYC-verified gardeners can receive assignments.'), { statusCode: 409, code: 'GARDENER_KYC_REQUIRED' });
-            if (booking.assignment?.gardenerId === gardener.id && booking.assignment.status !== 'REJECTED' && booking.assignment.status !== 'CANCELLED') return { booking, assignment: booking.assignment, unchanged: true };
+            if (booking.assignment?.gardenerId === gardener.id && booking.assignment.status !== 'REJECTED' && booking.assignment.status !== 'CANCELLED') {
+                await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'GardenerAssignment', entityId: booking.assignment.id, metadata: { bookingId: booking.id, gardenerId: gardener.id, unchanged: true } } });
+                return { booking, assignment: booking.assignment, unchanged: true };
+            }
             const overlappingAssignment = await tx.gardenerAssignment.findFirst({
                 where: {
                     gardenerId: gardener.id,
@@ -355,9 +374,10 @@ router.post('/bookings/:id/assign', async(req, res, next) => {
             else await tx.gardenerAssignment.create({ data: { bookingId: booking.id, gardenerId: gardener.id, status: 'ASSIGNED' } });
             const updatedBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: 'GARDENER_ASSIGNED' } });
             await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: 'GARDENER_ASSIGNED', changedBy: req.auth.id, note: 'Gardener assigned by admin.' } });
-            return { booking: updatedBooking, assignment: await tx.gardenerAssignment.findUnique({ where: { bookingId: booking.id } }), gardenerUserId: gardener.user.id, customerUserId: booking.customer.userId };
+            const assignment = await tx.gardenerAssignment.findUnique({ where: { bookingId: booking.id } });
+            await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'GardenerAssignment', entityId: assignment.id, metadata: { bookingId: booking.id, gardenerId: input.gardenerId, unchanged: false } } });
+            return { booking: updatedBooking, assignment, gardenerUserId: gardener.user.id, customerUserId: booking.customer.userId };
         });
-        await audit(req.auth.id, 'STATUS_CHANGE', 'GardenerAssignment', result.assignment.id, { bookingId: req.params.id, gardenerId: input.gardenerId, unchanged: result.unchanged ?? false });
         if (!result.unchanged) {
             await notifyUserSafely({ userId: result.gardenerUserId, type: 'BOOKING', channel: 'IN_APP', title: 'New job assignment', body: `You have been assigned booking ${result.booking.reference}. Review the job details and accept or reject the assignment.` });
             await notifyUserSafely({ userId: result.customerUserId, type: 'BOOKING', channel: 'IN_APP', title: 'Gardener assigned', body: `A verified Gardener has been assigned to booking ${result.booking.reference}.` });

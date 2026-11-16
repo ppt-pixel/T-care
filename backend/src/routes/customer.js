@@ -39,7 +39,7 @@ async function withSignedPlantPhotos(plants, userId) {
   const byKey = new Map(assets.map(asset => [asset.objectKey, asset]));
   const hydrated = await Promise.all(rows.map(async plant => ({ ...plant, photos: await Promise.all((plant.photos || []).map(async photo => {
     const asset = byKey.get(photo.objectKey);
-    let url = photo.url || null;
+    let url = null;
     if (asset) { try { url = (await createSignedDownloadUrl(asset.objectKey, 300)).url; } catch { /* keep an empty preview if Storage is temporarily unavailable */ } }
     return { ...photo, mediaAssetId: asset?.id || null, url };
   })) })));
@@ -83,6 +83,7 @@ router.post('/addresses', async (req, res, next) => {
     const customer = await getCustomer(req.auth.id);
     const input = addressSchema.parse(req.body);
     const address = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "CustomerProfile" WHERE "id" = ${customer.id} FOR UPDATE`;
       if (input.isDefault) await tx.address.updateMany({ where: { customerId: customer.id }, data: { isDefault: false } });
       return tx.address.create({ data: { ...input, customerId: customer.id } });
     });
@@ -97,6 +98,7 @@ router.patch('/addresses/:id', async (req, res, next) => {
     const existing = await prisma.address.findFirst({ where: { id: req.params.id, customerId: customer.id } });
     if (!existing) return res.status(404).json({ error: 'ADDRESS_NOT_FOUND', message: 'Address not found.' });
     const address = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "CustomerProfile" WHERE "id" = ${customer.id} FOR UPDATE`;
       if (input.isDefault) await tx.address.updateMany({ where: { customerId: customer.id }, data: { isDefault: false } });
       return tx.address.update({ where: { id: existing.id }, data: input });
     });

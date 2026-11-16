@@ -33,9 +33,12 @@ export async function probeStorageObjectInfo({ url, apiKey, fetchImpl = fetch })
   const info = await response.json();
   const metadata = info?.metadata;
   return {
-    sizeBytes: positiveSafeInteger(metadata?.size ?? metadata?.contentLength ?? metadata?.content_length),
-    contentType: typeof (metadata?.mimetype ?? metadata?.contentType ?? metadata?.content_type) === 'string'
-      ? (metadata.mimetype ?? metadata.contentType ?? metadata.content_type)
+    sizeBytes: positiveSafeInteger(info?.size ?? info?.contentLength ?? info?.content_length
+      ?? metadata?.size ?? metadata?.contentLength ?? metadata?.content_length),
+    contentType: typeof (info?.mimetype ?? info?.contentType ?? info?.content_type
+      ?? metadata?.mimetype ?? metadata?.contentType ?? metadata?.content_type) === 'string'
+      ? (info.mimetype ?? info.contentType ?? info.content_type
+        ?? metadata.mimetype ?? metadata.contentType ?? metadata.content_type)
       : null
   };
 }

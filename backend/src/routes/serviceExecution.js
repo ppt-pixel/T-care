@@ -31,7 +31,6 @@ const reportSchema = z.object({
 
 const photoSchema = z.object({
   objectKey: z.string().trim().min(1).max(1000),
-  url: z.string().url().max(4000).nullable().optional(),
   caption: z.string().trim().max(1000).nullable().optional()
 }).strict();
 
@@ -63,7 +62,7 @@ async function serializeReport(report, userId) {
   if (!report) return null;
   const photos = await Promise.all((report.photos || []).map(async photo => {
     const asset = await prisma.mediaAsset.findFirst({ where: { ownerUserId: userId, objectKey: photo.objectKey, kind: 'SERVICE_REPORT_PHOTO', targetType: 'SERVICE_REPORT', targetId: report.id, status: 'UPLOADED' }, select: { id: true } });
-    let url = photo.url || null;
+    let url = null;
     if (asset) { try { url = (await createSignedDownloadUrl(photo.objectKey, 300)).url; } catch { /* a report remains readable if Storage signing is temporarily unavailable */ } }
     return { ...photo, mediaAssetId: asset?.id || null, url };
   }));
@@ -173,7 +172,7 @@ router.post('/jobs/:id/report/photos', async (req, res, next) => {
 
     const asset = await prisma.mediaAsset.findFirst({ where: { ownerUserId: req.auth.id, objectKey: input.objectKey, kind: 'SERVICE_REPORT_PHOTO', targetType: 'SERVICE_REPORT', targetId: assignment.booking.report.id, status: 'UPLOADED' } });
     if (!asset) return res.status(409).json({ error: 'REPORT_MEDIA_NOT_READY', message: 'Upload and complete this report photo in T-CARE Storage before linking it.' });
-    const photo = await prisma.serviceReportPhoto.create({ data: { reportId: assignment.booking.report.id, objectKey: input.objectKey, url: input.url ?? null, caption: input.caption ?? null } });
+    const photo = await prisma.serviceReportPhoto.create({ data: { reportId: assignment.booking.report.id, objectKey: input.objectKey, url: null, caption: input.caption ?? null } });
     await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'CREATE', entityType: 'ServiceReportPhoto', entityId: photo.id, metadata: { reportId: assignment.booking.report.id } } });
     return res.status(201).json({ photo });
   } catch (error) { next(error); }
@@ -208,10 +207,26 @@ router.post('/jobs/:id/complete', async (req, res, next) => {
     if (booking.report.checklistItems.some(item => !item.completed)) return res.status(409).json({ error: 'CHECKLIST_INCOMPLETE', message: 'All service checklist items must be completed.' });
 
     const result = await prisma.$transaction(async tx => {
-      const updatedAssignment = await tx.gardenerAssignment.update({ where: { id: assignment.id }, data: { status: 'COMPLETED', completedAt: new Date() } });
-      const updatedBooking = await tx.booking.update({ where: { id: booking.id }, data: { status: 'SERVICE_COMPLETED' } });
-      await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: booking.status, toStatus: 'SERVICE_COMPLETED', changedBy: req.auth.id, note: 'Service completed by gardener.' } });
-      await audit(tx, req.auth.id, 'STATUS_CHANGE', 'Booking', booking.id, { fromStatus: booking.status, toStatus: 'SERVICE_COMPLETED', assignmentId: assignment.id });
+      await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
+      const current = await tx.gardenerAssignment.findFirst({
+        where: { id: assignment.id, gardenerId: gardener.id },
+        include: { booking: { include: { report: { include: { checklistItems: true } } } } }
+      });
+      if (!current) throw Object.assign(new Error('Assigned job not found.'), { statusCode: 404, code: 'JOB_NOT_FOUND' });
+      if (current.status !== 'IN_PROGRESS' || current.booking.status !== 'SERVICE_STARTED') {
+        throw Object.assign(new Error('Only an in-progress started service can be completed.'), { statusCode: 409, code: 'INVALID_SERVICE_STATE' });
+      }
+      if (!current.booking.report?.summary?.trim()) {
+        throw Object.assign(new Error('A service report is required before completing the service.'), { statusCode: 409, code: 'REPORT_REQUIRED' });
+      }
+      if (current.booking.report.checklistItems.some(item => !item.completed)) {
+        throw Object.assign(new Error('All service checklist items must be completed.'), { statusCode: 409, code: 'CHECKLIST_INCOMPLETE' });
+      }
+
+      const updatedAssignment = await tx.gardenerAssignment.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedAt: new Date() } });
+      const updatedBooking = await tx.booking.update({ where: { id: current.booking.id }, data: { status: 'SERVICE_COMPLETED' } });
+      await tx.bookingStatusHistory.create({ data: { bookingId: current.booking.id, fromStatus: current.booking.status, toStatus: 'SERVICE_COMPLETED', changedBy: req.auth.id, note: 'Service completed by gardener.' } });
+      await audit(tx, req.auth.id, 'STATUS_CHANGE', 'Booking', current.booking.id, { fromStatus: current.booking.status, toStatus: 'SERVICE_COMPLETED', assignmentId: current.id });
       return { updatedAssignment, updatedBooking };
     });
     await notifyUserSafely({ userId: booking.customer.user.id, type: 'BOOKING', channel: 'IN_APP', title: 'Service completed', body: `Your ${booking.service?.name || 'T-CARE service'} booking ${booking.reference} is complete. You can review the service report and submit feedback.` });

@@ -167,6 +167,56 @@ test('session bootstrap and refresh treat guests or stale cookies as normal unau
   assert.match(frontend, /response\.status===401\|\|payload\?\.refreshRequired/);
 });
 
+test('refresh-token rotation is single-use under concurrent requests', () => {
+  const auth = read('backend/src/routes/auth.js');
+  const refreshHandler = auth.slice(auth.indexOf("router.post('/refresh'"), auth.indexOf("router.post('/logout'"));
+  assert.match(refreshHandler, /refreshSession\.updateMany\(\{\s*where:\s*\{\s*id:\s*session\.id,\s*revokedAt:\s*null,\s*expiresAt:\s*\{\s*gt:\s*now\s*\}/);
+  assert.match(refreshHandler, /if \(revoked\.count !== 1\) return false/);
+  assert.ok(refreshHandler.indexOf('if (revoked.count !== 1)') < refreshHandler.indexOf('refreshSession.create'));
+});
+
+test('verification-code resend serializes concurrent requests and enforces cooldown after locking', () => {
+  const auth = read('backend/src/routes/auth.js');
+  const resend = auth.slice(auth.indexOf('async function createAndSendOtp'), auth.indexOf("router.post('/register'"));
+  assert.match(resend, /SELECT "id" FROM "User" WHERE "id" = \$\{user\.id\} FOR UPDATE/);
+  assert.match(resend, /latestOtp[\s\S]*OTP_RESEND_COOLDOWN_SECONDS/);
+  assert.match(resend, /emailOtp\.updateMany/);
+  assert.ok(resend.indexOf('FOR UPDATE') < resend.indexOf('emailOtp.findFirst'));
+});
+
+test('booking conflict checks are serialized per customer before creating a booking', () => {
+  const bookings = read('backend/src/routes/bookings.js');
+  const createHandler = bookings.slice(bookings.indexOf("router.post('/',"), bookings.indexOf("router.get('/',"));
+  assert.match(createHandler, /SELECT "id" FROM "CustomerProfile" WHERE "id" = \$\{customer\.id\} FOR UPDATE/);
+  assert.ok(createHandler.indexOf('FOR UPDATE') < createHandler.indexOf('overlappingBooking'));
+  assert.ok(createHandler.indexOf('overlappingBooking') < createHandler.indexOf('tx.booking.create'));
+});
+
+test('Gardener availability overlap validation is serialized with slot writes', () => {
+  const gardener = read('backend/src/routes/gardener.js');
+  const availability = gardener.slice(gardener.indexOf("router.post('/availability'"), gardener.indexOf("router.delete('/availability"));
+  assert.match(availability, /SELECT "id" FROM "GardenerProfile" WHERE "id" = \$\{gardener\.id\} FOR UPDATE/);
+  assert.ok(availability.indexOf('FOR UPDATE') < availability.indexOf('gardenerAvailability.findMany'));
+  assert.ok(availability.indexOf('gardenerAvailability.findMany') < availability.indexOf('gardenerAvailability.create'));
+});
+
+test('customer subscription creation rechecks exclusivity while holding the customer lock', () => {
+  const subscriptions = read('backend/src/routes/subscriptions.js');
+  const createHandler = subscriptions.slice(subscriptions.indexOf("customer.post('/',"), subscriptions.indexOf("customer.post('/:id/cancel'"));
+  assert.match(createHandler, /SELECT "id" FROM "CustomerProfile" WHERE "id" = \$\{profile\.id\} FOR UPDATE/);
+  assert.ok(createHandler.indexOf('FOR UPDATE') < createHandler.indexOf('subscription.findFirst'));
+  assert.ok(createHandler.indexOf('subscription.findFirst') < createHandler.indexOf('subscription.create'));
+});
+
+test('report photo URLs are generated from owned Storage assets, not caller-provided URLs', () => {
+  const serviceExecution = read('backend/src/routes/serviceExecution.js');
+  const photoInput = serviceExecution.slice(serviceExecution.indexOf('const photoSchema'), serviceExecution.indexOf('async function getGardener'));
+  const createPhoto = serviceExecution.slice(serviceExecution.indexOf("router.post('/jobs/:id/report/photos'"), serviceExecution.indexOf("router.delete('/jobs/:id/report/photos"));
+  assert.doesNotMatch(photoInput, /url:/);
+  assert.match(createPhoto, /url: null/);
+  assert.match(serviceExecution, /let url = null/);
+});
+
 test('Admin password reset is explicit, role-checked, audited and revokes refresh sessions', () => {
   const reset = read('backend/scripts/reset-admin-password.js');
   const env = read('backend/src/config/env.js');

@@ -83,13 +83,14 @@ customer.post('/', async (req, res, next) => {
     const plan = await prisma.subscriptionPlan.findFirst({ where: { id: input.planId, status: 'ACTIVE' } });
     if (!plan) throw httpError(404, 'PLAN_NOT_FOUND', 'Subscription plan not found or inactive.');
 
-    const existing = await prisma.subscription.findFirst({
-      where: { customerId: profile.id, status: { in: ['PENDING', 'ACTIVE', 'PAUSED'] } },
-      select: { id: true, status: true }
-    });
-    if (existing) throw httpError(409, 'ACTIVE_SUBSCRIPTION_EXISTS', 'The customer already has an active or pending subscription.');
-
     const subscription = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "CustomerProfile" WHERE "id" = ${profile.id} FOR UPDATE`;
+      const existing = await tx.subscription.findFirst({
+        where: { customerId: profile.id, status: { in: ['PENDING', 'ACTIVE', 'PAUSED'] } },
+        select: { id: true, status: true }
+      });
+      if (existing) throw httpError(409, 'ACTIVE_SUBSCRIPTION_EXISTS', 'The customer already has an active or pending subscription.');
+
       const created = await tx.subscription.create({
         data: { customerId: profile.id, planId: plan.id, status: 'PENDING' },
         include: { plan: true }

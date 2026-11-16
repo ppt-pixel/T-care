@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -47,7 +48,7 @@ async function withSignedReportPhotos(booking) {
 
 function makeReference() {
   const stamp = Date.now().toString(36).toUpperCase();
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const random = crypto.randomBytes(8).toString('hex').toUpperCase();
   return `TC-${stamp}-${random}`;
 }
 
@@ -83,6 +84,8 @@ router.post('/', async (req, res, next) => {
 
     const uniquePlantIds = [...new Set(input.plantIds)];
     const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "CustomerProfile" WHERE "id" = ${customer.id} FOR UPDATE`;
+
       const [service, address, plants] = await Promise.all([
         tx.service.findFirst({ where: { id: input.serviceId, status: 'ACTIVE' } }),
         tx.address.findFirst({ where: { id: input.addressId, customerId: customer.id } }),
@@ -126,11 +129,11 @@ router.post('/', async (req, res, next) => {
         },
         include: { service: true, address: true, plants: { include: { plant: true } }, statusHistory: { orderBy: { createdAt: 'asc' } } }
       });
+      await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'CREATE', entityType: 'Booking', entityId: booking.id, metadata: { reference: booking.reference, serviceId: booking.serviceId, plantCount: booking.plants.length } } });
       return booking;
     });
 
     await notifyUserSafely({ userId: req.auth.id, type: 'BOOKING', channel: 'IN_APP', title: 'Booking request received', body: `Your ${result.service?.name || 'T-CARE service'} booking ${result.reference} is confirmed as a request. T-CARE will assign a verified Gardener.` });
-    await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'CREATE', entityType: 'Booking', entityId: result.id, metadata: { reference: result.reference, serviceId: result.serviceId, plantCount: result.plants.length } } });
     return res.status(201).json({ booking: { ...result, subtotal: Number(result.subtotal), convenienceFee: Number(result.convenienceFee), total: Number(result.total) } });
   } catch (error) { next(error); }
 });
@@ -169,7 +172,7 @@ router.post('/:id/cancel', async (req, res, next) => {
     });
     if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
     if (!allowedTransitions[booking.status]?.has('CANCELLED')) return res.status(409).json({ error: 'BOOKING_CANNOT_CANCEL', message: `Booking cannot be cancelled from ${booking.status}.` });
-    const { updated, fromStatus } = await prisma.$transaction(async tx => {
+    const { updated } = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
       const current = await tx.booking.findUnique({ where: { id: booking.id }, select: { status: true } });
       if (!current || !allowedTransitions[current.status]?.has('CANCELLED')) {
@@ -187,13 +190,13 @@ router.post('/:id/cancel', async (req, res, next) => {
         await tx.gardenerAssignment.update({ where: { id: booking.assignment.id }, data: { status: 'CANCELLED' } });
       }
       await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, fromStatus: current.status, toStatus: 'CANCELLED', changedBy: req.auth.id, note: 'Cancelled by customer.' } });
-      return { updated: nextBooking, fromStatus: current.status };
+      await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: booking.id, metadata: { from: current.status, to: 'CANCELLED' } } });
+      return { updated: nextBooking };
     });
     await notifyUserSafely({ userId: req.auth.id, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} has been cancelled.` });
     if (booking.assignment?.gardener?.userId) {
       await notifyUserSafely({ userId: booking.assignment.gardener.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Assigned booking cancelled', body: `Booking ${booking.reference} was cancelled by the Customer.` });
     }
-    await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: booking.id, metadata: { fromStatus, toStatus: 'CANCELLED' } } });
     return res.json({ booking: updated });
   } catch (error) { next(error); }
 });

@@ -342,20 +342,23 @@ router.post('/availability', async (req, res, next) => {
     const gardener = await getGardener(req.auth.id);
     const input = availabilitySchema.parse(req.body);
 
-    const existing = await prisma.gardenerAvailability.findMany({
-      where: { gardenerId: gardener.id, dayOfWeek: input.dayOfWeek, isActive: true },
-      orderBy: { startTime: 'asc' }
-    });
+    const availability = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "GardenerProfile" WHERE "id" = ${gardener.id} FOR UPDATE`;
+      const existing = await tx.gardenerAvailability.findMany({
+        where: { gardenerId: gardener.id, dayOfWeek: input.dayOfWeek, isActive: true },
+        orderBy: { startTime: 'asc' }
+      });
 
-    if (input.isActive) {
-      const overlaps = existing.some(slot => input.startTime < slot.endTime && input.endTime > slot.startTime);
-      if (overlaps) {
-        return res.status(409).json({ error: 'AVAILABILITY_OVERLAP', message: 'The availability interval overlaps an existing active interval.' });
+      if (input.isActive) {
+        const overlaps = existing.some(slot => input.startTime < slot.endTime && input.endTime > slot.startTime);
+        if (overlaps) {
+          throw Object.assign(new Error('The availability interval overlaps an existing active interval.'), { statusCode: 409, code: 'AVAILABILITY_OVERLAP' });
+        }
       }
-    }
 
-    const availability = await prisma.gardenerAvailability.create({
-      data: { ...input, gardenerId: gardener.id }
+      return tx.gardenerAvailability.create({
+        data: { ...input, gardenerId: gardener.id }
+      });
     });
     return res.status(201).json({ availability });
   } catch (error) { next(error); }
@@ -365,36 +368,41 @@ router.patch('/availability/:id', async (req, res, next) => {
   try {
     const gardener = await getGardener(req.auth.id);
     const input = availabilityPatchSchema.parse(req.body);
-    const existing = await prisma.gardenerAvailability.findFirst({
-      where: { id: req.params.id, gardenerId: gardener.id }
-    });
-    if (!existing) return res.status(404).json({ error: 'AVAILABILITY_NOT_FOUND', message: 'Availability entry not found.' });
-
-    const nextValue = {
-      dayOfWeek: input.dayOfWeek ?? existing.dayOfWeek,
-      startTime: input.startTime ?? existing.startTime,
-      endTime: input.endTime ?? existing.endTime,
-      isActive: input.isActive ?? existing.isActive
-    };
-
-    if (nextValue.startTime >= nextValue.endTime) {
-      return res.status(400).json({ error: 'INVALID_AVAILABILITY', message: 'endTime must be later than startTime.' });
-    }
-
-    if (nextValue.isActive) {
-      const siblings = await prisma.gardenerAvailability.findMany({
-        where: {
-          gardenerId: gardener.id,
-          dayOfWeek: nextValue.dayOfWeek,
-          isActive: true,
-          id: { not: existing.id }
-        }
+    const availability = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "GardenerProfile" WHERE "id" = ${gardener.id} FOR UPDATE`;
+      const existing = await tx.gardenerAvailability.findFirst({
+        where: { id: req.params.id, gardenerId: gardener.id }
       });
-      const overlaps = siblings.some(slot => nextValue.startTime < slot.endTime && nextValue.endTime > slot.startTime);
-      if (overlaps) return res.status(409).json({ error: 'AVAILABILITY_OVERLAP', message: 'The availability interval overlaps an existing active interval.' });
-    }
+      if (!existing) throw Object.assign(new Error('Availability entry not found.'), { statusCode: 404, code: 'AVAILABILITY_NOT_FOUND' });
 
-    const availability = await prisma.gardenerAvailability.update({ where: { id: existing.id }, data: nextValue });
+      const nextValue = {
+        dayOfWeek: input.dayOfWeek ?? existing.dayOfWeek,
+        startTime: input.startTime ?? existing.startTime,
+        endTime: input.endTime ?? existing.endTime,
+        isActive: input.isActive ?? existing.isActive
+      };
+
+      if (nextValue.startTime >= nextValue.endTime) {
+        throw Object.assign(new Error('endTime must be later than startTime.'), { statusCode: 400, code: 'INVALID_AVAILABILITY' });
+      }
+
+      if (nextValue.isActive) {
+        const siblings = await tx.gardenerAvailability.findMany({
+          where: {
+            gardenerId: gardener.id,
+            dayOfWeek: nextValue.dayOfWeek,
+            isActive: true,
+            id: { not: existing.id }
+          }
+        });
+        const overlaps = siblings.some(slot => nextValue.startTime < slot.endTime && nextValue.endTime > slot.startTime);
+        if (overlaps) {
+          throw Object.assign(new Error('The availability interval overlaps an existing active interval.'), { statusCode: 409, code: 'AVAILABILITY_OVERLAP' });
+        }
+      }
+
+      return tx.gardenerAvailability.update({ where: { id: existing.id }, data: nextValue });
+    });
     return res.json({ availability });
   } catch (error) { next(error); }
 });
@@ -618,18 +626,31 @@ async function transitionAssignedJob({ req, res, next, targetBookingStatus, targ
     }
 
     const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${assignment.booking.id} FOR UPDATE`;
+      const current = await tx.gardenerAssignment.findFirst({
+        where: { id: assignment.id, gardenerId: gardener.id },
+        include: { booking: { select: { id: true, status: true } } }
+      });
+      if (!current) throw Object.assign(new Error('Assigned job not found.'), { statusCode: 404, code: 'JOB_NOT_FOUND' });
+      if (!allowedAssignmentStatuses.includes(current.status)) {
+        throw Object.assign(new Error(`Job cannot be changed from assignment status ${current.status}.`), { statusCode: 409, code: 'INVALID_ASSIGNMENT_STATE' });
+      }
+      if (!canTransitionBooking(current.booking.status, targetBookingStatus)) {
+        throw Object.assign(new Error(`Booking cannot transition from ${current.booking.status} to ${targetBookingStatus}.`), { statusCode: 409, code: 'INVALID_BOOKING_STATE' });
+      }
+
       const updatedAssignment = await tx.gardenerAssignment.update({
-        where: { id: assignment.id },
+        where: { id: current.id },
         data: { status: targetAssignmentStatus, ...timestamps }
       });
       const updatedBooking = await tx.booking.update({
-        where: { id: assignment.booking.id },
+        where: { id: current.booking.id },
         data: { status: targetBookingStatus }
       });
       await tx.bookingStatusHistory.create({
         data: {
-          bookingId: assignment.booking.id,
-          fromStatus: assignment.booking.status,
+          bookingId: current.booking.id,
+          fromStatus: current.booking.status,
           toStatus: targetBookingStatus,
           changedBy: req.auth.id,
           note
@@ -639,8 +660,8 @@ async function transitionAssignedJob({ req, res, next, targetBookingStatus, targ
         actorUserId: req.auth.id,
         action: 'STATUS_CHANGE',
         entityType: 'Booking',
-        entityId: assignment.booking.id,
-        metadata: { fromStatus: assignment.booking.status, toStatus: targetBookingStatus, assignmentId: assignment.id }
+        entityId: current.booking.id,
+        metadata: { fromStatus: current.booking.status, toStatus: targetBookingStatus, assignmentId: current.id }
       });
       return { updatedAssignment, updatedBooking };
     });
@@ -674,12 +695,21 @@ router.post('/jobs/:id/reject', async (req, res, next) => {
     if (assignment.booking.status !== 'GARDENER_ASSIGNED') return res.status(409).json({ error: 'INVALID_BOOKING_STATE', message: 'Booking is not awaiting gardener acceptance.' });
 
     const result = await prisma.$transaction(async tx => {
-      const updatedAssignment = await tx.gardenerAssignment.update({ where: { id: assignment.id }, data: { status: 'REJECTED' } });
-      const updatedBooking = await tx.booking.update({ where: { id: assignment.booking.id }, data: { status: 'CONFIRMED' } });
+      await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${assignment.booking.id} FOR UPDATE`;
+      const current = await tx.gardenerAssignment.findFirst({
+        where: { id: assignment.id, gardenerId: gardener.id },
+        include: { booking: { select: { id: true, status: true } } }
+      });
+      if (!current) throw Object.assign(new Error('Assigned job not found.'), { statusCode: 404, code: 'JOB_NOT_FOUND' });
+      if (current.status !== 'ASSIGNED') throw Object.assign(new Error('Only a newly assigned job can be rejected.'), { statusCode: 409, code: 'INVALID_ASSIGNMENT_STATE' });
+      if (current.booking.status !== 'GARDENER_ASSIGNED') throw Object.assign(new Error('Booking is not awaiting gardener acceptance.'), { statusCode: 409, code: 'INVALID_BOOKING_STATE' });
+
+      const updatedAssignment = await tx.gardenerAssignment.update({ where: { id: current.id }, data: { status: 'REJECTED' } });
+      const updatedBooking = await tx.booking.update({ where: { id: current.booking.id }, data: { status: 'CONFIRMED' } });
       await tx.bookingStatusHistory.create({
         data: {
-          bookingId: assignment.booking.id,
-          fromStatus: assignment.booking.status,
+          bookingId: current.booking.id,
+          fromStatus: current.booking.status,
           toStatus: 'CONFIRMED',
           changedBy: req.auth.id,
           note: input.reason ? `Gardener rejected assignment: ${input.reason}` : 'Gardener rejected assignment.'
@@ -689,8 +719,8 @@ router.post('/jobs/:id/reject', async (req, res, next) => {
         actorUserId: req.auth.id,
         action: 'STATUS_CHANGE',
         entityType: 'GardenerAssignment',
-        entityId: assignment.id,
-        metadata: { status: 'REJECTED', reason: input.reason ?? null, bookingId: assignment.booking.id }
+        entityId: current.id,
+        metadata: { status: 'REJECTED', reason: input.reason ?? null, bookingId: current.booking.id }
       });
       return { updatedAssignment, updatedBooking };
     });
