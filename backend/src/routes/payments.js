@@ -353,7 +353,7 @@ customer.post('/booking/:bookingId/order', async (req, res, next) => {
     if (booking.status === 'CANCELLED') throw fail(409, 'BOOKING_CANCELLED', 'Cancelled bookings cannot be paid.');
 
     const { payment } = await findOrCreatePayment({ req, target: { type: 'BOOKING', id: booking.id }, amount: booking.total, idempotencyKey });
-    const orderId = await createProviderOrder(payment, `TC-${booking.reference}-${payment.id}`);
+    const orderId = await createProviderOrder(payment, `TC-${payment.id}`);
     const latest = await prisma.payment.findUnique({ where: { id: payment.id }, include: { refunds: true } });
     return res.status(200).json({ payment: serializeCustomerPayment(latest), checkout: { keyId: env.RAZORPAY_KEY_ID, orderId, amount: amountToPaise(latest.amount), currency: latest.currency } });
   } catch (error) { next(error); }

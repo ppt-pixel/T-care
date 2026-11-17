@@ -128,6 +128,8 @@ test('booking checkout is customer-scoped and uses server-created orders and ver
   assert.match(payment, /customer\.get\('\/availability'/);
   assert.match(payment, /enabled:\s*env\.PAYMENTS_ENABLED === true && Boolean\(env\.RAZORPAY_KEY_ID && env\.RAZORPAY_KEY_SECRET\)/);
   assert.match(payment, /customer\.post\('\/booking\/:bookingId\/order'/);
+  assert.match(payment, /createProviderOrder\(payment,\s*`TC-\$\{payment\.id\}`\)/);
+  assert.doesNotMatch(payment, /createProviderOrder\(payment,\s*`TC-\$\{booking\.reference\}/);
   assert.match(phase, /payments\/customer\/availability/);
   assert.match(phase, /payments\/customer\/booking\/\$\{encodeURIComponent\(id\)\}\/order/);
   assert.match(phase, /payments\/customer\/\$\{encodeURIComponent\(payment\.id\)\}\/verify/);
