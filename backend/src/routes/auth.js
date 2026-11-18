@@ -8,16 +8,25 @@ import { requireAuth } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/security.js';
 import {
     isEmailDeliveryConfigured,
-    sendEmailVerificationCode
+    sendEmailVerificationCode,
+    sendPasswordResetCode
 } from '../lib/email.js';
+import { TERMS_POLICY_VERSION, PRIVACY_POLICY_VERSION } from '../config/legalPolicy.js';
+
+const bcryptPasswordSchema = minimum => z.string()
+    .min(minimum)
+    .max(72)
+    .refine(value => Buffer.byteLength(value, 'utf8') <= 72, "Password must not exceed bcrypt's 72-byte limit.");
 
 const registerSchema = z.object({
     fullName: z.string().trim().min(2).max(100),
     email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
-    password: z.string().min(8).max(72),
+    password: bcryptPasswordSchema(8),
     phone: z.string().trim().min(7).max(20).optional(),
     // Public registration may create only Customer or Gardener accounts.
-    accountType: z.enum(['CUSTOMER', 'GARDENER'])
+    accountType: z.enum(['CUSTOMER', 'GARDENER']),
+    acceptTerms: z.literal(true),
+    acceptPrivacy: z.literal(true)
 });
 
 const loginSchema = z.object({
@@ -34,9 +43,16 @@ const resendSchema = z.object({
     email: z.string().trim().email().max(254).transform((value) => value.toLowerCase())
 });
 
+const forgotPasswordSchema = resendSchema;
+const resetPasswordSchema = z.object({
+    email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
+    code: z.string().trim().regex(/^\d{6}$/, 'Reset code must contain exactly six digits.'),
+    newPassword: bcryptPasswordSchema(12)
+});
+
 const changePasswordSchema = z.object({
     currentPassword: z.string().min(1).max(72),
-    newPassword: z.string().min(12).max(72)
+    newPassword: bcryptPasswordSchema(12)
 });
 
 const registrationLimiter = createRateLimiter({
@@ -53,6 +69,16 @@ const resendLimiter = createRateLimiter({
     windowMs: 15 * 60_000,
     max: 5,
     keyPrefix: 'auth-resend-email'
+});
+const forgotPasswordLimiter = createRateLimiter({
+    windowMs: 15 * 60_000,
+    max: 5,
+    keyPrefix: 'auth-forgot-password'
+});
+const resetPasswordLimiter = createRateLimiter({
+    windowMs: 15 * 60_000,
+    max: 10,
+    keyPrefix: 'auth-reset-password'
 });
 
 function ttlToMs(value) {
@@ -107,7 +133,7 @@ function clearAuthCookies(res) {
 }
 
 function createAccessToken(user) {
-    return jwt.sign({ sub: user.id, role: user.role },
+    return jwt.sign({ sub: user.id, role: user.role, av: Number(user.authVersion ?? 0) },
         env.JWT_ACCESS_SECRET, { expiresIn: env.ACCESS_TOKEN_TTL, issuer: 't-care-api', audience: 't-care-web' }
     );
 }
@@ -126,6 +152,13 @@ function hashOtp(userId, code) {
     return crypto
         .createHmac('sha256', env.JWT_REFRESH_SECRET)
         .update(`tcare-email-otp:v1:${userId}:${code}`)
+        .digest('hex');
+}
+
+function hashPasswordResetCode(userId, code) {
+    return crypto
+        .createHmac('sha256', env.JWT_REFRESH_SECRET)
+        .update(`tcare-password-reset-otp:v1:${userId}:${code}`)
         .digest('hex');
 }
 
@@ -249,12 +282,17 @@ export default function authRouter(router) {
 
             try {
                 user = await prisma.$transaction(async(tx) => {
+                    const consentAt = new Date();
                     const created = await tx.user.create({
                         data: {
                             email: input.email,
                             passwordHash,
                             fullName: input.fullName,
                             phone: input.phone,
+                            termsAcceptedAt: consentAt,
+                            termsPolicyVersion: TERMS_POLICY_VERSION,
+                            privacyAcceptedAt: consentAt,
+                            privacyPolicyVersion: PRIVACY_POLICY_VERSION,
                             role: input.accountType,
                             status: 'PENDING',
                             ...(input.accountType === 'CUSTOMER' ? { customerProfile: { create: {} } } : { gardenerProfile: { create: { kycStatus: 'NOT_STARTED' } } })
@@ -276,7 +314,7 @@ export default function authRouter(router) {
                             action: 'CREATE',
                             entityType: 'User',
                             entityId: created.id,
-                            metadata: { event: 'PUBLIC_REGISTRATION', role: created.role }
+                            metadata: { event: 'PUBLIC_REGISTRATION', role: created.role, termsPolicyVersion: TERMS_POLICY_VERSION, privacyPolicyVersion: PRIVACY_POLICY_VERSION, legalConsentAt: consentAt.toISOString() }
                         }
                     });
 
@@ -481,6 +519,118 @@ export default function authRouter(router) {
         }
     });
 
+    // Always return the same public response, whether or not the email belongs to an account.
+    router.post('/forgot-password', forgotPasswordLimiter, async(req, res, next) => {
+        try {
+            const input = forgotPasswordSchema.parse(req.body);
+            const genericResponse = {
+                message: 'If an active, verified T-CARE account exists for that email, a password reset code has been sent.'
+            };
+            const user = await prisma.user.findUnique({
+                where: { email: input.email },
+                select: { id: true, email: true, fullName: true, status: true, emailVerifiedAt: true }
+            });
+            if (!user || user.status !== 'ACTIVE' || !user.emailVerifiedAt || !isEmailDeliveryConfigured()) {
+                return res.status(200).json(genericResponse);
+            }
+
+            const code = createOtpCode();
+            const now = new Date();
+            const token = await prisma.$transaction(async(tx) => {
+                await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+                const current = await tx.user.findUnique({ where: { id: user.id }, select: { status: true, emailVerifiedAt: true } });
+                if (!current || current.status !== 'ACTIVE' || !current.emailVerifiedAt) return null;
+                const latest = await tx.passwordResetToken.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } });
+                if (latest && now.getTime() - latest.createdAt.getTime() < env.OTP_RESEND_COOLDOWN_SECONDS * 1000) return null;
+                await tx.passwordResetToken.updateMany({ where: { userId: user.id, consumedAt: null }, data: { consumedAt: now } });
+                return tx.passwordResetToken.create({
+                    data: {
+                        userId: user.id,
+                        codeHash: hashPasswordResetCode(user.id, code),
+                        expiresAt: new Date(now.getTime() + otpTtlMs)
+                    }
+                });
+            });
+
+            if (token) {
+                try {
+                    await sendPasswordResetCode({ to: user.email, fullName: user.fullName, code, expiresInMinutes: env.OTP_TTL_MINUTES });
+                } catch (error) {
+                    console.error('[auth] password reset email delivery failed', { userId: user.id, code: error?.code || 'EMAIL_DELIVERY_ERROR' });
+                    try {
+                        await prisma.passwordResetToken.updateMany({
+                            where: { id: token.id, consumedAt: null },
+                            data: { consumedAt: new Date() }
+                        });
+                    } catch (cleanupError) {
+                        console.error('[auth] failed to invalidate undelivered password reset token', {
+                            userId: user.id,
+                            code: cleanupError?.code || 'RESET_TOKEN_CLEANUP_ERROR'
+                        });
+                    }
+                }
+            }
+            return res.status(200).json(genericResponse);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    router.post('/reset-password', resetPasswordLimiter, async(req, res, next) => {
+        try {
+            const input = resetPasswordSchema.parse(req.body);
+            const user = await prisma.user.findUnique({
+                where: { email: input.email },
+                select: { id: true, status: true, emailVerifiedAt: true }
+            });
+            if (!user || user.status !== 'ACTIVE' || !user.emailVerifiedAt) {
+                return res.status(400).json({ error: 'INVALID_OR_EXPIRED_RESET_CODE', message: 'The reset code is invalid or expired. Request a new code and try again.' });
+            }
+
+            const changed = await prisma.$transaction(async(tx) => {
+                await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+                const token = await tx.passwordResetToken.findFirst({
+                    where: { userId: user.id, consumedAt: null, expiresAt: { gt: new Date() }, attempts: { lt: env.OTP_MAX_ATTEMPTS } },
+                    orderBy: { createdAt: 'desc' }
+                });
+                if (!token) return false;
+                await tx.$queryRaw`SELECT "id" FROM "PasswordResetToken" WHERE "id" = ${token.id} FOR UPDATE`;
+                const locked = await tx.passwordResetToken.findUnique({ where: { id: token.id } });
+                if (!locked || locked.consumedAt || locked.expiresAt <= new Date() || locked.attempts >= env.OTP_MAX_ATTEMPTS) return false;
+                const expected = hashPasswordResetCode(user.id, input.code);
+                if (!safeHexEqual(locked.codeHash, expected)) {
+                    await tx.passwordResetToken.update({ where: { id: locked.id }, data: { attempts: { increment: 1 } } });
+                    return false;
+                }
+
+                const passwordHash = await bcrypt.hash(input.newPassword, 12);
+                const now = new Date();
+                await tx.passwordResetToken.update({ where: { id: locked.id }, data: { consumedAt: now } });
+                await tx.passwordResetToken.updateMany({ where: { userId: user.id, consumedAt: null }, data: { consumedAt: now } });
+                const revoked = await tx.refreshSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
+                await tx.user.update({ where: { id: user.id }, data: { passwordHash, authVersion: { increment: 1 } } });
+                await tx.auditLog.create({
+                    data: {
+                        actorUserId: user.id,
+                        action: 'UPDATE',
+                        entityType: 'User',
+                        entityId: user.id,
+                        metadata: { event: 'PASSWORD_RESET_BY_EMAIL', refreshSessionsRevoked: revoked.count }
+                    }
+                });
+                return true;
+            });
+
+            if (!changed) {
+                return res.status(400).json({ error: 'INVALID_OR_EXPIRED_RESET_CODE', message: 'The reset code is invalid or expired. Request a new code and try again.' });
+            }
+            clearAuthCookies(res);
+            return res.json({ message: 'Your password has been reset. Sign in with your new password.' });
+        } catch (error) {
+            next(error);
+        }
+    });
+
     router.post('/login', async(req, res, next) => {
         try {
             const input = loginSchema.parse(req.body);
@@ -537,18 +687,21 @@ export default function authRouter(router) {
             }
 
             const passwordHash = await bcrypt.hash(input.newPassword, 12);
-            await prisma.$transaction([
-                prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
-                prisma.refreshSession.updateMany({
+            const updatedUser = await prisma.$transaction(async(tx) => {
+                const updated = await tx.user.update({
+                    where: { id: user.id },
+                    data: { passwordHash, authVersion: { increment: 1 } }
+                });
+                await tx.refreshSession.updateMany({
                     where: { userId: user.id, revokedAt: null },
                     data: { revokedAt: new Date() }
-                }),
-                prisma.auditLog.create({
+                });
+                await tx.auditLog.create({
                     data: { actorUserId: user.id, action: 'UPDATE', entityType: 'User', entityId: user.id, metadata: { event: 'PASSWORD_CHANGED' } }
-                })
-            ]);
+                });
+                return { ...user, ...updated };
+            });
 
-            const updatedUser = {...user, passwordHash };
             await issueSession(updatedUser, res);
             return res.json({ user: publicUser(updatedUser), message: 'Password changed successfully.' });
         } catch (error) {

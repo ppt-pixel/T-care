@@ -87,6 +87,13 @@ enum PaymentMethod {
   OTHER
 }
 
+enum ReceiptDeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAUSED
@@ -150,9 +157,14 @@ model User {
   id              String     @id @default(cuid())
   email           String     @unique
   passwordHash    String
+  authVersion     Int        @default(0)
   fullName        String
   phone           String?
   emailVerifiedAt DateTime?
+  termsAcceptedAt DateTime?
+  termsPolicyVersion String?
+  privacyAcceptedAt DateTime?
+  privacyPolicyVersion String?
   role            Role       @default(CUSTOMER)
   status          UserStatus @default(ACTIVE)
   createdAt       DateTime   @default(now())
@@ -166,6 +178,7 @@ model User {
   auditLogs       AuditLog[]       @relation("AuditActor")
   mediaAssets     MediaAsset[]
   emailOtps       EmailOtp[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([role, status])
 }
@@ -248,6 +261,20 @@ model EmailOtp {
 
   @@index([userId, createdAt])
   @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt, consumedAt])
 }
 
 model Address {
@@ -520,11 +547,37 @@ model Payment {
   updatedAt         DateTime       @updatedAt
   refunds           Refund[]
   events            PaymentEvent[]
+  receipt           PaymentReceipt?
 
   @@index([status, createdAt])
   @@index([provider, providerPaymentId])
   // Partial uniqueness for active subscription payments is maintained in SQL migration.
   @@index([subscriptionId, status])
+}
+
+model PaymentReceipt {
+  id               String                @id @default(cuid())
+  paymentId        String                @unique
+  payment          Payment               @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receiptNumber    String                @unique
+  recipientEmail   String
+  recipientName    String
+  purpose          String
+  amount           Decimal               @db.Decimal(10, 2)
+  currency         String                @default("INR")
+  paymentMethod    PaymentMethod
+  transactionId    String
+  paidAt           DateTime
+  deliveryStatus   ReceiptDeliveryStatus @default(PENDING)
+  sentAt           DateTime?
+  sendStartedAt    DateTime?
+  attempts         Int                   @default(0)
+  lastError        String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([deliveryStatus, createdAt])
+  @@index([recipientEmail, paidAt])
 }
 
 model PaymentEvent {

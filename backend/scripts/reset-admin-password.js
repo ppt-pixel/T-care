@@ -27,7 +27,7 @@ async function resetAdminPassword() {
       throw new Error('The configured account is no longer an Admin. No changes were made.');
     }
 
-    await tx.user.update({ where: { id: existing.id }, data: { passwordHash } });
+    await tx.user.update({ where: { id: existing.id }, data: { passwordHash, authVersion: { increment: 1 } } });
     const revoked = await tx.refreshSession.updateMany({
       where: { userId: existing.id, revokedAt: null },
       data: { revokedAt }

@@ -140,7 +140,7 @@ router.patch('/users/:id/status', async(req, res, next) => {
         const user = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, status: true, email: true } });
         if (!user) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found.' });
         const updated = await prisma.$transaction(async tx => {
-            const changed = await tx.user.update({ where: { id: user.id }, data: { status: input.status }, select: { id: true, email: true, role: true, status: true } });
+            const changed = await tx.user.update({ where: { id: user.id }, data: { status: input.status, authVersion: { increment: 1 } }, select: { id: true, email: true, role: true, status: true } });
             await tx.refreshSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
             await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'User', entityId: user.id, metadata: { from: user.status, to: input.status, refreshSessionsRevoked: true } } });
             return changed;
@@ -390,9 +390,23 @@ router.post('/bookings/:id/assign', async(req, res, next) => {
 router.get('/payments', async(req, res, next) => {
     try {
         const q = pageQuery.extend({ status: z.enum(['PENDING', 'AUTHORIZED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELLED']).optional() }).parse(req.query);
-        const where = {...(q.status ? { status: q.status } : {}), ...(q.search ? { OR: [{ providerOrderId: { contains: q.search, mode: 'insensitive' } }, { providerPaymentId: { contains: q.search, mode: 'insensitive' } }, { booking: { reference: { contains: q.search, mode: 'insensitive' } } }] } : {}) };
+        const searchFilter = q.search ? { contains: q.search, mode: 'insensitive' } : null;
+        const where = {
+            ...(q.status ? { status: q.status } : {}),
+            ...(searchFilter ? { OR: [
+                { providerOrderId: searchFilter },
+                { providerPaymentId: searchFilter },
+                { booking: { reference: searchFilter } },
+                { booking: { service: { name: searchFilter } } },
+                { booking: { customer: { user: { fullName: searchFilter } } } },
+                { booking: { customer: { user: { email: searchFilter } } } },
+                { subscription: { plan: { name: searchFilter } } },
+                { subscription: { customer: { user: { fullName: searchFilter } } } },
+                { subscription: { customer: { user: { email: searchFilter } } } }
+            ] } : {})
+        };
         const [payments, total] = await prisma.$transaction([
-            prisma.payment.findMany({ where, include: { booking: { select: { id: true, reference: true, customer: { include: { user: { select: { fullName: true, email: true } } } } } }, subscription: { select: { id: true, customer: { include: { user: { select: { fullName: true, email: true } } } }, plan: true } }, refunds: true }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
+            prisma.payment.findMany({ where, include: { booking: { select: { id: true, reference: true, service: { select: { name: true } }, customer: { include: { user: { select: { fullName: true, email: true } } } } } }, subscription: { select: { id: true, customer: { include: { user: { select: { fullName: true, email: true } } } }, plan: true } }, refunds: true, receipt: true }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
             prisma.payment.count({ where })
         ]);
         res.json({ payments: payments.map(p => ({...p, amount: serializeMoney(p.amount), refunds: p.refunds.map(r => ({...r, amount: serializeMoney(r.amount) })) })), pagination: { page: q.page, limit: q.limit, total, pages: Math.ceil(total / q.limit) } });

@@ -17,10 +17,10 @@ export async function requireAuth(req, res, next) {
 
     const user = await prisma.user.findUnique({
       where: { id: String(payload.sub) },
-      select: { id: true, email: true, fullName: true, role: true, status: true, emailVerifiedAt: true }
+      select: { id: true, email: true, fullName: true, role: true, status: true, emailVerifiedAt: true, authVersion: true }
     });
 
-    if (!user || user.status !== 'ACTIVE' || !user.emailVerifiedAt) {
+    if (!user || user.status !== 'ACTIVE' || !user.emailVerifiedAt || Number(payload.av ?? 0) !== Number(user.authVersion ?? 0)) {
       return res.status(401).json({ error: 'INVALID_SESSION', message: 'Session is invalid, expired or email is unverified.' });
     }
 

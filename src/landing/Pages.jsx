@@ -206,17 +206,19 @@ export function ContactPage(){
   const email=String(import.meta.env.VITE_PUBLIC_CONTACT_EMAIL||'').trim();
   const phone=String(import.meta.env.VITE_PUBLIC_PHONE_NUMBER||'').trim();
   const location=String(import.meta.env.VITE_PUBLIC_LOCATION||'').trim();
+  const officeAddress=String(import.meta.env.VITE_PUBLIC_OFFICE_ADDRESS||'').trim();
   const cards=[
     ...(whatsappConfigured?[[MessageCircle,'WhatsApp','Open the configured T-Care business chat',C.WHATSAPP_NUMBER]]:[]),
     ...(email?[[Mail,'Email','Contact the published T-Care email',email]]:[]),
     ...(phone?[[Phone,'Phone','Call the published T-Care number',phone]]:[]),
-    ...(location?[[MapPin,'Location','Published service location',location]]:[]),
+    ...(officeAddress?[[MapPin,'Main office','Published office address',officeAddress]]:[]),
+    ...(location?[[MapPin,'Service location','Published service location',location]]:[]),
   ];
   return <>
     <PageHero eyebrow="Contact" title={<>We would love to <em>hear from you</em></>} sub="Choose a contact channel configured by T-Care."/>
     <section className="lsec contact">
       <div className="contact-cards">
-        {cards.map(([I,t,sub,value],i)=><Reveal key={t} delay={i*.06} className="ccard"><span className="ic"><I size={20}/></span><div><b>{t}</b><small>{sub}</small><span>{value}</span></div></Reveal>)}
+        {cards.map(([I,t,sub,value],i)=><Reveal key={t} delay={i*.06} className="ccard"><span className="ic"><I size={20}/></span><div><b>{t}</b><small>{sub}</small><span>{t==='Email'?<a href={`mailto:${value}`}>{value}</a>:t==='Phone'?<a href={`tel:${String(value).replace(/[^+\d]/g,'')}`}>{value}</a>:value}</span></div></Reveal>)}
         {whatsappConfigured?<WaBtn variant="outline">Chat on WhatsApp</WaBtn>:<div className="public-state"><b>WhatsApp is not configured yet.</b><p>T-Care needs to set its public WhatsApp business number before this channel can be opened.</p></div>}
         {!cards.length&&<div className="public-state">No public contact details have been configured yet. Sign in to manage your bookings and account notifications.</div>}
       </div>
@@ -226,18 +228,47 @@ export function ContactPage(){
   </>;
 }
 
-/* ============ TERMS ============ */
-const TERMS=[
-  ['Publication status','This page is a draft placeholder, not the final T-Care terms or privacy notice. Do not treat it as a contractual policy.'],
-  ['Bookings and cancellations','The applicable booking, cancellation and rescheduling terms must be provided and accepted before a service is confirmed.'],
-  ['Payments and refunds','Payment collection, refunds and applicable refund timelines are not enabled or confirmed by this release. Any future policy must be published before those features go live.'],
-  ['Products and delivery','Product checkout, delivery commitments, replacement guarantees and return terms are not enabled or confirmed in this release.'],
-  ['Privacy','The final privacy notice must describe the actual data collected, processing purposes, retention periods and user rights before launch.'],
-  ['Contact','Use only contact details configured on the Contact page.'],
+/* ============ TERMS & PRIVACY ============ */
+const TERMS_SECTIONS = [
+  ['Using T-CARE', 'T-CARE provides a platform for customers to manage plant information, request plant-care services and communicate with the service team. You must provide accurate account and contact information, keep your sign-in credentials private and use the service lawfully. You are responsible for activity carried out through your account until you notify T-CARE of suspected unauthorized access.'],
+  ['Customer and Gardener accounts', 'Customers may maintain plant and address records and submit service requests. Gardener accounts may be subject to identity and document verification before receiving or performing assignments. Admin accounts are provisioned by T-CARE and are not available through public registration. Access to each workspace is limited by the role assigned to the account.'],
+  ['Bookings and service scope', 'A booking request is not a confirmed appointment until T-CARE has accepted and scheduled it and, where applicable, assigned a Gardener. The service, price, date, time and scope shown in the booking record are the reference for the requested work. Any change to scope or schedule must be agreed through T-CARE before it is treated as part of the booking.'],
+  ['Prices and payments', 'Prices are displayed from the active T-CARE catalogue and may depend on the service, plant count or selected plan. The server calculates the payable amount for a booking. Online payment is available only when the checkout is enabled and the payment provider confirms the transaction. An order or payment attempt is not proof of payment. T-CARE records provider-confirmed payments and issues an email receipt to the registered account address.'],
+  ['Refunds and cancellations', 'Cancellation, rescheduling and refund eligibility depend on the status of the booking, the applicable service terms and the payment provider’s confirmed transaction or refund status. A paid booking must follow the refund process; cancelling a booking alone does not represent a completed refund. Any refund record shown in the account is subject to provider confirmation.'],
+  ['Plans and subscriptions', 'Subscription requests remain pending until their payment is verified. A plan becomes active only after T-CARE records the provider-confirmed payment. Renewal dates, pause and cancellation status are shown in the account. Plan changes are subject to the options published by T-CARE at the time of the request.'],
+  ['Plant care and service reports', 'Plant health depends on environmental conditions, plant species, previous care and other factors outside T-CARE’s control. Service notes and recommendations record observations made during a visit; they are not a guarantee that a plant will recover or remain healthy. Customers should follow any safety or care instructions shared for their plants and premises.'],
+  ['Products and other catalogue items', 'Product listings and the cart may be displayed for browsing. Product checkout, order placement and delivery fulfilment are not available in this release unless a completed checkout flow is explicitly presented in the T-CARE website. Adding an item to a cart does not create an order or charge.'],
+  ['Account security and acceptable use', 'Do not share passwords or verification codes. Do not attempt to access another person’s account, interfere with the platform, submit false documents or misuse customer, Gardener or business information. T-CARE may restrict accounts or sessions where required to protect users, service operations or the platform.'],
+  ['Changes and support', 'T-CARE may update these terms when its services or legal obligations change. Material updates will be published with a new policy version and may require renewed consent. Questions about a booking or account should be raised through the contact channels published on the Contact page.']
 ];
-export function TermsPage(){
+
+const PRIVACY_SECTIONS = [
+  ['Information collected', 'T-CARE processes account details such as name, email address, phone number and account role; plant records and care notes; service addresses, booking details and service reports; and messages or notifications associated with the account. For Gardeners, this may include verification documents and professional profile information. Payment records include transaction references, amounts, payment status and refund information. T-CARE does not need or store a readable copy of your payment card credentials.'],
+  ['Passwords and account security', 'Account passwords are transformed into one-way password hashes before storage and are not returned in account or profile responses. Authentication uses protected, HTTP-only session cookies. T-CARE staff and other account holders are not provided with your password. Browser or device password-manager synchronization is controlled by the browser or password-manager account and its owner settings, not by T-CARE.'],
+  ['How information is used', 'Information is used to create and secure accounts, verify email addresses and Gardener eligibility, manage plants and addresses, schedule and perform services, record service reports, process provider-confirmed payments and refunds, issue receipts, send service notifications, respond to support requests, prevent misuse and meet legal or accounting obligations.'],
+  ['When information is shared', 'A Gardener assigned to a booking may receive the customer’s name, service address, contact details and the plants or service information needed to perform that booking. T-CARE may use service providers for database hosting, secure file storage, email delivery and payment processing. Access is limited to information needed for the relevant service or operation. Admin access is restricted to authorized business operators.'],
+  ['Payments', 'Payment credentials are handled by the configured payment provider during checkout. T-CARE stores transaction identifiers, payment amounts, statuses, dates, provider event records and refund details needed to reconcile payments and support customers. Payment receipts are sent to the email address associated with the customer’s account.'],
+  ['Cookies and local browser storage', 'T-CARE uses HTTP-only cookies for authentication. The website may use local browser storage for non-sensitive preferences such as theme choice and for a shopping cart used for browsing. Passwords and authentication tokens are not intentionally stored in localStorage or shared between T-CARE accounts. Browser password-manager features are separately controlled by the user’s browser or device account.'],
+  ['Retention and deletion', 'T-CARE retains account, service, payment, security and audit information for as long as it is reasonably needed to operate the account and services, resolve disputes, protect the platform and meet applicable legal or accounting obligations. Some transaction and audit records may need to be retained after an account is closed. Requests to correct or delete personal information can be submitted through T-CARE’s published contact channels and will be assessed against these obligations.'],
+  ['Your choices and rights', 'You can review and update available profile information from your account. You may contact T-CARE to request access to, correction of or deletion of personal information, or to raise a privacy concern. T-CARE may need to verify your identity before acting on a request and may retain information where legally required or necessary to complete an outstanding service or resolve a dispute.'],
+  ['Policy updates and contact', 'This notice may be updated when the platform’s information practices change. The current version and publication date are shown above. For privacy questions, use the email, telephone or address published on the T-CARE Contact page.']
+];
+
+function LegalDocument({ eyebrow, title, intro, version, sections }) {
   return <>
-    <PageHero eyebrow="Legal" crumb="Terms & privacy" title={<>Terms &amp; <em>privacy</em></>} sub="This is a publication placeholder. The final policy must be approved before transactional features launch."/>
-    <section className="lsec terms"><div className="terms-card">{TERMS.map(([t,d],i)=><Reveal key={t} delay={i*.04} className="term"><span>{String(i+1).padStart(2,'0')}</span><div><h3>{t}</h3><p>{d}</p></div></Reveal>)}</div></section>
+    <PageHero eyebrow={eyebrow} crumb={eyebrow} title={title} sub={intro}/>
+    <section className="lsec terms">
+      <div className="legal-document-meta"><span>Policy version: {version}</span><span>Published: 18 November 2026</span></div>
+      <div className="terms-card">{sections.map(([heading,body],index)=><Reveal key={heading} delay={index*.025} className="term"><span>{String(index+1).padStart(2,'0')}</span><div><h3>{heading}</h3><p>{body}</p></div></Reveal>)}</div>
+      <p className="legal-review-note">These policies describe the current T-CARE service experience. T-CARE should obtain jurisdiction-specific legal review and confirm its business contact and retention arrangements before treating this publication as final legal advice.</p>
+    </section>
   </>;
+}
+
+export function TermsPage(){
+  return <LegalDocument eyebrow="Terms & Conditions" title={<>Clear terms for <em>care and service</em></>} sub="Please review the terms that apply when you create an account, request a service or use a T-CARE workspace." version={C.TERMS_POLICY_VERSION} sections={TERMS_SECTIONS}/>;
+}
+
+export function PrivacyPage(){
+  return <LegalDocument eyebrow="Privacy Policy" title={<>Your information, <em>handled with care</em></>} sub="This notice explains the account, plant-care, booking and transaction information T-CARE uses to operate its services." version={C.PRIVACY_POLICY_VERSION} sections={PRIVACY_SECTIONS}/>;
 }

@@ -27,7 +27,7 @@ The application is designed so moving from Supabase Free to Pro does not require
 
 ## Payments
 
-The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. Booking checkout is available in the Customer booking detail view only when the backend payment flag and Razorpay API credentials are configured. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server. Never expose secret values to the frontend. `PAYMENTS_ENABLED` remains false in the Render Blueprint; enabling it in production requires an `rzp_live_` key ID and all API/webhook credentials. Non-production environments reject live key IDs. See `docs/T-CARE-PAYMENT-SECURITY.md` for the gated live rollout checklist.
+The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. Provider-confirmed payments create an idempotent receipt snapshot and email; Admins can search and paginate the payment ledger and retry receipt delivery. Receipt email status reflects the current payment state while retaining the original amount paid. Booking checkout is available in the Customer booking detail view only when the backend payment flag and Razorpay API credentials are configured. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server. Never expose secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
 
 For local booking-payment testing, create an ignored `backend/.env.test` file using an isolated local database on `localhost:55432/tcare_payment_test`, keep `PAYMENTS_ENABLED=false`, and set `PAYMENT_TEST_CUSTOMER_EMAIL` to a synthetic `example.invalid` address plus `PAYMENT_TEST_CUSTOMER_PASSWORD` (12-72 UTF-8 bytes). Run `npm run payments:seed-test` from `backend/` to create a verified synthetic Customer, plant, address, active service and future booking. The script refuses any database URL other than the exact local test target and sends no email or Razorpay requests. Keep the existing `backend/.env` unchanged.
 
@@ -35,6 +35,7 @@ For local booking-payment testing, create an ignored `backend/.env.test` file us
 ## Authentication and email verification
 
 Public registration accepts only `accountType: CUSTOMER` or `accountType: GARDENER`. The API creates the matching profile and a `PENDING` user record. It does not issue an authenticated session until email verification succeeds. `ADMIN` is never accepted by public registration.
+Registration requires separate Terms and Privacy consent. The API stores each accepted policy version and timestamp with the account; update the shared policy version constants whenever approved policy text changes.
 
 Auth endpoints:
 - POST `/api/v1/auth/register` — create Customer or Gardener account and send email OTP
@@ -45,8 +46,14 @@ Auth endpoints:
 - POST `/api/v1/auth/logout` — revokes refresh session
 - GET `/api/v1/auth/me` — returns current verified user
 - POST `/api/v1/auth/change-password` — checks current password, stores a new bcrypt hash, revokes refresh sessions, and issues a fresh session
+- POST `/api/v1/auth/forgot-password` — returns a generic response and emails a one-time reset code to an eligible account
+- POST `/api/v1/auth/reset-password` — verifies and consumes a limited-use code, changes the bcrypt password, revokes refresh sessions and invalidates old access tokens
 
 OTP policy defaults: 6 digits, 10-minute expiry, 5 verification attempts and 60-second resend cooldown. Codes are HMAC-hashed using a domain-separated key derived from the server-side refresh secret; raw OTP values are never stored or logged. IP-based auth rate limits are in place in addition to database attempt/cooldown checks.
+
+## Database migration
+
+The registration-consent, password-recovery, access-token version and payment-receipt tables/columns are included in the latest Prisma migration. Before applying it to an existing deployment, take and verify a database backup, inspect the pending migration status, and use `npx prisma migrate deploy` from `backend/`. Do not use `prisma migrate reset` against production; do not apply the migration without the deployment owner's approval.
 
 Configure Gmail SMTP in `backend/.env`:
 - `SMTP_HOST=smtp.gmail.com`

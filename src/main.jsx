@@ -6,11 +6,13 @@ import {AppBackground,AuthScenery} from './Backgrounds.jsx';
 import {useCart,CartDrawer,LandingNav,Hero,WhyChoose,Included,Steps,Market,Reviews,FinalCta,SiteFooter,WhatsAppFab} from './landing/Sections.jsx';
 import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, Star, X, CircleAlert,
   LayoutGrid, CalendarDays, Flower2, Sprout, WalletCards, CreditCard, UserRound, Stethoscope, Users, Package, BarChart3, FileText,
-  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft } from 'lucide-react';
-import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage} from './landing/Pages.jsx';
+  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
+import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage,PrivacyPage} from './landing/Pages.jsx';
 import {usePublicList} from './landing/publicData.js';
 import './styles.css';
 import * as Phase5 from './phase5.jsx';
+import { setNotificationUser, useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
+import { restoreAuthSession, logoutAuthSession } from './apiRequest.js';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:4000')).replace(/\/+$/, '');
 const API_V1 = `${API_BASE_URL}/api/v1`;
@@ -74,16 +76,9 @@ function Provider({children}){
 
   React.useEffect(()=>{
     let active=true;
-    const readSession=()=>fetch(`${API_V1}/auth/session`,{credentials:'include'});
     const restore=async()=>{
       try{
-        let response=await readSession();
-        let payload=response.ok?await response.json():null;
-        if(response.status===401||payload?.refreshRequired){
-          const refresh=await fetch(`${API_V1}/auth/refresh`,{method:'POST',credentials:'include'});
-          payload=refresh.ok?await refresh.json():null;
-        }
-        const user=payload?.authenticated===false?null:payload?.user||null;
+        const user=await restoreAuthSession({apiV1:API_V1});
         if(active&&user)setAuthUser(user);
       }catch{
         // Public pages remain available while the API is offline; protected pages stay guarded.
@@ -100,6 +95,7 @@ function Provider({children}){
     window.addEventListener('tcare:session-expired',onSessionExpired);
     return()=>window.removeEventListener('tcare:session-expired',onSessionExpired);
   },[]);
+  React.useEffect(()=>{setNotificationUser(authUser);},[authUser?.id,authUser?.role]);
 
   React.useEffect(()=>{
     const onShortcut=event=>{
@@ -130,9 +126,14 @@ function Provider({children}){
   const toggleTheme=React.useCallback(()=>setTheme(current=>current==='dark'?'light':'dark'),[]);
   const openPalette=React.useCallback(()=>setPaletteOpen(true),[]);
   const logout=React.useCallback(async()=>{
-    try{await fetch(`${API_V1}/auth/logout`,{method:'POST',credentials:'include'})}catch{}
+    let logoutFailed=false;
+    try{await logoutAuthSession({apiV1:API_V1})}catch(error){
+      logoutFailed=true;
+      console.error('[auth] sign-out request failed',error);
+    }
     setAuthUser(null);
-  },[]);
+    if(logoutFailed)toast('Sign-out could not be confirmed with T-CARE. Please try again when your connection is restored.',{type:'warning'});
+  },[toast]);
   const value=React.useMemo(()=>({cart,toast,theme,toggleTheme,openPalette,authUser,authReady,setAuthUser,logout}),
     [cart,toast,theme,toggleTheme,openPalette,authUser,authReady,logout]);
 
@@ -158,44 +159,28 @@ function Palette({onClose}){const nav=useNavigate();const {authUser,toggleTheme,
 function Notif(){
   const {authUser}=useApp();
   const role=authUser?.role;
-  const live=role==='CUSTOMER'||role==='GARDENER'; // admins read the notification centre; /notifications is per-recipient
+  const live=role==='CUSTOMER'||role==='GARDENER';
   const inbox=role==='ADMIN'?'/hq/notifications':role==='GARDENER'?'/crew/inbox':'/garden/inbox';
   const [o,setO]=React.useState(false);
-  const [feed,setFeed]=React.useState({items:[],unread:0,state:'loading'});
+  const feed=useNotificationFeed();
   const box=React.useRef(null);
-  const pull=React.useCallback(async()=>{
-    if(!live||document.visibilityState!=='visible')return;
-    try{
-      const res=await fetch(`${API_V1}/notifications?limit=5`,{credentials:'include',cache:'no-store'});
-      if(!res.ok)throw new Error(String(res.status));
-      const data=await res.json();
-      setFeed({items:Array.isArray(data.notifications)?data.notifications:[],unread:Number(data.unreadCount)||0,state:'ready'});
-    }catch{setFeed(f=>({...f,state:'error'}))}
-  },[live]);
-  React.useEffect(()=>{
-    if(!live)return undefined;
-    pull();
-    const timer=setInterval(pull,30000);
-    document.addEventListener('visibilitychange',pull);
-    return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',pull)};
-  },[live,pull,authUser?.id]);
+  React.useEffect(()=>{if(o&&live)refreshNotificationFeed();},[o,live]);
   React.useEffect(()=>{
     if(!o)return undefined;
-    pull();
     const away=e=>{if(box.current&&!box.current.contains(e.target))setO(false)};
     const esc=e=>{if(e.key==='Escape')setO(false)};
     document.addEventListener('pointerdown',away);document.addEventListener('keydown',esc);
     return()=>{document.removeEventListener('pointerdown',away);document.removeEventListener('keydown',esc)};
-  },[o,pull]);
+  },[o]);
   const when=v=>{try{return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(v))}catch{return''}};
-  const unread=live?feed.unread:0;
+  const unread=live?feed.unreadCount:0;
   return <div className="notif" ref={box}>
     <button className="ib" onClick={()=>setO(v=>!v)} aria-label={unread?`Open notifications, ${unread} unread`:'Open notifications'} aria-expanded={o} aria-haspopup="true" title="Notifications"><Bell size={17}/>{unread>0&&<i className="ping"/>}</button>
     <AnimatePresence>{o&&<motion.div className="nmenu" role="region" aria-label="Notifications" initial={{opacity:0,scale:.9,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:.9,y:8}} transition={{duration:.18}}>
       <b>Notifications{unread>0?` · ${unread} unread`:''}</b>
       {!live?<p className="nmenu-note">Review and send in-app notifications from the notification centre.</p>
-        :feed.state==='loading'?<p className="nmenu-note">Loading…</p>
-        :feed.state==='error'&&!feed.items.length?<p className="nmenu-note">Notifications could not be loaded right now.</p>
+        :feed.status==='loading'?<p className="nmenu-note">Loading…</p>
+        :feed.status==='error'&&!feed.items.length?<p className="nmenu-note">Notifications could not be loaded right now.</p>
         :!feed.items.length?<p className="nmenu-note">You’re all caught up.</p>
         :feed.items.map(n=><div key={n.id} className={n.readAt?'':'unread'}><span className={'dot'+(n.readAt?' read':'')}/><p>{n.title||'Update'}<small>{when(n.createdAt)}</small></p></div>)}
       <Link to={inbox} className="nmenu-all" onClick={()=>setO(false)}>{live?'View all notifications':'Open notification centre'}</Link>
@@ -241,14 +226,39 @@ const Dock=React.memo(function Dock({R,pathname}){const [hover,setHover]=React.u
   React.useEffect(()=>{const c=dockRef.current,a=c?.querySelector('a.on');if(c&&a)c.scrollTo({left:Math.max(0,a.offsetLeft-(c.clientWidth-a.offsetWidth)/2)})},[pathname]);
   return <nav className="dock" ref={dockRef} aria-label={`${R.label} navigation`}>{R.nav.map(([p,l,I],i)=>{const to=R.base+(p?'/'+p:''),on=pathname===to||(p&&pathname.startsWith(to+'/'));const d=hover===null?0:Math.abs(hover-i);
       return <Link key={to} to={to} className={on?'on':''} aria-label={l} aria-current={on?'page':undefined} title={l} onMouseEnter={()=>setHover(i)} onMouseLeave={()=>setHover(null)}><motion.span animate={{scale:hover===null?1:d===0?1.35:d===1?1.15:1,y:hover===null?0:d===0?-8:d===1?-3:0}} transition={{type:'spring',stiffness:500,damping:26}}><I size={20}/></motion.span><em>{l}</em><span className="dock-label">{l}</span></Link>})}</nav>});
+function WorkspaceSidebar({R,pathname,collapsed,onToggle,mobileOpen,onClose}){
+  const showLabels=!collapsed||mobileOpen;
+  return <>
+    {mobileOpen&&<button className="workspace-sidebar-backdrop" aria-label="Close navigation" onClick={onClose}/>}
+    <motion.aside id="workspace-sidebar" className={`workspace-sidebar${collapsed&&!mobileOpen?' is-collapsed':''}${mobileOpen?' mobile-open':''}`} animate={{width:collapsed&&!mobileOpen?82:252}} transition={{type:'spring',stiffness:260,damping:30}} aria-label={`${R.label} workspace sidebar`}>
+      <div className="workspace-sidebar-head"><span className="workspace-sidebar-mark"><Leaf size={20}/></span>{showLabels&&<span><b>{R.label}</b><small>Workspace</small></span>}<button className="workspace-sidebar-toggle" type="button" onClick={onToggle} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}</button>{mobileOpen&&<button className="workspace-sidebar-close" type="button" onClick={onClose} aria-label="Close workspace navigation"><X size={17}/></button>}</div>
+      <nav className="workspace-sidebar-nav" aria-label={`${R.label} pages`}>
+        {R.nav.map(([p,label,Icon])=>{const to=R.base+(p?'/'+p:''),active=pathname===to||(p&&pathname.startsWith(to+'/'));return <Link key={to} to={to} className={active?'active':''} aria-current={active?'page':undefined} title={!showLabels?label:undefined} onClick={onClose}><Icon size={19}/><span>{label}</span></Link>})}
+      </nav>
+      <div className="workspace-sidebar-foot">{showLabels&&<small>Plant care, thoughtfully managed.</small>}<button type="button" onClick={onToggle} aria-label={collapsed?'Expand navigation':'Collapse navigation'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}<span>{collapsed?'Expand':'Collapse'}</span></button></div>
+    </motion.aside>
+  </>;
+}
 function Shell({title,sub,action,children}){
-  const {pathname}=useLocation();const rk=roleOf(pathname),R=roles[rk];const {theme,toggleTheme,openPalette,authUser}=useApp();
-  return <div className="shell"><AppBackground role={rk}/>
-    <header className="top"><Link to="/" className="brand" aria-label="T-CARE home"><Leaf size={20}/><b>T-CARE</b></Link>
+  const {pathname}=useLocation();const rk=roleOf(pathname),R=roles[rk];const {theme,toggleTheme,openPalette}=useApp();
+  const hasSidebar=rk==='hq'||rk==='crew';
+  const [collapsed,setCollapsed]=React.useState(()=>{try{return localStorage.getItem(`tcare-sidebar-${rk}`)==='collapsed'}catch{return false}});
+  React.useEffect(()=>{try{localStorage.setItem(`tcare-sidebar-${rk}`,collapsed?'collapsed':'expanded')}catch{}},[rk,collapsed]);
+  const [mobileOpen,setMobileOpen]=React.useState(false);
+  React.useEffect(()=>{setMobileOpen(false)},[pathname]);
+  React.useEffect(()=>{
+    if(!mobileOpen)return undefined;
+    const closeOnEscape=event=>{if(event.key==='Escape')setMobileOpen(false)};
+    window.addEventListener('keydown',closeOnEscape);
+    return()=>window.removeEventListener('keydown',closeOnEscape);
+  },[mobileOpen]);
+  return <div className={`shell${hasSidebar?' has-workspace-sidebar':''}${collapsed?' sidebar-collapsed':''}`}><AppBackground role={rk}/>
+    <header className="top"><button className="ib workspace-mobile-menu" type="button" onClick={()=>setMobileOpen(true)} aria-label="Open workspace navigation" aria-expanded={mobileOpen} aria-controls="workspace-sidebar"><Menu size={18}/></button><Link to="/" className="brand" aria-label="T-CARE home"><Leaf size={20}/><b>T-CARE</b></Link>
       <div className="seg"><span className="on"><motion.i layoutId="seg"/><span>{R.label}</span></span></div>
       <div className="tools"><button className="ib" onClick={openPalette} aria-label="Open command search" title="Search · Ctrl/Cmd K"><Search size={17}/></button><button className="ib" onClick={toggleTheme} aria-label="Toggle light and dark theme" title="Toggle theme">{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</button><Notif/><AccountMenu role={rk}/></div></header>
+    {hasSidebar&&<WorkspaceSidebar R={R} pathname={pathname} collapsed={collapsed} onToggle={()=>setCollapsed(value=>!value)} mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)}/>}
     <main className="page"><Breadcrumbs pathname={pathname}/><div className="ph"><div><span className="eyebrow">{R.label}</span><h1>{title}</h1><p>{sub}</p></div>{action}</div>{children}</main>
-    <Dock R={R} pathname={pathname}/></div>}
+    {!hasSidebar&&<Dock R={R} pathname={pathname}/>}<WhatsAppFab/></div>}
 
 /* ---------- landing ---------- */
 /* ---------- living garden background (home page) ---------- */
@@ -356,6 +366,7 @@ const StoreRoute=()=>{const {cart}=useApp();return <PublicPage><StorePage cart={
 const MakeoverRoute=()=><PublicPage><MakeoverPage/></PublicPage>;
 const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
 const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
+const PrivacyRoute=()=><PublicPage><PrivacyPage/></PublicPage>;
 function Home(){
   const {theme,toggleTheme,cart,authUser,logout}=useApp();
   return <div className="landing"><GardenBackground theme={theme}/>
@@ -520,6 +531,9 @@ function Auth(){
   const [busy,setBusy]=React.useState(false);
   const [error,setError]=React.useState('');
   const [resendSeconds,setResendSeconds]=React.useState(0);
+  const [legalConsent,setLegalConsent]=React.useState({terms:false,privacy:false});
+  const [recovery,setRecovery]=React.useState({email:'',code:'',newPassword:'',confirmPassword:''});
+  const [recoveryNotice,setRecoveryNotice]=React.useState('');
 
   React.useEffect(()=>{
     if(resendSeconds<=0)return;
@@ -554,7 +568,9 @@ function Auth(){
           email:form.email,
           password:form.password,
           ...(form.phone.trim()?{phone:form.phone.trim()}:{}),
-          accountType
+          accountType,
+          acceptTerms: legalConsent.terms,
+          acceptPrivacy: legalConsent.privacy
         });
         setVerificationEmail(result.email||form.email);
         setStep('verify');
@@ -608,6 +624,35 @@ function Auth(){
     setStep('form');
     setError('');
     setCode('');
+    setRecoveryNotice('');
+    setLegalConsent({terms:false,privacy:false});
+  };
+
+  const requestPasswordReset=async event=>{
+    event.preventDefault();
+    setError('');setRecoveryNotice('');setBusy(true);
+    try{
+      await authApi('forgot-password',{email:recovery.email.trim()});
+      setStep('forgot-reset');
+      setRecovery(current=>({...current,code:'',newPassword:'',confirmPassword:''}));
+      setRecoveryNotice('If an active, verified T-CARE account exists for that email, a password reset code has been sent.');
+    }catch(requestError){setError(requestError.message||'Unable to request a reset code.');}
+    finally{setBusy(false);}
+  };
+
+  const completePasswordReset=async event=>{
+    event.preventDefault();
+    setError('');setRecoveryNotice('');
+    if(recovery.newPassword!==recovery.confirmPassword){setError('The new passwords do not match.');return;}
+    setBusy(true);
+    try{
+      const result=await authApi('reset-password',{email:recovery.email.trim(),code:recovery.code,newPassword:recovery.newPassword});
+      setMode('login');setStep('form');
+      setForm(current=>({...current,email:recovery.email.trim(),password:''}));
+      setRecovery({email:'',code:'',newPassword:'',confirmPassword:''});
+      setRecoveryNotice(result.message||'Your password has been reset. Sign in with your new password.');
+    }catch(requestError){setError(requestError.message||'Unable to reset the password.');}
+    finally{setBusy(false);}
   };
 
   return <div className="auth">
@@ -623,7 +668,27 @@ function Auth(){
         <button className={mode==='register'?'on':''} onClick={()=>switchMode('register')}>Create account</button>
       </div>
 
-      {step==='verify' ? <>
+      {step==='forgot-request' ? <>
+        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Forgot your password?</h2><p>Enter the email address associated with your T-CARE account. If it is eligible, we will send a one-time reset code.</p></div>
+        <form onSubmit={requestPasswordReset}>
+          <label>Email address<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))} placeholder="you@example.com"/></label>
+          {error&&<p className="auth-alert" role="alert">{error}</p>}
+          <button className="btn full" type="submit" disabled={busy||!recovery.email.trim()}>{busy?'Requesting…':'Send reset code'} <ArrowUpRight size={16}/></button>
+          <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setMode('login');setError('')}}>Back to sign in</button>
+        </form>
+      </> : step==='forgot-reset' ? <>
+        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Choose a new password.</h2><p>{recoveryNotice || 'Enter the one-time code sent to your registered email address.'}</p></div>
+        <form onSubmit={completePasswordReset}>
+          <label>Registered email<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))}/></label>
+          <label>Six-digit reset code<input required inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={recovery.code} onChange={event=>setRecovery(current=>({...current,code:event.target.value.replace(/\D/g,'').slice(0,6)}))} placeholder="000000"/></label>
+          <label>New password<input required type="password" minLength={12} maxLength={72} autoComplete="new-password" value={recovery.newPassword} onChange={event=>setRecovery(current=>({...current,newPassword:event.target.value}))} placeholder="At least 12 characters"/></label>
+          <label>Confirm new password<input required type="password" minLength={12} maxLength={72} autoComplete="new-password" value={recovery.confirmPassword} onChange={event=>setRecovery(current=>({...current,confirmPassword:event.target.value}))} placeholder="Enter the new password again"/></label>
+          {error&&<p className="auth-alert" role="alert">{error}</p>}
+          <button className="btn full" type="submit" disabled={busy||recovery.code.length!==6||!recovery.newPassword||!recovery.confirmPassword}>{busy?'Updating password…':'Reset password'} <ArrowUpRight size={16}/></button>
+          <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('forgot-request');setError('');setRecoveryNotice('')}}>Request another code</button>
+          <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setMode('login');setError('')}}>Back to sign in</button>
+        </form>
+      </> : step==='verify' ? <>
         <div className="auth-heading">
           <span className="eyebrow">Email verification</span>
           <h2>Check your inbox.</h2>
@@ -653,25 +718,32 @@ function Auth(){
           ].map(([value,icon,label,description])=><button type="button" key={value} className={accountType===value?'on':''} onClick={()=>setAccountType(value)}><span>{icon}</span><b>{label}</b><small>{description}</small></button>)}
         </div>}
         <form onSubmit={submit}>
+          {recoveryNotice&&<p className="auth-success" role="status">{recoveryNotice}</p>}
           {mode==='register'&&<label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={form.fullName} onChange={event=>update('fullName',event.target.value)} placeholder="Your full name"/></label>}
           <label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={event=>update('email',event.target.value)} placeholder="you@example.com"/></label>
           {mode==='register'&&<label>Phone number <span className="field-optional">(optional)</span><input type="tel" autoComplete="tel" value={form.phone} onChange={event=>update('phone',event.target.value)} placeholder="Your contact number"/></label>}
           <label>Password<input required type="password" minLength={mode==='register'?8:1} maxLength={72} autoComplete={mode==='login'?'current-password':'new-password'} value={form.password} onChange={event=>update('password',event.target.value)} placeholder="At least 8 characters"/></label>
+          {mode==='register'&&<div className="legal-consent" aria-label="Required legal consent">
+            <label className="legal-consent-item"><input type="checkbox" required checked={legalConsent.terms} onChange={event=>setLegalConsent(current=>({...current,terms:event.target.checked}))}/><span>I agree to the <Link to="/terms" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</Link>.</span></label>
+            <label className="legal-consent-item"><input type="checkbox" required checked={legalConsent.privacy} onChange={event=>setLegalConsent(current=>({...current,privacy:event.target.checked}))}/><span>I have read and agree to the <Link to="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</Link>.</span></label>
+          </div>}
           {error&&<p className="auth-alert" role="alert">{error}</p>}
-          <button className="btn full" type="submit" disabled={busy}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in to workspace':'Create account')} <ArrowUpRight size={16}/></button>
+          <button className="btn full" type="submit" disabled={busy||(mode==='register'&&(!legalConsent.terms||!legalConsent.privacy))}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in to workspace':'Create account')} <ArrowUpRight size={16}/></button>
         </form>
+        {mode==='login'&&<button className="text-btn auth-forgot" type="button" onClick={()=>{setRecovery(current=>({...current,email:form.email,code:'',newPassword:'',confirmPassword:''}));setStep('forgot-request');setError('');setRecoveryNotice('')}}>Forgot password?</button>}
         <p className="auth-note">{location.state?.from?.startsWith('/garden/book')
           ? 'A Customer account is required to book. After you sign in or verify your Customer account, we will return you to the booking form.'
           : 'Email verification is required before an account can sign in. Admin accounts are provisioned separately.'}</p>
       </>}
       <Link className="back-home" to="/">← Back to T-CARE home</Link>
     </div>
+    <WhatsAppFab/>
   </div>
 }
 
 /* ---------- routes ---------- */
 function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><Leaf size={64} strokeWidth={1}/><h1>Lost in the <em>undergrowth</em></h1><p>This page doesn't exist — let's get you back to greener ground.</p><Btn to="/">Back home</Btn></div>}
-const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
+const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/privacy',PrivacyRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
 ['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],['/crew/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];

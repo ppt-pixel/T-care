@@ -7,6 +7,7 @@ import { notifyUserSafely } from '../lib/notifications.js';
 import { addBillingPeriod } from '../lib/billingPeriod.js';
 import { serializeCustomerPayment } from '../lib/paymentView.js';
 import { assertPaymentsEnabled, isFinalPaymentStatus } from '../lib/paymentPolicy.js';
+import { ensureAndDeliverPaymentReceipt, ensurePaymentReceipt, deliverPaymentReceipt } from '../lib/paymentReceipts.js';
 import {
   hasValidClientPaymentSignature,
   hasValidWebhookSignature,
@@ -170,7 +171,10 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
 
   const eventId = rawEvent?.id ? String(rawEvent.id) : `${eventType}:${providerPaymentId || providerOrderId}`;
   const existingEvent = await prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } });
-  if (existingEvent) return { ignored: true, reason: 'DUPLICATE_EVENT' };
+  if (existingEvent) {
+    if (isFinalPaymentStatus(payment.status)) await ensureAndDeliverPaymentReceipt(payment.id);
+    return { ignored: true, reason: 'DUPLICATE_EVENT' };
+  }
 
   const normalizedStatus = providerStatus === 'captured' || eventType === 'order.paid' ? 'PAID'
     : providerStatus === 'authorized' ? 'AUTHORIZED'
@@ -228,6 +232,9 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
     eventExists: () => prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } })
   });
   if (result?.duplicate) return { ignored: true, reason: 'DUPLICATE_EVENT' };
+  if (result?.payment && isFinalPaymentStatus(result.payment.status)) {
+    await ensureAndDeliverPaymentReceipt(result.payment.id);
+  }
   if (result?.activatedSubscription?.customer?.userId) {
     await notifyUserSafely({
       userId: result.activatedSubscription.customer.userId,
@@ -425,6 +432,24 @@ customer.get('/:id', async (req, res, next) => {
 
 const admin = Router();
 admin.use(requireAuth, requireRole('ADMIN'));
+
+admin.post('/:id/receipt/resend', async (req, res, next) => {
+  try {
+    const payment = await prisma.payment.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+    if (!payment) throw fail(404, 'PAYMENT_NOT_FOUND', 'Payment record not found.');
+    if (!isFinalPaymentStatus(payment.status)) throw fail(409, 'PAYMENT_NOT_CONFIRMED', 'A receipt can only be issued for a provider-confirmed payment.');
+    const receipt = await ensurePaymentReceipt(payment.id);
+    if (!receipt) throw fail(409, 'RECEIPT_RECIPIENT_UNAVAILABLE', 'A verified customer email address is not available for this payment.');
+    const delivered = await deliverPaymentReceipt(receipt.id, { forceResend: true });
+    if (delivered?.deliveryStatus === 'SENDING') {
+      return res.status(202).json({ receipt: delivered, message: 'Receipt delivery is already in progress.' });
+    }
+    if (delivered?.deliveryStatus !== 'SENT') {
+      return res.status(502).json({ error: 'RECEIPT_EMAIL_FAILED', message: 'The receipt record exists, but email delivery failed. Check the email provider configuration and retry.', receipt: delivered });
+    }
+    return res.json({ receipt: delivered, message: 'Payment receipt sent.' });
+  } catch (error) { next(error); }
+});
 
 admin.post('/:id/refund', async (req, res, next) => {
   try {

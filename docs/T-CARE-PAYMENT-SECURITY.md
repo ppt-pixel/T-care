@@ -34,6 +34,7 @@ Razorpay's current security guidance recommends server-generated Orders, signatu
 - A refund that times out or suffers a network failure remains `PENDING` rather than being incorrectly marked failed, because the provider may have accepted it.
 - Payment provider secrets are never returned to the browser.
 - Payment state changes are audited.
+- Provider-confirmed payments receive an idempotent receipt snapshot and email. Delivery attempts/failures are recorded and Admin can retry delivery from the payment ledger; a receipt preserves the original amount paid and displays the current payment status.
 
 ## Live deployment status and safeguards
 

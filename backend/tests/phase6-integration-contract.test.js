@@ -181,14 +181,15 @@ test('production auth cookies are HttpOnly and Secure with explicit SameSite beh
 test('session bootstrap and refresh treat guests or stale cookies as normal unauthenticated state', () => {
   const auth = read('backend/src/routes/auth.js');
   const frontend = read('src/main.jsx');
+  const apiRequest = read('src/apiRequest.js');
   const sessionHandler = auth.slice(auth.indexOf("router.get('/session'"), auth.indexOf("router.get('/me'"));
   const refreshHandler = auth.slice(auth.indexOf("router.post('/refresh'"), auth.indexOf("router.post('/logout'"));
   assert.doesNotMatch(sessionHandler, /status\(401\)/);
   assert.match(sessionHandler, /authenticated: false, user: null, refreshRequired: true/);
   assert.match(refreshHandler, /authenticated: false, user: null/);
   assert.match(refreshHandler, /authenticated: true, user: publicUser\(session\.user\)/);
-  assert.match(frontend, /payload\?\.refreshRequired/);
-  assert.match(frontend, /response\.status===401\|\|payload\?\.refreshRequired/);
+  assert.match(frontend, /restoreAuthSession\(\{apiV1:API_V1\}\)/);
+  assert.match(apiRequest, /session\?\.refreshRequired\s*!==\s*true/);
 });
 
 test('refresh-token rotation is single-use under concurrent requests', () => {
@@ -364,7 +365,8 @@ test('all Prisma models have matching CREATE TABLE declarations across migration
     'backend/prisma/migrations/20261107131341_add_email_verification/migration.sql',
     'backend/prisma/migrations/20261109000100_add_gardener_kyc_documents/migration.sql',
     'backend/prisma/migrations/20261109000200_add_cancelled_assignment_status/migration.sql',
-    'backend/prisma/migrations/20261112000200_add_product_catalogue/migration.sql'
+    'backend/prisma/migrations/20261112000200_add_product_catalogue/migration.sql',
+    'backend/prisma/migrations/20261118000100_add_registration_consent_password_reset_receipts/migration.sql'
   ];
   const tables = migrationFiles.flatMap(file => [...read(file).matchAll(/CREATE TABLE\s+"([^"]+)"/gi)].map(match => match[1]));
   assert.equal(new Set(modelNames).size, modelNames.length, 'Prisma model names must be unique');
@@ -383,4 +385,92 @@ test('frontend and backend package manifests and lockfiles agree on supported No
   assert.equal(backendLock.packages[''].engines.node, backendPackage.engines.node);
   assert.equal(backendPackage.dependencies['@prisma/client'], '^6.16.0');
   assert.ok(backendPackage.devDependencies.prisma);
+});
+
+test('registration consent is enforced by the API and stored with policy versions', () => {
+  const auth = read('backend/src/routes/auth.js');
+  const main = read('src/main.jsx');
+  const schema = read('backend/prisma/schema.prisma');
+  assert.match(auth, /acceptTerms:\s*z\.literal\(true\)/);
+  assert.match(auth, /acceptPrivacy:\s*z\.literal\(true\)/);
+  assert.match(auth, /termsAcceptedAt:\s*consentAt/);
+  assert.match(auth, /termsPolicyVersion:\s*TERMS_POLICY_VERSION/);
+  assert.match(auth, /privacyAcceptedAt:\s*consentAt/);
+  assert.match(auth, /privacyPolicyVersion:\s*PRIVACY_POLICY_VERSION/);
+  assert.match(main, /legalConsent\.terms/);
+  assert.match(main, /legalConsent\.privacy/);
+  assert.match(schema, /termsAcceptedAt\s+DateTime\?/);
+  assert.match(schema, /privacyPolicyVersion\s+String\?/);
+});
+
+test('password recovery is limited, non-enumerating, one-time and revokes sessions', () => {
+  const auth = read('backend/src/routes/auth.js');
+  assert.match(auth, /router\.post\('\/forgot-password',\s*forgotPasswordLimiter/);
+  assert.match(auth, /router\.post\('\/reset-password',\s*resetPasswordLimiter/);
+  assert.match(auth, /If an active, verified T-CARE account exists/);
+  assert.match(auth, /hashPasswordResetCode/);
+  assert.match(auth, /attempts:\s*\{\s*lt:\s*env\.OTP_MAX_ATTEMPTS\s*\}/);
+  assert.match(auth, /consumedAt:\s*now/);
+  assert.match(auth, /refreshSession\.updateMany/);
+  assert.match(auth, /bcrypt\.hash\(input\.newPassword,\s*12\)/);
+  assert.match(auth, /authVersion:\s*\{\s*increment:\s*1\s*\}/);
+  assert.match(auth, /Buffer\.byteLength\(value,\s*'utf8'\)\s*<=\s*72/);
+  assert.match(read('backend/src/middleware/auth.js'), /payload\.av[\s\S]*?user\.authVersion/);
+});
+
+test('password and account status changes immediately invalidate existing access JWTs', () => {
+  const schema = read('backend/prisma/schema.prisma');
+  const migration = read('backend/prisma/migrations/20261118000100_add_registration_consent_password_reset_receipts/migration.sql');
+  const middleware = read('backend/src/middleware/auth.js');
+  const auth = read('backend/src/routes/auth.js');
+  const admin = read('backend/src/routes/admin.js');
+  assert.match(schema, /authVersion\s+Int\s+@default\(0\)/);
+  assert.match(migration, /ADD COLUMN "authVersion" INTEGER NOT NULL DEFAULT 0/);
+  assert.match(auth, /av:\s*Number\(user\.authVersion \?\? 0\)/);
+  assert.match(middleware, /Number\(payload\.av \?\? 0\) !== Number\(user\.authVersion \?\? 0\)/);
+  assert.ok((auth.match(/authVersion:\s*\{\s*increment:\s*1\s*\}/g) || []).length >= 2);
+  assert.match(admin, /authVersion:\s*\{\s*increment:\s*1\s*\}/);
+});
+
+test('payment receipts require provider-confirmed states and Admin can retry delivery', () => {
+  const receipts = read('backend/src/lib/paymentReceipts.js');
+  const payments = read('backend/src/routes/payments.js');
+  const admin = read('backend/src/routes/admin.js');
+  const finance = read('src/phase5.jsx');
+  assert.match(receipts, /!\['PAID',\s*'PARTIALLY_REFUNDED',\s*'REFUNDED'\]\.includes\(payment\.status\)/);
+  assert.match(receipts, /paymentReceipt\.upsert/);
+  assert.match(receipts, /deliveryStatus:\s*'SENDING'/);
+  assert.match(receipts, /paymentStatus:\s*receipt\.payment\.status/);
+  assert.match(payments, /ensureAndDeliverPaymentReceipt\(result\.payment\.id\)/);
+  assert.match(payments, /admin\.post\('\/:id\/receipt\/resend'/);
+  assert.match(admin, /receipt:\s*true/);
+  assert.match(finance, /\/payments\/admin\/\$\{payment\.id\}\/receipt\/resend/);
+  assert.match(read('backend/src/lib/email.js'), /Original amount paid/);
+  assert.match(read('backend/src/lib/email.js'), /Current status: \$\{safe\.status\}/);
+});
+
+test('Admin and Gardener workspaces use the sidebar and a shared notification preview poller', () => {
+  const main = read('src/main.jsx');
+  const dashboard = read('src/phase5.jsx');
+  const store = read('src/notificationStore.js');
+  assert.match(main, /function WorkspaceSidebar/);
+  assert.match(main, /hasSidebar\s*=\s*rk==='hq'\|\|rk==='crew'/);
+  assert.match(main, /<WorkspaceSidebar/);
+  assert.match(store, /setInterval\(\(\)\s*=>\s*refreshNotificationFeed\(\),\s*60_000\)/);
+  assert.match(store, /\/notifications\?limit=5/);
+  assert.doesNotMatch(dashboard, /useLoad\('\/notifications\?limit=5'/);
+  assert.match(dashboard, /useNotificationFeed\(\)/);
+});
+
+test('Admin payment ledger supports searchable pagination beyond the first page', () => {
+  const admin = read('backend/src/routes/admin.js');
+  const finance = read('src/phase5.jsx');
+  assert.match(admin, /providerOrderId: searchFilter/);
+  assert.match(admin, /booking: \{ customer: \{ user: \{ fullName: searchFilter \} \} \}/);
+  assert.match(admin, /subscription: \{ customer: \{ user: \{ email: searchFilter \} \} \}/);
+  assert.match(admin, /skip: \(q\.page - 1\) \* q\.limit/);
+  assert.match(admin, /pagination: \{ page: q\.page, limit: q\.limit, total, pages:/);
+  assert.match(finance, /admin\/payments\?page=\$\{paymentPage\}&limit=25/);
+  assert.match(finance, /paymentsState\.data\?\.pagination/);
+  assert.match(finance, /setPaymentPage\(value=>value\+1\)/);
 });

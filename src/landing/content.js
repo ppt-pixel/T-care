@@ -5,6 +5,9 @@ export const WHATSAPP_NUMBER=String(import.meta.env.VITE_WHATSAPP_NUMBER || '').
 export const PUBLIC_CONTACT_EMAIL=String(import.meta.env.VITE_PUBLIC_CONTACT_EMAIL || '').trim();
 export const PUBLIC_PHONE_NUMBER=String(import.meta.env.VITE_PUBLIC_PHONE_NUMBER || '').trim();
 export const PUBLIC_LOCATION=String(import.meta.env.VITE_PUBLIC_LOCATION || '').trim();
+export const PUBLIC_OFFICE_ADDRESS=String(import.meta.env.VITE_PUBLIC_OFFICE_ADDRESS || '').trim();
+export const TERMS_POLICY_VERSION='2026-11-18-v1';
+export const PRIVACY_POLICY_VERSION='2026-11-18-v1';
 
 export const NAV_LINKS=[['Services','/services'],['Book visit','/garden/book'],['Plant store','/store'],['AI care','/garden/shop'],['About us','/about']];
 
@@ -57,5 +60,5 @@ export const REVIEWS=[];
 export const FOOTER_COLS=[
   ['Services',[['Our services','/services'],['Subscription plans','/plans'],['Green Makeover','/makeover'],['Plant store','/store'],['Book a visit','/garden/book']]],
   ['Account',[['Dashboard','/garden'],['My bookings','/garden/visits'],['My plants','/garden/plants'],['Billing','/garden/billing'],['Profile','/garden/me']]],
-  ['Company',[['About us','/about'],['Contact & FAQ','/contact'],['Join as a gardener','/register'],['Sign in','/login'],['Terms & privacy','/terms']]],
+  ['Company',[['About us','/about'],['Contact & FAQ','/contact'],['Join as a gardener','/register'],['Sign in','/login'],['Terms & Conditions','/terms'],['Privacy Policy','/privacy']]],
 ];

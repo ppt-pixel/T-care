@@ -1,7 +1,7 @@
 import React from 'react';
 import {motion,AnimatePresence} from 'framer-motion';
 import {Link} from 'react-router-dom';
-import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2,UserRound} from 'lucide-react';
+import {Leaf,ArrowRight,ArrowUpRight,Check,Star,MapPin,CalendarDays,Droplets,Scissors,ShieldCheck,Sprout,Stethoscope,Bug,Sun,Moon,Menu,X,ShoppingBag,MessageCircle,Heart,ChevronLeft,ChevronRight,Minus,Plus,Trash2,UserRound,Phone,Mail} from 'lucide-react';
 import HeroPlant from '../HeroPlant.jsx';
 import {ProductSvg,ShowcaseArt,TransformScene} from './Scenes.jsx';
 import * as C from './content.js';
@@ -216,7 +216,7 @@ export function Plans(){
 
 function WaBtn({children,variant='outline'}){
   const href=/^[1-9]\d{7,14}$/.test(C.WHATSAPP_NUMBER)?`https://wa.me/${C.WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello T-Care, I would like to know more about your plant care services.')}`:null;
-  return href?<a className={`lb lb-${variant}`} href={href} target="_blank" rel="noreferrer"><MessageCircle size={15}/>{children}</a>:null;
+  return href?<a className={`lb lb-${variant}`} href={href} target="_blank" rel="noopener noreferrer"><MessageCircle size={15}/>{children}</a>:null;
 }
 
 /* ---------- illustrative makeover concepts (not customer project photos) ---------- */
@@ -290,10 +290,17 @@ const SOCIAL_LINKS=Object.entries({
   linkedin:import.meta.env.VITE_LINKEDIN_URL
 }).map(([name,value])=>({name,url:safeSocialUrl(value)})).filter(item=>item.url&&Social[item.name]);
 function SiteFooterImpl(){
+  const phoneHref=C.PUBLIC_PHONE_NUMBER?`tel:${C.PUBLIC_PHONE_NUMBER.replace(/[^+\d]/g,'')}`:null;
   return <footer className="lfoot"><div className="lfoot-top">
     <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Plant-care services, verified Gardener profiles and living care records in one place.</p>
       {SOCIAL_LINKS.length>0&&<div className="socials">{SOCIAL_LINKS.map(({name,url})=><a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{Social[name]}</a>)}</div>}</div>
     <div className="lfoot-cols">{C.FOOTER_COLS.map(([heading,links])=><div key={heading}><h5>{heading}</h5>{links.map(([label,to])=><L key={label} to={to}>{label}</L>)}</div>)}</div></div>
+    <div className="lfoot-contact"><h5>Contact T-CARE</h5><div className="lfoot-contact-grid">
+      {C.PUBLIC_OFFICE_ADDRESS&&<div><MapPin size={16}/><span><small>Main office</small>{C.PUBLIC_OFFICE_ADDRESS}</span></div>}
+      {C.PUBLIC_LOCATION&&<div><MapPin size={16}/><span><small>Service location</small>{C.PUBLIC_LOCATION}</span></div>}
+      {C.PUBLIC_PHONE_NUMBER&&<div><Phone size={16}/><span><small>Phone</small><a href={phoneHref}>{C.PUBLIC_PHONE_NUMBER}</a></span></div>}
+      {C.PUBLIC_CONTACT_EMAIL&&<div><Mail size={16}/><span><small>Email</small><a href={`mailto:${C.PUBLIC_CONTACT_EMAIL}`}>{C.PUBLIC_CONTACT_EMAIL}</a></span></div>}
+    </div></div>
     <div className="lfoot-bot"><span>© {new Date().getFullYear()} T-Care. All rights reserved.</span><span>Made with care for plants and the people who love them.</span></div></footer>;
 }
 
@@ -301,7 +308,7 @@ function SiteFooterImpl(){
 function WhatsAppFabImpl(){
   const href=/^[1-9]\d{7,14}$/.test(C.WHATSAPP_NUMBER)?`https://wa.me/${C.WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello T-Care, I would like to know more about your plant care services.')}`:null;
   if(!href)return null;
-  return <a className="fab" href={href} target="_blank" rel="noreferrer" aria-label="Chat on WhatsApp"><i className="fab-ring"/><MessageCircle size={26}/></a>;
+  return <a className="fab" href={href} target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp"><i className="fab-ring"/><MessageCircle size={26}/></a>;
 }
 
 

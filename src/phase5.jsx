@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { API_V1 } from './phase5Api.js';
 import { createApiRequest } from './apiRequest.js';
+import { useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
 import './phase5.css';
 
 const request = createApiRequest({
@@ -65,30 +66,36 @@ function useLoad(path, fallbackKey, pollMs = 0) {
   const [error, setError] = React.useState('');
   const inFlight = React.useRef(false);
   const pollingPaused = React.useRef(false);
-  // Every request gets a ticket. Only the newest ticket may write state, so a slow response for an old path
-  // (previous page, previous job id) can never overwrite the view the person is looking at now.
+  const controller = React.useRef(null);
+  // Each view owns one abortable request. Route changes and explicit refreshes cancel obsolete work,
+  // while timer/visibility refreshes never overlap an active request.
   const ticket = React.useRef(0);
   const load = React.useCallback(async ({ silent = false } = {}) => {
-    // Background polling is skipped while another request runs; an explicit load (first load, path change,
-    // retry, refresh after saving) always runs and supersedes whatever was in flight.
     if (silent && (inFlight.current || pollingPaused.current)) return null;
+    if (!silent && inFlight.current) controller.current?.abort();
     if (!silent) pollingPaused.current = false;
     const mine = ++ticket.current;
+    const ownController = new AbortController();
+    controller.current = ownController;
     inFlight.current = true;
     if (!silent) setLoading(true);
     setError('');
     try {
-      const result = await request(path);
+      const result = await request(path, { signal: ownController.signal });
       if (mine === ticket.current) setData(result);
       return result;
     } catch (e) {
-      if (mine === ticket.current) {
+      if (mine === ticket.current && e?.name !== 'AbortError') {
         setError(errorText(e));
         if ([401, 403].includes(e.status) || e.authRefreshFailed) pollingPaused.current = true;
       }
       return null;
     } finally {
-      if (mine === ticket.current) { inFlight.current = false; setLoading(false); }
+      if (mine === ticket.current) {
+        inFlight.current = false;
+        controller.current = null;
+        setLoading(false);
+      }
     }
   }, [path]);
   React.useEffect(() => {
@@ -97,7 +104,9 @@ function useLoad(path, fallbackKey, pollMs = 0) {
     const timer = pollMs ? window.setInterval(refresh, pollMs) : 0;
     if (pollMs) document.addEventListener('visibilitychange', refresh);
     return () => {
-      ticket.current += 1; // invalidate anything still in flight for this path or an unmounted page
+      ticket.current += 1;
+      controller.current?.abort();
+      controller.current = null;
       inFlight.current = false;
       if (timer) window.clearInterval(timer);
       if (pollMs) document.removeEventListener('visibilitychange', refresh);
@@ -201,21 +210,21 @@ export function CustomerProfilePage({ Shell }) {
 
 // ---------------- Customer: dashboard, services, plants, addresses, booking lifecycle ----------------
 export function CustomerDashboardPage({ Shell }) {
-  const plantsState = useLoad('/customer/plants', null, 20000);
-  const bookingsState = useLoad('/bookings', null, 15000);
-  const notificationsState = useLoad('/notifications?limit=5', null, 15000);
-  const subscriptionsState = useLoad('/subscriptions/customer', null, 20000);
+  const plantsState = useLoad('/customer/plants', null, 30000);
+  const bookingsState = useLoad('/bookings', null, 30000);
+  const notificationFeed = useNotificationFeed();
+  const subscriptionsState = useLoad('/subscriptions/customer', null, 30000);
   const plants = plantsState.data?.plants || [];
   const bookings = bookingsState.data?.bookings || [];
-  const notifications = notificationsState.data?.notifications || [];
+  const notifications = notificationFeed.items || [];
   const subscriptions = subscriptionsState.data?.subscriptions || [];
   const currentSubscription = subscriptions.find(item => ['ACTIVE', 'PENDING', 'PAUSED'].includes(item.status));
   const upcoming = bookings.filter(b => !['SERVICE_COMPLETED', 'CANCELLED'].includes(b.status)).slice(0, 3);
-  const loading = plantsState.loading || bookingsState.loading || notificationsState.loading || subscriptionsState.loading;
-  const error = plantsState.error || bookingsState.error || notificationsState.error || subscriptionsState.error;
-  const load = () => Promise.all([plantsState.load(), bookingsState.load(), notificationsState.load(), subscriptionsState.load()]);
+  const loading = plantsState.loading || bookingsState.loading || subscriptionsState.loading;
+  const error = plantsState.error || bookingsState.error || subscriptionsState.error;
+  const load = () => Promise.all([plantsState.load(), bookingsState.load(), subscriptionsState.load(), refreshNotificationFeed({ force: true })]);
   return <Shell title="Your garden today" sub="Your plants, upcoming visits and T-CARE updates refresh automatically while this page is open.">
-    <div className="p5-metrics"><div><small>Plants in your care</small><b>{loading ? '—' : plants.length}</b></div><div><small>Upcoming bookings</small><b>{loading ? '—' : upcoming.length}</b></div><div><small>Notifications</small><b>{loading ? '—' : notificationsState.data?.unreadCount ?? notifications.filter(n => !n.readAt).length} unread</b></div><div><small>Subscription</small><b>{loading ? '—' : currentSubscription ? statusLabel(currentSubscription.status) : 'No plan'}</b></div></div>
+    <div className="p5-metrics"><div><small>Plants in your care</small><b>{loading ? '—' : plants.length}</b></div><div><small>Upcoming bookings</small><b>{loading ? '—' : upcoming.length}</b></div><div><small>Notifications</small><b>{loading ? '—' : notificationFeed.unreadCount ?? notifications.filter(n => !n.readAt).length} unread</b></div><div><small>Subscription</small><b>{loading ? '—' : currentSubscription ? statusLabel(currentSubscription.status) : 'No plan'}</b></div></div>
     <Notice error={error}/><State loading={loading} error={error} onRetry={load}/>
     {!loading && !error && <div className="p5-columns">
       <Panel title="Upcoming visits" sub="Live booking records from your account" action={<Link to="/garden/visits">All visits →</Link>}>
@@ -456,7 +465,7 @@ export function CustomerBookingCreatePage({ Shell }) {
 
 export function CustomerSubscriptionsPage({ Shell }) {
   const plansState = useLoad('/subscriptions/plans', null, 60000);
-  const subscriptionsState = useLoad('/subscriptions/customer', null, 20000);
+  const subscriptionsState = useLoad('/subscriptions/customer', null, 30000);
   const [busyId, setBusyId] = React.useState('');
   const [message, setMessage] = React.useState('');
   const plans = plansState.data?.plans || [];
@@ -513,7 +522,7 @@ export function CustomerSubscriptionsPage({ Shell }) {
 
 export function CustomerBookingsPage({ Shell }) {
   const [filter, setFilter] = React.useState('All');
-  const { data, loading, error, load } = useLoad('/bookings', null, 15000); const all = data?.bookings || [];
+  const { data, loading, error, load } = useLoad('/bookings', null, 30000); const all = data?.bookings || [];
   const filters = ['All', 'Upcoming', 'Completed', 'Cancelled'];
   const visible = all.filter(b => filter === 'All' || filter === 'Upcoming' && !['SERVICE_COMPLETED', 'CANCELLED'].includes(b.status) || filter === 'Completed' && b.status === 'SERVICE_COMPLETED' || filter === 'Cancelled' && b.status === 'CANCELLED');
   return <Shell title="My visits" sub="Track each booking from confirmation through service completion." action={<Link className="p5-button primary" to="/garden/book">Book a service</Link>}>
@@ -525,7 +534,7 @@ export function CustomerBookingsPage({ Shell }) {
 
 export function CustomerBookingDetailPage({ Shell }) {
   const { id } = useParams();
-  const { data, loading, error, load } = useLoad(`/bookings/${id}`, null, 12000);
+  const { data, loading, error, load } = useLoad(`/bookings/${id}`, null, 30000);
   const { data: paymentAvailability, error: paymentAvailabilityError } = useLoad('/payments/customer/availability', null);
   const [busy, setBusy] = React.useState(false), [message, setMessage] = React.useState(''), [review, setReview] = React.useState({ rating: 5, comment: '' }), [issue, setIssue] = React.useState({ subject: '', description: '' });
   const booking = data?.booking;
@@ -616,7 +625,7 @@ export function GardenerDashboardPage({ Shell }) {
   const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const monthTo = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
   const path = `/gardener/dashboard?todayFrom=${encodeURIComponent(todayFrom)}&todayTo=${encodeURIComponent(todayTo)}&monthFrom=${encodeURIComponent(monthFrom)}&monthTo=${encodeURIComponent(monthTo)}`;
-  const { data, loading, error, load } = useLoad(path, null, 15000);
+  const { data, loading, error, load } = useLoad(path, null, 30000);
   const todayJobs = data?.today?.jobs || [];
   const nextVisit = data?.nextVisit;
   const updates = data?.recentCustomerPlantUpdates || [];
@@ -644,7 +653,7 @@ export function GardenerDashboardPage({ Shell }) {
 export function GardenerJobsPage({ Shell }) {
   const [filter, setFilter] = React.useState('All');
   const path = filter === 'All' ? '/gardener/jobs?limit=100' : `/gardener/jobs?limit=100&status=${({ Assigned: 'ASSIGNED', Accepted: 'ACCEPTED', 'In progress': 'IN_PROGRESS', Completed: 'COMPLETED' })[filter]}`;
-  const { data, loading, error, load } = useLoad(path, null, 15000); const jobs = data?.jobs || [];
+  const { data, loading, error, load } = useLoad(path, null, 30000); const jobs = data?.jobs || [];
   return <Shell title="My jobs" sub="Accept assignments, update visit progress and complete service reports.">
     <div className="p5-toolbar">{['All', 'Assigned', 'Accepted', 'In progress', 'Completed'].map(f => <button key={f} className={`p5-filter ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>{f}</button>)}</div>
     <State loading={loading} error={error} empty={!jobs.length && !loading && !error} onRetry={load}/>
@@ -652,7 +661,7 @@ export function GardenerJobsPage({ Shell }) {
   </Shell>;
 }
 export function GardenerJobDetailPage({ Shell }) {
-  const { id } = useParams(); const { data, loading, error, load } = useLoad(`/gardener/jobs/${id}`, null, 15000); const [busy, setBusy] = React.useState(false), [message, setMessage] = React.useState('');
+  const { id } = useParams(); const { data, loading, error, load } = useLoad(`/gardener/jobs/${id}`, null, 30000); const [busy, setBusy] = React.useState(false), [message, setMessage] = React.useState('');
   const [availablePlants, setAvailablePlants] = React.useState([]), [plantBusy, setPlantBusy] = React.useState(false);
   const assignment = data?.assignment, booking = assignment?.booking;
   const canEditVisitPlants = ['ASSIGNED', 'ACCEPTED'].includes(assignment?.status) && ['GARDENER_ASSIGNED', 'GARDENER_ACCEPTED', 'ON_THE_WAY', 'ARRIVED'].includes(booking?.status);
@@ -783,10 +792,11 @@ export function CustomerPaymentsPage({ Shell }) {
 // ---------------- Shared notifications ----------------
 export function NotificationsPage({ Shell }) {
   const [unreadOnly, setUnreadOnly] = React.useState(false); const path = `/notifications?limit=50${unreadOnly ? '&unreadOnly=true' : ''}`;
-  const { data, loading, error, load } = useLoad(path, null, 15000); const items = data?.notifications || [];
-  const markRead = async id => { try { await request(`/notifications/${id}/read`, { method: 'POST', body: '{}' }); await load(); } catch {} };
-  const markAll = async () => { try { await request('/notifications/read-all', { method: 'POST', body: '{}' }); await load(); } catch {} };
-  return <Shell title="Notifications" sub="Your booking, service and account updates from T-CARE."><div className="p5-toolbar"><button className={`p5-filter ${!unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(false)}>All</button><button className={`p5-filter ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(true)}>Unread ({data?.unreadCount ?? '—'})</button><Button variant="ghost" onClick={markAll}>Mark all read</Button></div><State loading={loading} error={error} empty={!items.length && !loading && !error} onRetry={load}/>{items.map(n => <div className={`p5-notification ${n.readAt ? '' : 'unread'}`} key={n.id}><div><Pill>{statusLabel(n.type)}</Pill><h3>{n.title}</h3><p>{n.body}</p><small>{dateTime(n.createdAt)}</small></div>{!n.readAt && <Button variant="ghost" onClick={() => markRead(n.id)}>Mark read</Button>}</div>)}</Shell>;
+  const { data, loading, error, load } = useLoad(path, null, 30000); const items = data?.notifications || [];
+  const [mutationError,setMutationError] = React.useState('');
+  const markRead = async id => { setMutationError(''); try { await request(`/notifications/${id}/read`, { method: 'POST', body: '{}' }); await load(); window.dispatchEvent(new Event('tcare:notifications-changed')); } catch (error) { setMutationError(errorText(error)); } };
+  const markAll = async () => { setMutationError(''); try { await request('/notifications/read-all', { method: 'POST', body: '{}' }); await load(); window.dispatchEvent(new Event('tcare:notifications-changed')); } catch (error) { setMutationError(errorText(error)); } };
+  return <Shell title="Notifications" sub="Your booking, service and account updates from T-CARE."><Notice error={error || mutationError}/><div className="p5-toolbar"><button className={`p5-filter ${!unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(false)}>All</button><button className={`p5-filter ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(true)}>Unread ({data?.unreadCount ?? '—'})</button><Button variant="ghost" onClick={markAll}>Mark all read</Button></div><State loading={loading} error={error} empty={!items.length && !loading && !error} onRetry={load}/>{items.map(n => <div className={`p5-notification ${n.readAt ? '' : 'unread'}`} key={n.id}><div><Pill>{statusLabel(n.type)}</Pill><h3>{n.title}</h3><p>{n.body}</p><small>{dateTime(n.createdAt)}</small></div>{!n.readAt && <Button variant="ghost" onClick={() => markRead(n.id)}>Mark read</Button>}</div>)}</Shell>;
 }
 
 // ---------------- Admin: live operations, user management, KYC, service catalogue, issues, CMS, analytics ----------------
@@ -794,7 +804,7 @@ export function AdminNotificationsPage({ Shell }) {
   const [filter, setFilter] = React.useState('');
   const [unreadOnly, setUnreadOnly] = React.useState(false);
   const path = `/notifications/admin?limit=100${filter ? `&type=${filter}` : ''}${unreadOnly ? '&unreadOnly=true' : ''}`;
-  const { data, loading, error, load } = useLoad(path, null, 15000);
+  const { data, loading, error, load } = useLoad(path, null, 30000);
   const { data: usersData, loading: usersLoading, error: usersError } = useLoad('/admin/users?limit=100&status=ACTIVE', null, 60000);
   const [form, setForm] = React.useState({ userId: '', type: 'SYSTEM', channel: 'IN_APP', title: '', body: '' });
   const [busy, setBusy] = React.useState(false);
@@ -812,8 +822,8 @@ export function AdminNotificationsPage({ Shell }) {
 }
 
 export function AdminDashboardPage({ Shell }) {
-  const { data, loading, error, load } = useLoad('/admin/overview', null, 15000);
-  const activityState = useLoad('/admin/recent-activities?limit=10', null, 15000);
+  const { data, loading, error, load } = useLoad('/admin/overview', null, 30000);
+  const activityState = useLoad('/admin/recent-activities?limit=10', null, 30000);
   const popularState = useLoad('/admin/popular-services?days=30', null, 30000);
   const o = data?.overview;
   const f = o?.finance || {};
@@ -853,7 +863,7 @@ export function AdminDashboardPage({ Shell }) {
 
 export function AdminSubscriptionsPage({ Shell }) {
   const plansState = useLoad('/subscriptions/admin/plans', null, 30000);
-  const subscriptionsState = useLoad('/subscriptions/admin', null, 20000);
+  const subscriptionsState = useLoad('/subscriptions/admin', null, 30000);
   const plans = plansState.data?.plans || [];
   const subscriptions = subscriptionsState.data?.subscriptions || [];
   const initialForm = { name: '', description: '', billingCycle: '6 months', plantLimit: '', price: '', status: 'ACTIVE' };
@@ -907,21 +917,67 @@ export function AdminSubscriptionsPage({ Shell }) {
 }
 
 export function AdminFinancePage({ Shell }) {
-  const overviewState = useLoad('/admin/overview', null, 20000);
-  const paymentsState = useLoad('/admin/payments?limit=100', null, 30000);
-  const payoutsState = useLoad('/admin/payouts?limit=100', null, 30000);
+  const overviewState = useLoad('/admin/overview', null, 30000);
+  const [paymentPage,setPaymentPage]=React.useState(1);
+  const [paymentSearchInput,setPaymentSearchInput]=React.useState('');
+  const [paymentSearch,setPaymentSearch]=React.useState('');
+  const paymentsPath=`/admin/payments?page=${paymentPage}&limit=25${paymentSearch?`&search=${encodeURIComponent(paymentSearch)}`:''}`;
+  const paymentsState = useLoad(paymentsPath, null, 60000);
+  const payoutsState = useLoad('/admin/payouts?limit=100', null, 60000);
+  const [receiptBusy,setReceiptBusy]=React.useState('');
+  const [receiptNotice,setReceiptNotice]=React.useState('');
+  const [receiptError,setReceiptError]=React.useState('');
   const f = overviewState.data?.overview?.finance || {};
   const payments = paymentsState.data?.payments || [];
   const payouts = payoutsState.data?.payouts || [];
-  return <Shell title="Finance visibility" sub="Read-only financial records from verified payment and payout rows. Payment collection, refund processing and manual payout marking are not performed here.">
-    <Notice error={overviewState.error || paymentsState.error || payoutsState.error}/>
+  const sendReceipt = async payment => {
+    setReceiptBusy(payment.id);setReceiptNotice('');setReceiptError('');
+    try {
+      const result=await request(`/payments/admin/${payment.id}/receipt/resend`,{method:'POST',body:'{}'});
+      setReceiptNotice(result.receipt?.deliveryStatus==='SENT'
+        ?`Receipt sent to ${payment.booking?.customer?.user?.email || payment.subscription?.customer?.user?.email || 'the customer email on record'}.`
+        :result.message||'Receipt delivery is being processed.');
+      await paymentsState.load();
+    } catch (error) { setReceiptError(errorText(error)); }
+    finally { setReceiptBusy(''); }
+  };
+  return <Shell title="Finance visibility" sub="Payment history, receipt delivery and Gardener payout records from verified transactions.">
+    <Notice error={overviewState.error || paymentsState.error || payoutsState.error || receiptError} success={receiptNotice}/>
     <State loading={overviewState.loading} error={overviewState.error} onRetry={overviewState.load}/>
     {overviewState.data && <div className="p5-metric-grid">{[["Gross collected",money(f.grossCollected)],['Refunded',money(f.refunded)],['Net collected',money(f.netCollected)],['Paid transactions',f.paidTransactionCount ?? 0],['Payouts paid',money(f.paidPayouts)],['Payouts pending',money(f.pendingPayouts)]].map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value}</b></div>)}</div>}
-    <Panel title="Payment ledger" sub="Payment status, customer, booking/subscription reference and amount.">
+    <Panel title="Payment ledger" sub="Search and review all recorded payment attempts, confirmed transactions, refunds and receipt delivery status.">
+      <form className="p5-toolbar" onSubmit={event=>{event.preventDefault();setPaymentPage(1);setPaymentSearch(paymentSearchInput.trim().slice(0,120));}}>
+        <input type="search" aria-label="Search payments" maxLength={120} placeholder="Search customer, email, service or transaction…" value={paymentSearchInput} onChange={event=>setPaymentSearchInput(event.target.value)}/>
+        <Button type="submit">Search</Button>
+        <Button variant="ghost" type="button" onClick={()=>{setPaymentSearchInput('');setPaymentSearch('');setPaymentPage(1);}}>Clear</Button>
+        <Button variant="ghost" type="button" onClick={paymentsState.load}>Refresh</Button>
+      </form>
       <State loading={paymentsState.loading} error={paymentsState.error} empty={!payments.length && !paymentsState.loading && !paymentsState.error} onRetry={paymentsState.load}/>
-      {payments.length > 0 && <RecordTable headers={['Created','Customer','Reference','Amount','Status','Paid at']}>
-        {payments.map(p => <tr key={p.id}><td>{dateTime(p.createdAt)}</td><td>{p.booking?.customer?.user?.fullName || p.subscription?.customer?.user?.fullName || '—'}<small>{p.booking?.customer?.user?.email || p.subscription?.customer?.user?.email || ''}</small></td><td>{p.booking?.reference || p.providerOrderId || p.subscription?.plan?.name || '—'}</td><td>{money(p.amount)}</td><td><Pill tone={p.status === 'PAID' ? 'success' : 'warning'}>{statusLabel(p.status)}</Pill></td><td>{dateTime(p.paidAt)}</td></tr>)}
+      {payments.length > 0 && <RecordTable headers={['Created','Customer','Reference / purpose','Amount','Method','Status','Transaction ID','Receipt','Action']}>
+        {payments.map(p=>{
+          const email=p.booking?.customer?.user?.email||p.subscription?.customer?.user?.email||'';
+          const canReceipt=['PAID','PARTIALLY_REFUNDED','REFUNDED'].includes(p.status)&&Boolean(email);
+          const receiptStatus=p.receipt?.deliveryStatus||'NOT_ISSUED';
+          return <tr key={p.id}>
+            <td>{dateTime(p.createdAt)}</td>
+            <td>{p.booking?.customer?.user?.fullName||p.subscription?.customer?.user?.fullName||'—'}<small>{email}</small></td>
+            <td>{p.booking?.service?.name||p.booking?.reference||p.subscription?.plan?.name||'—'}<small>{p.booking?.reference||p.providerOrderId||p.subscription?.plan?.billingCycle||''}</small></td>
+            <td>{money(p.amount)}</td>
+            <td>{statusLabel(p.method)}</td>
+            <td><Pill tone={p.status==='PAID'?'success':p.status==='FAILED'?'danger':'warning'}>{statusLabel(p.status)}</Pill></td>
+            <td>{p.providerPaymentId||p.providerOrderId||'—'}</td>
+            <td><Pill tone={receiptStatus==='SENT'?'success':receiptStatus==='FAILED'?'danger':'warning'}>{receiptStatus==='NOT_ISSUED'?'Not issued':statusLabel(receiptStatus)}</Pill>{p.receipt?.receiptNumber&&<small>{p.receipt.receiptNumber}</small>}{p.receipt?.sentAt&&<small>{dateTime(p.receipt.sentAt)}</small>}</td>
+            <td>{canReceipt?<Button variant="ghost" disabled={receiptBusy===p.id} onClick={()=>sendReceipt(p)}>{receiptBusy===p.id?'Sending…':receiptStatus==='SENT'?'Resend':'Send receipt'}</Button>:'—'}</td>
+          </tr>;
+        })}
       </RecordTable>}
+      {paymentsState.data?.pagination?.total>0&&<div className="p5-toolbar" aria-label="Payment pagination">
+        <span className="p5-muted">Page {paymentsState.data.pagination.page} of {paymentsState.data.pagination.pages} · {paymentsState.data.pagination.total} payment records</span>
+        <div className="p5-actions">
+          <Button variant="ghost" disabled={paymentsState.loading||paymentPage<=1} onClick={()=>setPaymentPage(value=>Math.max(1,value-1))}>Previous</Button>
+          <Button variant="ghost" disabled={paymentsState.loading||paymentPage>=paymentsState.data.pagination.pages} onClick={()=>setPaymentPage(value=>value+1)}>Next</Button>
+        </div>
+      </div>}
     </Panel>
     <Panel title="Gardener payout ledger" sub="Only existing payout records are displayed. Do not treat completed service value as a payout or earnings calculation.">
       <State loading={payoutsState.loading} error={payoutsState.error} empty={!payouts.length && !payoutsState.loading && !payoutsState.error} onRetry={payoutsState.load}/>
@@ -966,7 +1022,7 @@ export function AdminServicesPage({ Shell }) {
 
 export function AdminUsersPage({ Shell, role }) {
   const [search, setSearch] = React.useState(''); const [status, setStatus] = React.useState(''); const path = `/admin/users?limit=100${role ? `&role=${role}` : ''}${status ? `&status=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
-  const { data, loading, error, load } = useLoad(path, null, 20000); const users = data?.users || []; const [message, setMessage] = React.useState('');
+  const { data, loading, error, load } = useLoad(path, null, 30000); const users = data?.users || []; const [message, setMessage] = React.useState('');
   const updateStatus = async (user, next) => { if (user.role === 'ADMIN') return; if (!window.confirm(`Set ${user.fullName} to ${next}?`)) return; try { await request(`/admin/users/${user.id}/status`, { method: 'PATCH', body: json({ status: next }) }); setMessage(`Account status changed to ${next}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
   return <Shell title={role === 'GARDENER' ? 'Gardeners' : 'Customers'} sub="Live accounts from PostgreSQL, with role, status, verification and activity fields.">
     <Notice error={error || (message && /failed|cannot|not found|forbidden/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|forbidden/i.test(message) ? message : ''}/>
@@ -994,7 +1050,7 @@ export function AdminUserDetailPage({ Shell }) {
 
 export function AdminGardenersKycPage({ Shell }) {
   const [status, setStatus] = React.useState(''); const [search, setSearch] = React.useState(''); const path = `/admin/gardeners?limit=100${status ? `&kycStatus=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
-  const { data, loading, error, load } = useLoad(path, null, 20000); const gardeners = data?.gardeners || []; const [message, setMessage] = React.useState(''); const [review, setReview] = React.useState({});
+  const { data, loading, error, load } = useLoad(path, null, 30000); const gardeners = data?.gardeners || []; const [message, setMessage] = React.useState(''); const [review, setReview] = React.useState({});
   const decide = async (g, kycStatus) => { if (kycStatus === 'VERIFIED' && !(g.kycDocuments || []).length) { setMessage(`Cannot verify ${g.user.fullName}: no KYC documents are on record.`); return; } if (!window.confirm(`${kycStatus} KYC for ${g.user.fullName}?`)) return; try { await request(`/admin/gardeners/${g.id}/kyc`, { method: 'PATCH', body: json({ kycStatus, note: review[g.id] || '' }) }); setMessage(`KYC status updated for ${g.user.fullName}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
   return <Shell title="Gardener verification" sub="Review uploaded identity documents and approve or reject professional access."><Notice error={error || (message && /cannot|failed|not found|required/i.test(message) ? message : '')} success={message && !/cannot|failed|not found|required/i.test(message) ? message : ''}/>
     <div className="p5-toolbar"><input placeholder="Search gardeners" value={search} onChange={e => setSearch(e.target.value)}/><select value={status} onChange={e => setStatus(e.target.value)}><option value="">All KYC states</option>{['NOT_STARTED','PENDING','VERIFIED','REJECTED'].map(s => <option key={s}>{s}</option>)}</select></div>
@@ -1020,7 +1076,7 @@ export function GardenerKycDocumentsPage({ Shell }) {
 
 export function AdminBookingsPage({ Shell }) {
   const [filter, setFilter] = React.useState(''); const [search, setSearch] = React.useState(''); const path = `/admin/bookings?limit=100${filter ? `&status=${filter}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
-  const { data, loading, error, load } = useLoad(path, null, 15000); const bookings = data?.bookings || []; const [gardeners, setGardeners] = React.useState([]); const [message, setMessage] = React.useState('');
+  const { data, loading, error, load } = useLoad(path, null, 30000); const bookings = data?.bookings || []; const [gardeners, setGardeners] = React.useState([]); const [message, setMessage] = React.useState('');
   React.useEffect(() => { request('/admin/gardeners?limit=100&kycStatus=VERIFIED').then(d => setGardeners(d.gardeners || [])).catch(() => setGardeners([])); }, []);
   const assign = async (bookingId, gardenerId) => { if (!gardenerId) return; try { await request(`/admin/bookings/${bookingId}/assign`, { method: 'POST', body: json({ gardenerId }) }); setMessage('Gardener assignment saved.'); await load(); } catch (e) { setMessage(errorText(e)); } };
   const transitions = { CONFIRMED: ['CANCELLED'], GARDENER_ASSIGNED: ['CONFIRMED','CANCELLED'], GARDENER_ACCEPTED: ['CANCELLED'], ON_THE_WAY: ['CANCELLED'], ARRIVED: ['CANCELLED'], SERVICE_STARTED: [], SERVICE_COMPLETED: [], CANCELLED: [] };
