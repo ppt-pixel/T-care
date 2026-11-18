@@ -24,7 +24,7 @@ Defaults: 10-minute OTP expiry, 5 attempts, 60-second resend cooldown. These are
 
 ## Session bootstrap
 
-`GET /api/v1/auth/session` is a public bootstrap endpoint and represents guests or stale access cookies with a successful JSON response rather than an HTTP 401. When a refresh cookie may restore the session, it returns `refreshRequired: true`; the frontend then calls `POST /api/v1/auth/refresh`. A missing, expired, revoked or otherwise invalid refresh cookie resolves to `{ authenticated: false, user: null }`. Protected APIs and `/auth/me` continue to return 401 when authentication is required.
+`GET /api/v1/auth/session` is a public bootstrap endpoint and represents guests or stale access cookies with a successful JSON response rather than an HTTP 401. It checks the access token's `authVersion` against the current user record. When the token is stale but a refresh cookie may restore the session, it returns `refreshRequired: true`; the frontend then calls `POST /api/v1/auth/refresh`. A missing, expired, revoked or otherwise invalid refresh cookie resolves to `{ authenticated: false, user: null }`. Protected APIs and `/auth/me` continue to return 401 when authentication is required.
 
 ## SMTP setup
 
@@ -59,7 +59,7 @@ Run `npm run admin:provision`. The script refuses to elevate an existing non-adm
 }
 ```
 
-The new password must be at least 12 characters. Existing refresh sessions are revoked and a fresh session is issued. This endpoint is API-only in the current frontend. A forgotten-password/email recovery flow is not implemented.
+The new password must be at least 12 characters. Existing refresh sessions are revoked and a fresh session is issued. This endpoint is API-only in the current frontend. Password recovery is also available through `/api/v1/auth/forgot-password` and `/api/v1/auth/reset-password` using non-enumerating, one-time email codes; successful resets revoke existing sessions.
 
 ## API contracts
 

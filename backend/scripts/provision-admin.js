@@ -10,6 +10,9 @@ async function provisionAdmin() {
     throw new Error('Set ADMIN_EMAIL in backend/.env before provisioning.');
   }
   const initialPassword = ADMIN_INITIAL_PASSWORD || crypto.randomBytes(24).toString('base64url');
+  if (Buffer.byteLength(initialPassword, 'utf8') > 72) {
+    throw new Error("ADMIN_INITIAL_PASSWORD must not exceed bcrypt's 72-byte limit.");
+  }
 
   const email = ADMIN_EMAIL.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -58,7 +61,7 @@ async function provisionAdmin() {
   } else {
     console.log('The configured initial password was hashed and was not printed.');
   }
-  console.log('Store the initial password securely. The authenticated password-change API exists, but no settings form or forgotten-password flow is available yet.');
+  console.log('Store the initial password securely. Password change is available through the authenticated API; the profile UI does not yet include a password-change form.');
 }
 
 try {

@@ -839,6 +839,14 @@ export default function authRouter(router) {
                 return res.json({ authenticated: false, user: null });
             }
 
+            if (Number(payload.av ?? 0) !== Number(user.authVersion ?? 0)) {
+                if (refreshToken) {
+                    return res.json({ authenticated: false, user: null, refreshRequired: true });
+                }
+                clearAuthCookies(res);
+                return res.json({ authenticated: false, user: null });
+            }
+
             return res.json({ authenticated: true, user: publicUser(user) });
         } catch (error) {
             next(error);

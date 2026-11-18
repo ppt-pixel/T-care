@@ -73,7 +73,9 @@ Set `ADMIN_EMAIL`, `ADMIN_FULL_NAME` and `ADMIN_INITIAL_PASSWORD` privately in `
 npm run admin:provision
 ```
 
-The CLI creates a verified ACTIVE ADMIN account only when that email does not already exist. If the email already belongs to a Customer or Gardener, provisioning stops without changing the account. Public registration cannot create Admin users. Do not commit or share the `.env` file.
+Run this from the backend directory or the `t-care-api` Render Shell. The command generates Prisma Client first and then uses the `DATABASE_URL` in that execution environment. Confirm it points to the intended database before running; a local shell with the production URL will modify the deployed database.
+
+The CLI creates a verified ACTIVE ADMIN account only when that email does not already exist. If the email already belongs to a Customer or Gardener, provisioning stops without changing the account. Public registration cannot create Admin users. `ADMIN_INITIAL_PASSWORD` is optional: if blank, a random one-time password is generated and printed only after successful creation. Passwords must not exceed 72 UTF-8 bytes. Do not commit or share `.env` files or passwords.
 
 Provisioning never changes an existing account's password. To explicitly reset an existing Admin account, set `ADMIN_EMAIL` and `ADMIN_RESET_PASSWORD` privately in `backend/.env`, then run:
 
