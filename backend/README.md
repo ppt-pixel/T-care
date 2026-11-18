@@ -7,7 +7,8 @@ Backend implementation and operational guide for the six-phase T-CARE project. T
 - Prisma ORM against Supabase PostgreSQL
 - Server-side authentication with HTTP-only access/refresh cookies
 - Database-backed RBAC for CUSTOMER/GARDENER/ADMIN
-- Customer/Gardener public registration with server-assigned roles
+- Customer-only public registration with server-assigned roles
+- Admin-managed Customer and Gardener account creation with one-time temporary credentials
 - Hashed email OTP verification, expiry, attempt limits and resend cooldown
 - Separate CLI-only ADMIN account provisioning
 - Supabase Storage server adapter using the server-only Supabase Secret API key kept off the client
@@ -34,11 +35,11 @@ For local booking-payment testing, create an ignored `backend/.env.test` file us
 
 ## Authentication and email verification
 
-Public registration accepts only `accountType: CUSTOMER` or `accountType: GARDENER`. The API creates the matching profile and a `PENDING` user record. It does not issue an authenticated session until email verification succeeds. `ADMIN` is never accepted by public registration.
+Public registration creates Customer accounts only. The optional legacy `accountType` field accepts only `CUSTOMER`; Gardener and Admin role assignments are rejected. The API creates a Customer profile and a `PENDING` user record, and does not issue a session until email verification succeeds.
 Registration requires separate Terms and Privacy consent. The API stores each accepted policy version and timestamp with the account; update the shared policy version constants whenever approved policy text changes.
 
 Auth endpoints:
-- POST `/api/v1/auth/register` — create Customer or Gardener account and send email OTP
+- POST `/api/v1/auth/register` — create a Customer account and send email OTP; Gardener registration is Admin-only
 - POST `/api/v1/auth/verify-email` — verify `{ email, code }`, activate account and issue HTTP-only cookies
 - POST `/api/v1/auth/resend-verification` — resend with per-account cooldown
 - POST `/api/v1/auth/login` — requires verified email and ACTIVE status
@@ -48,6 +49,11 @@ Auth endpoints:
 - POST `/api/v1/auth/change-password` — checks current password, stores a new bcrypt hash, revokes refresh sessions, and issues a fresh session
 - POST `/api/v1/auth/forgot-password` — returns a generic response and emails a one-time reset code to an eligible account
 - POST `/api/v1/auth/reset-password` — verifies and consumes a limited-use code, changes the bcrypt password, revokes refresh sessions and invalidates old access tokens
+- Admin-only POST `/api/v1/admin/users` — creates a Customer or Gardener account and returns a cryptographically generated temporary password once
+- Admin-only GET `/api/v1/admin/users/lookup?email=...` — finds an existing Customer by exact email
+- Admin-only POST `/api/v1/admin/users/:id/password-reset` — replaces only a Customer's password, invalidates sessions and returns a new temporary password once
+
+Admin-created accounts are active and email-verified because an Admin creates them on the user's behalf. Passwords are bcrypt-hashed, never logged or stored in plaintext. The Admin UI displays each generated temporary password only in the successful create/reset response; share it through a trusted channel. Account creation refuses duplicate email addresses. Customer password reset never creates an account or changes profile, booking, plant, address or subscription records.
 
 OTP policy defaults: 6 digits, 10-minute expiry, 5 verification attempts and 60-second resend cooldown. Codes are HMAC-hashed using a domain-separated key derived from the server-side refresh secret; raw OTP values are never stored or logged. IP-based auth rate limits are in place in addition to database attempt/cooldown checks.
 

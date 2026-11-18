@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { canTransitionBooking } from './bookings.js';
 import { notifyUserSafely } from '../lib/notifications.js';
 import { buildDailyBookingSeries, summarizeFinance } from '../lib/adminMetrics.js';
+import { createManagedAccount, resetManagedCustomerPassword } from '../lib/adminAccounts.js';
 
 const router = Router();
 router.use((req, res, next) => {
@@ -19,6 +20,15 @@ const pageQuery = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(25),
     search: z.string().trim().max(120).optional()
 });
+const managedAccountSchema = z.object({
+    email: z.string().trim().email().max(254).transform(value => value.toLowerCase()),
+    fullName: z.string().trim().min(2).max(100),
+    phone: z.string().trim().min(7).max(20).optional(),
+    role: z.enum(['CUSTOMER', 'GARDENER'])
+}).strict();
+const customerEmailQuerySchema = z.object({
+    email: z.string().trim().email().max(254).transform(value => value.toLowerCase())
+}).strict();
 
 async function audit(actorUserId, action, entityType, entityId, metadata = {}) {
     await prisma.auditLog.create({ data: { actorUserId, action, entityType, entityId, metadata } });
@@ -122,6 +132,36 @@ router.get('/users', async(req, res, next) => {
     } catch (error) { next(error); }
 });
 
+router.post('/users', async(req, res, next) => {
+    try {
+        const account = managedAccountSchema.parse(req.body);
+        const result = await createManagedAccount({ prismaClient: prisma, actorUserId: req.auth.id, account });
+        res.status(201).json({
+            user: result.user,
+            temporaryPassword: result.temporaryPassword,
+            message: 'Account created. The temporary password is shown only once.'
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.get('/users/lookup', async(req, res, next) => {
+    try {
+        const { email } = customerEmailQuerySchema.parse(req.query);
+        const user = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, fullName: true, role: true, status: true, lastLoginAt: true }
+        });
+        if (!user || user.role !== 'CUSTOMER') {
+            return res.status(404).json({ error: 'CUSTOMER_NOT_FOUND', message: 'No Customer account was found for this email.' });
+        }
+        return res.json({ user });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.get('/users/:id', async(req, res, next) => {
     try {
         const user = await prisma.user.findUnique({
@@ -131,6 +171,24 @@ router.get('/users/:id', async(req, res, next) => {
         if (!user) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found.' });
         res.json({ user });
     } catch (error) { next(error); }
+});
+
+router.post('/users/:id/password-reset', async(req, res, next) => {
+    try {
+        const result = await resetManagedCustomerPassword({
+            prismaClient: prisma,
+            actorUserId: req.auth.id,
+            userId: req.params.id
+        });
+        res.json({
+            user: result.user,
+            temporaryPassword: result.temporaryPassword,
+            revokedSessions: result.revokedSessions,
+            message: 'Customer password reset. The temporary password is shown only once.'
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 router.patch('/users/:id/status', async(req, res, next) => {

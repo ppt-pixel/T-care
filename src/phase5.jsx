@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Copy, KeyRound, UserPlus } from 'lucide-react';
 import { API_V1 } from './phase5Api.js';
 import { createApiRequest } from './apiRequest.js';
 import { useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
@@ -1017,6 +1018,118 @@ export function AdminServicesPage({ Shell }) {
       </RecordTable>
       <form className="p5-inline-form" onSubmit={e => addPrice(s.id, e)}><Field label="Amount (INR)"><input required type="number" min="0" step="0.01" value={priceForms[s.id]?.amount ?? ''} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { minPlants: 1, maxPlants: '', ...v[s.id], amount: e.target.value } }))}/></Field><Field label="Min plants"><input type="number" min="1" value={priceForms[s.id]?.minPlants ?? 1} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { amount: '', maxPlants: '', ...v[s.id], minPlants: e.target.value } }))}/></Field><Field label="Max plants (optional)"><input type="number" min="1" value={priceForms[s.id]?.maxPlants ?? ''} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { amount: '', minPlants: 1, ...v[s.id], maxPlants: e.target.value } }))}/></Field><Button type="submit" disabled={busy}>Add price tier</Button></form>
     </Panel>)}{!services.length && <Empty title="No services configured" text="Create the actual service names and price tiers agreed by T-CARE."/>}</div>}
+  </Shell>;
+}
+
+export function AdminAccountManagementPage({ Shell }) {
+  const [form, setForm] = React.useState({ fullName: '', email: '', phone: '', role: 'CUSTOMER' });
+  const [searchEmail, setSearchEmail] = React.useState('');
+  const [customer, setCustomer] = React.useState(null);
+  const [credential, setCredential] = React.useState(null);
+  const [busy, setBusy] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [message, setMessage] = React.useState('');
+
+  const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  const createAccount = async event => {
+    event.preventDefault();
+    setBusy('create'); setError(''); setMessage(''); setCredential(null);
+    try {
+      const result = await request('/admin/users', {
+        method: 'POST',
+        body: json({
+          fullName: form.fullName.trim(),
+          email: form.email.trim(),
+          ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+          role: form.role
+        })
+      });
+      setCredential({ ...result.user, password: result.temporaryPassword, action: 'created' });
+      setForm({ fullName: '', email: '', phone: '', role: 'CUSTOMER' });
+      setMessage(`${result.user.role === 'GARDENER' ? 'Gardener' : 'Customer'} account created. Share the temporary password through a trusted channel.`);
+    } catch (requestError) {
+      setError(errorText(requestError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const findCustomer = async event => {
+    event.preventDefault();
+    setBusy('lookup'); setError(''); setMessage(''); setCustomer(null); setCredential(null);
+    try {
+      const result = await request(`/admin/users/lookup?email=${encodeURIComponent(searchEmail.trim())}`);
+      setCustomer(result.user);
+    } catch (requestError) {
+      setError(errorText(requestError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const resetCustomerPassword = async () => {
+    if (!customer || !window.confirm(`Generate a new temporary password for ${customer.email}? All active sessions for this Customer will be invalidated.`)) return;
+    setBusy('reset'); setError(''); setMessage(''); setCredential(null);
+    try {
+      const result = await request(`/admin/users/${customer.id}/password-reset`, { method: 'POST', body: '{}' });
+      setCredential({ ...result.user, password: result.temporaryPassword, action: 'reset' });
+      setMessage('Customer password reset. Share the new temporary password through a trusted channel.');
+    } catch (requestError) {
+      setError(errorText(requestError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const copyPassword = async () => {
+    if (!credential) return;
+    setError(''); setMessage('');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
+      await navigator.clipboard.writeText(credential.password);
+      setMessage('Temporary password copied. Share it through a trusted channel, then clear it from this screen.');
+    } catch (copyError) {
+      setError(copyError.message || 'Could not copy the temporary password. Select and copy it manually.');
+    }
+  };
+
+  return <Shell title="Account management" sub="Create managed Customer and Gardener accounts, or restore access to an existing Customer.">
+    <Notice error={error} success={message}/>
+    <div className="p5-columns">
+      <Panel title="Create an account" sub="A secure temporary password is generated by the server and shown only once.">
+        <form onSubmit={createAccount}>
+          <FormGrid>
+            <Field label="Full name"><input required minLength="2" maxLength="100" autoComplete="name" value={form.fullName} onChange={event => updateForm('fullName', event.target.value)}/></Field>
+            <Field label="Email address"><input required type="email" maxLength="254" autoComplete="email" value={form.email} onChange={event => updateForm('email', event.target.value)}/></Field>
+            <Field label="Phone number (optional)"><input type="tel" maxLength="20" autoComplete="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)}/></Field>
+            <Field label="Account type"><select value={form.role} onChange={event => updateForm('role', event.target.value)}><option value="CUSTOMER">Customer</option><option value="GARDENER">Gardener</option></select></Field>
+          </FormGrid>
+          <p className="p5-account-security-note">Creating an account never replaces an existing record. Confirm the email address with the person before sharing credentials.</p>
+          <div className="p5-actions"><Button type="submit" disabled={Boolean(busy)}><UserPlus size={16}/>{busy === 'create' ? 'Creating account…' : 'Create account'}</Button></div>
+        </form>
+      </Panel>
+
+      <Panel title="Find a Customer" sub="Search by the exact email address. Resetting changes only the password and session version; customer records stay intact.">
+        <form onSubmit={findCustomer}>
+          <Field label="Customer email address"><input required type="email" maxLength="254" autoComplete="email" value={searchEmail} onChange={event => setSearchEmail(event.target.value)}/></Field>
+          <div className="p5-actions"><Button type="submit" disabled={Boolean(busy)}>{busy === 'lookup' ? 'Searching…' : 'Find Customer'}</Button></div>
+        </form>
+        {customer && <div className="p5-account-result">
+          <div><b>{customer.fullName}</b><small>{customer.email}</small></div>
+          <Pill tone={customer.status === 'ACTIVE' ? 'success' : 'warning'}>{statusLabel(customer.status)}</Pill>
+          <Button variant="danger" disabled={Boolean(busy)} onClick={resetCustomerPassword}><KeyRound size={16}/>{busy === 'reset' ? 'Resetting…' : 'Generate new password'}</Button>
+        </div>}
+      </Panel>
+    </div>
+
+    {credential && <Panel title={credential.action === 'created' ? 'Account credentials' : 'New Customer credentials'} sub="This temporary password is displayed only in this response. T-CARE never stores or reveals it in plaintext.">
+      <div className="p5-credential-display">
+        <div><small>Login email</small><b>{credential.email}</b></div>
+        <div><small>Temporary password</small><code>{credential.password}</code></div>
+      </div>
+      <p className="p5-account-security-note">Copy it now and provide it to the account holder through a trusted channel. It cannot be retrieved after it is cleared or this page is left.</p>
+      <div className="p5-actions"><Button onClick={copyPassword}><Copy size={16}/>Copy temporary password</Button><Button variant="ghost" onClick={() => setCredential(null)}>Clear credentials</Button></div>
+    </Panel>}
   </Shell>;
 }
 

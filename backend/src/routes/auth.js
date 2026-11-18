@@ -12,22 +12,12 @@ import {
     sendPasswordResetCode
 } from '../lib/email.js';
 import { TERMS_POLICY_VERSION, PRIVACY_POLICY_VERSION } from '../config/legalPolicy.js';
+import { publicRegistrationSchema } from '../lib/authValidation.js';
 
 const bcryptPasswordSchema = minimum => z.string()
     .min(minimum)
     .max(72)
     .refine(value => Buffer.byteLength(value, 'utf8') <= 72, "Password must not exceed bcrypt's 72-byte limit.");
-
-const registerSchema = z.object({
-    fullName: z.string().trim().min(2).max(100),
-    email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
-    password: bcryptPasswordSchema(8),
-    phone: z.string().trim().min(7).max(20).optional(),
-    // Public registration may create only Customer or Gardener accounts.
-    accountType: z.enum(['CUSTOMER', 'GARDENER']),
-    acceptTerms: z.literal(true),
-    acceptPrivacy: z.literal(true)
-});
 
 const loginSchema = z.object({
     email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
@@ -263,7 +253,7 @@ async function createAndSendOtp(user) {
 export default function authRouter(router) {
     router.post('/register', registrationLimiter, async(req, res, next) => {
         try {
-            const input = registerSchema.parse(req.body);
+            const input = publicRegistrationSchema.parse(req.body);
 
             if (!isEmailDeliveryConfigured()) {
                 return res.status(503).json({
@@ -293,9 +283,9 @@ export default function authRouter(router) {
                             termsPolicyVersion: TERMS_POLICY_VERSION,
                             privacyAcceptedAt: consentAt,
                             privacyPolicyVersion: PRIVACY_POLICY_VERSION,
-                            role: input.accountType,
+                            role: 'CUSTOMER',
                             status: 'PENDING',
-                            ...(input.accountType === 'CUSTOMER' ? { customerProfile: { create: {} } } : { gardenerProfile: { create: { kycStatus: 'NOT_STARTED' } } })
+                            customerProfile: { create: {} }
                         },
                         include: { customerProfile: true, gardenerProfile: true }
                     });

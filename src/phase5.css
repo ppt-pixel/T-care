@@ -39,6 +39,16 @@
 @media(max-width:640px){.p5-popular-service,.p5-subscription-row{flex-direction:column;align-items:stretch}.p5-popular-action{align-items:flex-start}.p5-subscription-actions{justify-content:flex-start}}
 @media(max-width:400px){.p5-booking-review dl>div{grid-template-columns:1fr;gap:2px}}
 
+.p5-account-security-note{margin:.8rem 0 0;padding:.75rem .9rem;border:1px solid var(--line);border-radius:12px;background:var(--p5-tint);color:var(--mut);font-size:.84rem;line-height:1.55}
+.p5-account-result{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.8rem;margin-top:1rem;padding:.9rem;border:1px solid var(--line);border-radius:14px;background:var(--p5-tint)}
+.p5-account-result>div{display:grid;gap:.2rem;min-width:0}.p5-account-result small{color:var(--mut);overflow-wrap:anywhere}
+.p5-account-result>.p5-button{grid-column:1/-1;width:fit-content}
+.p5-credential-display{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;margin:1rem 0}
+.p5-credential-display>div{display:grid;gap:.35rem;min-width:0;padding:.9rem;border:1px solid var(--line);border-radius:12px;background:var(--p5-tint)}
+.p5-credential-display small{color:var(--mut)}.p5-credential-display b,.p5-credential-display code{overflow-wrap:anywhere}
+.p5-credential-display code{user-select:all;font:600 .94rem ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(max-width:620px){.p5-credential-display{grid-template-columns:1fr}}
+
 /* ---- Theme-aware overrides (light + dark) ---------------------------------------------------------------- */
 .p5-notice{background:var(--p5-ok-bg)}
 .p5-notice.is-error{color:var(--p5-danger);background:var(--p5-err-bg)}

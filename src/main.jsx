@@ -13,6 +13,7 @@ import './styles.css';
 import * as Phase5 from './phase5.jsx';
 import { setNotificationUser, useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
 import { restoreAuthSession, logoutAuthSession } from './apiRequest.js';
+import { workspaceForRole } from './authNavigation.js';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:4000')).replace(/\/+$/, '');
 const API_V1 = `${API_BASE_URL}/api/v1`;
@@ -34,15 +35,11 @@ async function authApi(path, body) {
   return data;
 }
 
-function workspaceForRole(role) {
-  return role === 'ADMIN' ? '/hq' : role === 'GARDENER' ? '/crew' : '/garden';
-}
-
 /* ---------- role navigation ---------- */
 const roles={
   garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Me',UserRound]]},
   crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['inbox','Inbox',Bell],['me','Me',UserRound]]},
-  hq:{label:'Admin',base:'/hq',nav:[['','Pulse',LayoutGrid],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
+  hq:{label:'Admin',base:'/hq',nav:[['','Pulse',LayoutGrid],['accounts','Account management',UserRound],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
 const roleOf=p=>p.startsWith('/crew')?'crew':p.startsWith('/hq')?'hq':'garden';
 
 /* ---------- app state ---------- */
@@ -524,7 +521,6 @@ function Auth(){
   const {toast,setAuthUser}=useApp();
   const [mode,setMode]=React.useState(pathname==='/register'?'register':'login');
   const [showPassword,setShowPassword]=React.useState(false);
-  const [accountType,setAccountType]=React.useState('CUSTOMER');
   const [step,setStep]=React.useState('form');
   const [form,setForm]=React.useState({fullName:'',email:'',password:'',phone:''});
   const [verificationEmail,setVerificationEmail]=React.useState('');
@@ -546,7 +542,7 @@ function Auth(){
   const goToWorkspace=user=>{
     setAuthUser(user);
     toast(`Signed in as ${user.role.toLowerCase()}.`);
-    const rolePrefix=user.role==='ADMIN'?'/hq':user.role==='GARDENER'?'/crew':'/garden';
+    const rolePrefix=workspaceForRole(user.role);
     const requestedPath=location.state?.from;
     const destination=typeof requestedPath==='string'
       && (requestedPath===rolePrefix||requestedPath.startsWith(`${rolePrefix}/`))
@@ -569,7 +565,6 @@ function Auth(){
           email:form.email,
           password:form.password,
           ...(form.phone.trim()?{phone:form.phone.trim()}:{}),
-          accountType,
           acceptTerms: legalConsent.terms,
           acceptPrivacy: legalConsent.privacy
         });
@@ -711,14 +706,8 @@ function Auth(){
         <div className="auth-heading">
           <span className="eyebrow">{mode==='login'?'Secure workspace access':'Start your T-CARE journey'}</span>
           <h2>{mode==='login'?'Welcome back.':'Create your account.'}</h2>
-          <p>{mode==='login'?'Your workspace is selected from your verified account role.': 'Choose how you will use T-CARE. Your account type is recorded and enforced by the backend.'}</p>
+          <p>{mode==='login'?'Your workspace is selected from your verified account role.':'Create a Customer account to manage your plants and book care. Gardener accounts are created by T-CARE Admin.'}</p>
         </div>
-        {mode==='register'&&<div className="role-pick">
-          {[
-            ['CUSTOMER','🌿','Customer','Manage plants and book care.'],
-            ['GARDENER','🧑‍🌾','Gardener','Receive and complete service jobs.']
-          ].map(([value,icon,label,description])=><button type="button" key={value} className={accountType===value?'on':''} onClick={()=>setAccountType(value)}><span>{icon}</span><b>{label}</b><small>{description}</small></button>)}
-        </div>}
         <form onSubmit={submit}>
           {recoveryNotice&&<p className="auth-success" role="status">{recoveryNotice}</p>}
           {mode==='register'&&<label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={form.fullName} onChange={event=>update('fullName',event.target.value)} placeholder="Your full name"/></label>}
@@ -743,7 +732,9 @@ function Auth(){
         {mode==='login'&&<button className="text-btn auth-forgot" type="button" onClick={()=>{setRecovery(current=>({...current,email:form.email,code:'',newPassword:'',confirmPassword:''}));setStep('forgot-request');setError('');setRecoveryNotice('')}}>Forgot password?</button>}
         <p className="auth-note">{location.state?.from?.startsWith('/garden/book')
           ? 'A Customer account is required to book. After you sign in or verify your Customer account, we will return you to the booking form.'
-          : 'Email verification is required before an account can sign in. Admin accounts are provisioned separately.'}</p>
+          : mode==='register'
+            ? 'Customer email verification is required before sign-in. Gardener accounts are created by T-CARE Admin.'
+            : 'Email verification is required for customer registrations. Admin accounts are provisioned separately.'}</p>
       </>}
       <Link className="back-home" to="/">← Back to T-CARE home</Link>
     </div>
@@ -757,6 +748,7 @@ const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/pl
 ['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],['/crew/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
+routes.push(['/hq/accounts',()=> <Phase5.AdminAccountManagementPage Shell={Shell}/>]);
 function ProtectedRole({role,children}){
   const {authUser,authReady}=useApp();
   const nav=useNavigate();

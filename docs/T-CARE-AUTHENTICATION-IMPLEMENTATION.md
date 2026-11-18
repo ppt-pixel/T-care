@@ -2,22 +2,22 @@
 
 ## Roles and registration
 
-- Public registration accepts `accountType: "CUSTOMER"` or `accountType: "GARDENER"` only.
-- The server creates `User.role` from that enum; it never trusts a client-provided `role`.
-- Customer registration creates `CustomerProfile`.
-- Gardener registration creates `GardenerProfile` with `kycStatus: NOT_STARTED`.
-- Public registration cannot create `ADMIN` accounts.
+- Public registration creates Customer accounts only. A legacy `accountType` value is optional and may only be `CUSTOMER`; `GARDENER` and `ADMIN` are rejected.
+- The server assigns `User.role = CUSTOMER`; it never trusts a client-provided role.
+- Customer registration creates `CustomerProfile` and requires email verification.
+- Gardeners are created by an authenticated Admin, with `GardenerProfile` initialized at `kycStatus: NOT_STARTED`.
+- Admin account management can create Customers and Gardeners, search Customers by exact email, and reset Customer passwords.
 - The exact normalized email is stored as the identity for the assigned role. Gmail domain alone is never used to grant a role.
 - Admin is provisioned using the local CLI command `npm run admin:provision`.
 
 ## Email verification lifecycle
 
-1. Register creates a user with `status: PENDING`, `emailVerifiedAt: null`, the matching role profile, and an `EmailOtp` record.
+1. Public Customer registration creates a user with `status: PENDING`, `emailVerifiedAt: null`, a `CustomerProfile`, and an `EmailOtp` record.
 2. The API sends the six-digit code through the dedicated T-CARE Gmail sender.
 3. The OTP database value is an HMAC-SHA256 digest, not the plaintext code.
 4. `POST /api/v1/auth/verify-email` validates the code, expiry and attempt count.
 5. Successful verification consumes the OTP, sets `emailVerifiedAt`, changes account status to `ACTIVE`, writes an audit event and issues HTTP-only access/refresh cookies.
-6. Gardener email verification does not verify KYC. KYC remains `NOT_STARTED` until the Admin review workflow approves the gardener.
+6. Admin-created accounts are active and email-verified; a newly created Gardener's KYC remains `NOT_STARTED` until the Admin review workflow approves the Gardener.
 7. Login, refresh, `/me` and authenticated APIs reject unverified accounts.
 
 Defaults: 10-minute OTP expiry, 5 attempts, 60-second resend cooldown. These are configurable through `OTP_TTL_MINUTES`, `OTP_MAX_ATTEMPTS`, and `OTP_RESEND_COOLDOWN_SECONDS`. Auth endpoints also have IP-based rate limits. The in-memory IP limiter is per-process; production deployments with multiple instances should move distributed rate-limit state to a shared store.
@@ -63,7 +63,7 @@ The new password must be at least 12 characters. Existing refresh sessions are r
 
 ## API contracts
 
-### Register
+### Public Customer registration
 
 `POST /api/v1/auth/register`
 
@@ -73,11 +73,18 @@ The new password must be at least 12 characters. Existing refresh sessions are r
   "email": "customer@example.com",
   "password": "a-strong-password",
   "phone": "9999999999",
-  "accountType": "CUSTOMER"
+  "acceptTerms": true,
+  "acceptPrivacy": true
 }
 ```
 
-For gardener signup, set `accountType` to `GARDENER`. Do not send an `ADMIN` account type.
+Public registration does not support Gardener or Admin account creation. Gardener accounts are created from the Admin account-management screen.
+
+## Admin account management
+
+The Admin-only `/hq/accounts` screen creates Customer and Gardener accounts. The backend generates a cryptographically random temporary password, stores only its bcrypt hash, and returns the plaintext once to the authenticated Admin. The Admin should pass it to the account holder through a trusted channel; it cannot be retrieved later.
+
+The same screen looks up an existing Customer by exact email before password reset. Reset updates only the password hash and `authVersion`, consumes outstanding email reset tokens, revokes active refresh sessions, and writes an audit event. It does not create an account or alter customer profile, booking, plant, address or subscription data. Existing passwords are never returned or displayed.
 
 ### Verify email
 
@@ -116,6 +123,8 @@ The browser uses `credentials: include` and the server uses HTTP-only cookies. D
 - Run `npm run email:verify`.
 - Apply pending Prisma migrations with `npx prisma migrate deploy` if `npx prisma migrate status` shows the email verification migration pending.
 - Perform an actual Customer registration → email receipt → OTP verification → login flow.
-- Perform an actual Gardener registration → email receipt → OTP verification → KYC-pending access flow.
+- Create a Gardener from the Admin account-management screen and verify Gardener dashboard access and pending KYC restrictions.
+- Verify public registration rejects attempts to select Gardener and duplicate emails do not modify existing records.
+- Verify Admin password reset invalidates existing Customer sessions.
 - Configure Admin email and provision the initial Admin.
 - Test role boundaries using actual accounts.

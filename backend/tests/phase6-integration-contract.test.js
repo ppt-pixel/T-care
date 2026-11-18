@@ -389,16 +389,27 @@ test('frontend and backend package manifests and lockfiles agree on supported No
 
 test('registration consent is enforced by the API and stored with policy versions', () => {
   const auth = read('backend/src/routes/auth.js');
+  const registrationSchema = read('backend/src/lib/authValidation.js');
   const main = read('src/main.jsx');
   const schema = read('backend/prisma/schema.prisma');
-  assert.match(auth, /acceptTerms:\s*z\.literal\(true\)/);
-  assert.match(auth, /acceptPrivacy:\s*z\.literal\(true\)/);
+  assert.match(registrationSchema, /acceptTerms:\s*z\.literal\(true\)/);
+  assert.match(registrationSchema, /acceptPrivacy:\s*z\.literal\(true\)/);
+  assert.match(registrationSchema, /accountType:\s*z\.literal\('CUSTOMER'\)\.optional\(\)/);
   assert.match(auth, /termsAcceptedAt:\s*consentAt/);
   assert.match(auth, /termsPolicyVersion:\s*TERMS_POLICY_VERSION/);
   assert.match(auth, /privacyAcceptedAt:\s*consentAt/);
   assert.match(auth, /privacyPolicyVersion:\s*PRIVACY_POLICY_VERSION/);
+  assert.match(auth, /role:\s*'CUSTOMER'/);
+  assert.doesNotMatch(auth, /input\.accountType/);
   assert.match(main, /legalConsent\.terms/);
   assert.match(main, /legalConsent\.privacy/);
+  assert.doesNotMatch(main, /role-pick/);
+  assert.match(main, /\['accounts','Account management',UserRound\]/);
+  assert.match(main, /\/hq\/accounts/);
+  const accountManagement = read('src/phase5.jsx');
+  assert.match(accountManagement, /export function AdminAccountManagementPage/);
+  assert.match(accountManagement, /Find a Customer/);
+  assert.match(accountManagement, /Copy temporary password/);
   assert.match(schema, /termsAcceptedAt\s+DateTime\?/);
   assert.match(schema, /privacyPolicyVersion\s+String\?/);
 });
