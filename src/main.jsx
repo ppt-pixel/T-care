@@ -6,7 +6,7 @@ import {AppBackground,AuthScenery} from './Backgrounds.jsx';
 import {useCart,CartDrawer,LandingNav,Hero,WhyChoose,Included,Steps,Market,Reviews,FinalCta,SiteFooter,WhatsAppFab} from './landing/Sections.jsx';
 import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, Star, X, CircleAlert,
   LayoutGrid, CalendarDays, Flower2, Sprout, WalletCards, CreditCard, UserRound, Stethoscope, Users, Package, BarChart3, FileText,
-  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
+  ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft, Menu, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage,PrivacyPage} from './landing/Pages.jsx';
 import {usePublicList} from './landing/publicData.js';
 import './styles.css';
@@ -523,6 +523,7 @@ function Auth(){
   const {pathname}=location;
   const {toast,setAuthUser}=useApp();
   const [mode,setMode]=React.useState(pathname==='/register'?'register':'login');
+  const [showPassword,setShowPassword]=React.useState(false);
   const [accountType,setAccountType]=React.useState('CUSTOMER');
   const [step,setStep]=React.useState('form');
   const [form,setForm]=React.useState({fullName:'',email:'',password:'',phone:''});
@@ -621,6 +622,7 @@ function Auth(){
 
   const switchMode=next=>{
     setMode(next);
+    setShowPassword(false);
     setStep('form');
     setError('');
     setCode('');
@@ -722,7 +724,15 @@ function Auth(){
           {mode==='register'&&<label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={form.fullName} onChange={event=>update('fullName',event.target.value)} placeholder="Your full name"/></label>}
           <label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={event=>update('email',event.target.value)} placeholder="you@example.com"/></label>
           {mode==='register'&&<label>Phone number <span className="field-optional">(optional)</span><input type="tel" autoComplete="tel" value={form.phone} onChange={event=>update('phone',event.target.value)} placeholder="Your contact number"/></label>}
-          <label>Password<input required type="password" minLength={mode==='register'?8:1} maxLength={72} autoComplete={mode==='login'?'current-password':'new-password'} value={form.password} onChange={event=>update('password',event.target.value)} placeholder="At least 8 characters"/></label>
+          <div className="auth-password-field">
+            <label htmlFor="auth-password">Password</label>
+            <div className="auth-password-control">
+              <input id="auth-password" required type={showPassword?'text':'password'} minLength={mode==='register'?8:1} maxLength={72} autoComplete={mode==='login'?'current-password':'new-password'} value={form.password} onChange={event=>update('password',event.target.value)} placeholder="At least 8 characters"/>
+              <button className="auth-password-toggle" type="button" aria-label={showPassword?'Hide password':'Show password'} onClick={()=>setShowPassword(value=>!value)}>
+                {showPassword?<EyeOff size={18} aria-hidden="true"/>:<Eye size={18} aria-hidden="true"/>}
+              </button>
+            </div>
+          </div>
           {mode==='register'&&<div className="legal-consent" aria-label="Required legal consent">
             <label className="legal-consent-item"><input type="checkbox" required checked={legalConsent.terms} onChange={event=>setLegalConsent(current=>({...current,terms:event.target.checked}))}/><span>I agree to the <Link to="/terms" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</Link>.</span></label>
             <label className="legal-consent-item"><input type="checkbox" required checked={legalConsent.privacy} onChange={event=>setLegalConsent(current=>({...current,privacy:event.target.checked}))}/><span>I have read and agree to the <Link to="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</Link>.</span></label>

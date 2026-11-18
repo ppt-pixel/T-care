@@ -426,6 +426,12 @@ html{overflow-x:hidden}body{min-width:320px}.page,.hero,footer{max-width:100%;mi
 .auth-alert{margin:0;padding:11px 13px;border:1px solid #c66b5d66;border-radius:12px;background:#c66b5d12;color:var(--ink);font-size:.82rem;line-height:1.5}
 .auth-resend{display:block;justify-self:center;padding:5px}
 .auth-resend:disabled,.auth-card button:disabled{opacity:.55;cursor:not-allowed}
+.auth-password-field{display:grid;gap:6px}
+.auth-password-control{position:relative}
+.auth-password-control input{padding-right:52px}
+.auth-password-toggle{position:absolute;top:calc(50% + 1px);right:9px;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;color:var(--mut);transform:translateY(-50%);transition:background .2s,color .2s}
+.auth-password-toggle:hover{background:var(--soft);color:var(--ink)}
+.auth-password-toggle:focus-visible{outline:2px solid var(--g);outline-offset:2px}
 .field-optional{font-size:.72rem;color:var(--mut);font-weight:400}
 .account-email{display:block;color:var(--mut);font-size:.72rem;margin-top:-8px;overflow-wrap:anywhere}
 .account-menu button.danger{width:100%;text-align:left;padding:8px 0;color:#b54e42;font-weight:600}
