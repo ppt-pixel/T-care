@@ -35,27 +35,19 @@ Razorpay's current security guidance recommends server-generated Orders, signatu
 - Payment provider secrets are never returned to the browser.
 - Payment state changes are audited.
 
-## Important live verification requirement
+## Live deployment status and safeguards
 
-This phase is implemented without connecting to the user's live Razorpay or Supabase accounts. It has not yet been certified against real gateway traffic.
+Booking checkout and backend verification have been exercised in Razorpay Test Mode, but live processing has not been enabled or certified. The Render Blueprint deliberately sets `PAYMENTS_ENABLED=false`. The backend also rejects a test key when payments are enabled in production, rejects a live key outside production, and requires API plus webhook credentials before the server starts with payments enabled.
 
-Before production, use Razorpay Test Mode to verify at minimum:
+Do not set `PAYMENTS_ENABLED=true` until the account, public webhook, production database and outstanding Test Mode checks below are verified, and the owner explicitly approves live charges.
 
-- successful payment
-- failed payment
-- browser closed during checkout
-- duplicate Pay clicks
-- duplicate client verification requests
-- duplicate webhook delivery
-- delayed webhook delivery
-- amount mismatch
-- currency mismatch
-- invalid signature
-- provider timeout during order creation
-- provider timeout during verification
-- full refund
-- partial refund
-- refund timeout/network failure
-- payment success followed by API/browser failure
+### Production configuration
 
-Only after these tests pass should live credentials be enabled.
+1. Complete Razorpay account activation and any required business verification. Use only a live account's `rzp_live_` key ID and matching API secret for production.
+2. In Render's private environment settings, configure `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`. Use a dedicated webhook secret generated/configured in Razorpay; it is not the API secret. Never put secrets in source control, frontend variables, support messages, or chat.
+3. Keep `PAYMENTS_ENABLED=false` while deploying and checking the production API health endpoint and database. Adding credentials alone must not enable payment mutations.
+4. Configure the Razorpay live-mode webhook URL as `https://t-care-api.onrender.com/api/v1/payments/webhook`, with a strong dedicated secret matching `RAZORPAY_WEBHOOK_SECRET`. Subscribe to the payment and refund events required by this application, including `payment.captured`, `payment.failed`, `order.paid`, `refund.created`, `refund.processed`, and `refund.failed`.
+5. Before requesting live approval, use a dedicated staging service and isolated test database to complete Test Mode delivery from Razorpay to a publicly reachable HTTPS webhook. Verify full/partial refund behavior, refund failure/retry behavior, and payment/refund reconciliation. Do not tunnel the local or production database. Local synthetic webhook tests do not verify provider-to-deployment delivery.
+6. Only after explicit owner approval, change `PAYMENTS_ENABLED` to `true` in Render as a separate deployment action. Keep the rollout limited and monitor provider, webhook, and payment-ledger records. A real charge or refund must have separate explicit approval.
+
+The following Test Mode checks have already passed: successful/failed/dismissed booking checkout and retry; invalid webhook signature rejection; amount/currency mismatch rejection; ownership/signature validation tests; and duplicate webhook delivery handling. This is not a substitute for the outstanding public-webhook and refund checks above.

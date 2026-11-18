@@ -32,7 +32,7 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: T-CARE
-      # Payment mutations/webhooks remain disabled until provider + concurrency tests pass.
+      # Keep disabled until the owner explicitly approves the live-payment rollout.
       - key: PAYMENTS_ENABLED
         value: "false"
       - key: PAYMENT_PROVIDER

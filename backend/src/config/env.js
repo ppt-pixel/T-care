@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { assertPaymentConfiguration } from '../lib/paymentPolicy.js';
 
 const schema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -51,4 +52,6 @@ const schema = z.object({
     PAYMENT_WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().positive().max(3600).default(300)
 });
 
-export const env = schema.parse(process.env);
+const parsedEnv = schema.parse(process.env);
+assertPaymentConfiguration(parsedEnv);
+export const env = parsedEnv;

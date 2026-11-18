@@ -315,6 +315,7 @@ test('Supabase database guidance matches the current single-URL Prisma session-p
 
 test('payment mutations and webhooks are fail-closed behind PAYMENTS_ENABLED', () => {
   const env = read('backend/src/config/env.js');
+  const paymentPolicy = read('backend/src/lib/paymentPolicy.js');
   const payments = read('backend/src/routes/payments.js');
   const render = read('render.yaml');
   const sample = read('backend/.env.example');
@@ -324,6 +325,24 @@ test('payment mutations and webhooks are fail-closed behind PAYMENTS_ENABLED', (
   assert.match(payments, /assertPaymentsEnabled\(env\.PAYMENTS_ENABLED\)/);
   assert.ok((payments.match(/requireRazorpayConfig\(\);/g) || []).length >= 4, 'booking/subscription order, client verification and refunds must be gated');
   assert.match(payments, /razorpayWebhook[\s\S]*?requireRazorpayConfig\(\{ webhook: true \}\)/);
+  assert.match(env, /assertPaymentConfiguration\(parsedEnv\)/);
+  assert.match(paymentPolicy, /config\.NODE_ENV === 'production' \? 'rzp_live_' : 'rzp_test_'/);
+});
+
+test('payment verification uses shared signature, ownership and amount guards', () => {
+  const payments = read('backend/src/routes/payments.js');
+  assert.match(payments, /hasValidClientPaymentSignature\(env\.RAZORPAY_KEY_SECRET/);
+  assert.match(payments, /hasValidWebhookSignature\(env\.RAZORPAY_WEBHOOK_SECRET/);
+  assert.match(payments, /paymentBelongsToCustomer\(payment, customer\.id\)/);
+  assert.match(payments, /providerAmountMatches\(amountToPaise\(payment\.amount\), remote\.amount\)/);
+  assert.match(payments, /providerAmountMatches\(amountToPaise\(localPayment\.amount\), remoteAmount\)/);
+  assert.match(payments, /providerCurrencyMatches\(localPayment\.currency, remoteCurrency\)/);
+});
+
+test('payment and refund webhook handlers acknowledge concurrent duplicate event insertions', () => {
+  const payments = read('backend/src/routes/payments.js');
+  assert.ok((payments.match(/runWebhookTransaction\(\{/g) || []).length >= 3);
+  assert.match(payments, /eventExists:\s*\(\)\s*=>\s*prisma\.paymentEvent\.findUnique/);
 });
 
 

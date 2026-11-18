@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
@@ -8,6 +7,14 @@ import { notifyUserSafely } from '../lib/notifications.js';
 import { addBillingPeriod } from '../lib/billingPeriod.js';
 import { serializeCustomerPayment } from '../lib/paymentView.js';
 import { assertPaymentsEnabled, isFinalPaymentStatus } from '../lib/paymentPolicy.js';
+import {
+  hasValidClientPaymentSignature,
+  hasValidWebhookSignature,
+  paymentBelongsToCustomer,
+  providerAmountMatches,
+  providerCurrencyMatches
+} from '../lib/paymentValidation.js';
+import { runWebhookTransaction } from '../lib/paymentWebhookTransaction.js';
 
 const router = Router();
 const provider = 'razorpay';
@@ -22,15 +29,6 @@ function amountToPaise(amount) {
   const paise = Math.round(value * 100);
   if (!Number.isSafeInteger(paise) || paise <= 0) throw fail(400, 'INVALID_PAYMENT_AMOUNT', 'Payment amount must be a positive INR amount.');
   return paise;
-}
-
-function timingSafeHexEqual(expectedHex, actualHex) {
-  if (!/^[a-f0-9]+$/i.test(expectedHex) || !/^[a-f0-9]+$/i.test(actualHex) || expectedHex.length !== actualHex.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expectedHex, 'hex'), Buffer.from(actualHex, 'hex'));
-}
-
-function hmacHex(secret, value) {
-  return crypto.createHmac('sha256', secret).update(value).digest('hex');
 }
 
 function requireRazorpayConfig({ webhook = false } = {}) {
@@ -179,49 +177,57 @@ async function markPaymentFromProvider({ providerOrderId, providerPaymentId, pro
     : providerStatus === 'failed' ? 'FAILED'
     : null;
   if (!normalizedStatus) {
-    await prisma.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {} } });
+    const result = await runWebhookTransaction({
+      run: () => prisma.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {} } }),
+      eventExists: () => prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } })
+    });
+    if (result?.duplicate) return { ignored: true, reason: 'DUPLICATE_EVENT' };
     return { ignored: true, reason: 'UNHANDLED_PROVIDER_STATUS' };
   }
 
-  const result = await prisma.$transaction(async tx => {
-    await tx.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {}, processedAt: new Date() } });
+  const result = await runWebhookTransaction({
+    run: () => prisma.$transaction(async tx => {
+      await tx.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {}, processedAt: new Date() } });
 
-    const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { subscription: { include: { plan: true, customer: { select: { userId: true } } } } } });
-    if (!current) return null;
-    if (isFinalPaymentStatus(current.status)) {
-      return { payment: current, activatedSubscription: null };
-    }
-
-    const data = {
-      status: normalizedStatus,
-      ...(providerPaymentId ? { providerPaymentId } : {}),
-      ...(normalizedStatus === 'PAID' ? { paidAt: current.paidAt ?? new Date() } : {})
-    };
-    const updated = await tx.payment.update({ where: { id: current.id }, data });
-    let activatedSubscription = null;
-
-    if (normalizedStatus === 'PAID' && current.subscriptionId && current.subscription?.status === 'PENDING') {
-      const start = new Date();
-      const renews = addBillingPeriod(start, current.subscription.plan.billingCycle);
-      if (!renews) throw fail(409, 'UNSUPPORTED_BILLING_CYCLE', 'Subscription billing cycle is not supported.');
-      activatedSubscription = await tx.subscription.update({
-        where: { id: current.subscriptionId },
-        data: { status: 'ACTIVE', startedAt: start, renewsAt: renews, cancelledAt: null, pausedAt: null },
-        include: { plan: true, customer: { select: { userId: true } } }
-      });
-    }
-
-    await tx.auditLog.create({
-      data: {
-        actorUserId: null,
-        action: 'PAYMENT_EVENT',
-        entityType: 'Payment',
-        entityId: current.id,
-        metadata: { eventType, providerStatus, normalizedStatus, providerPaymentId: providerPaymentId ?? null }
+      const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { subscription: { include: { plan: true, customer: { select: { userId: true } } } } } });
+      if (!current) return null;
+      if (isFinalPaymentStatus(current.status)) {
+        return { payment: current, activatedSubscription: null };
       }
-    });
-    return { payment: updated, activatedSubscription };
+
+      const data = {
+        status: normalizedStatus,
+        ...(providerPaymentId ? { providerPaymentId } : {}),
+        ...(normalizedStatus === 'PAID' ? { paidAt: current.paidAt ?? new Date() } : {})
+      };
+      const updated = await tx.payment.update({ where: { id: current.id }, data });
+      let activatedSubscription = null;
+
+      if (normalizedStatus === 'PAID' && current.subscriptionId && current.subscription?.status === 'PENDING') {
+        const start = new Date();
+        const renews = addBillingPeriod(start, current.subscription.plan.billingCycle);
+        if (!renews) throw fail(409, 'UNSUPPORTED_BILLING_CYCLE', 'Subscription billing cycle is not supported.');
+        activatedSubscription = await tx.subscription.update({
+          where: { id: current.subscriptionId },
+          data: { status: 'ACTIVE', startedAt: start, renewsAt: renews, cancelledAt: null, pausedAt: null },
+          include: { plan: true, customer: { select: { userId: true } } }
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: null,
+          action: 'PAYMENT_EVENT',
+          entityType: 'Payment',
+          entityId: current.id,
+          metadata: { eventType, providerStatus, normalizedStatus, providerPaymentId: providerPaymentId ?? null }
+        }
+      });
+      return { payment: updated, activatedSubscription };
+    }),
+    eventExists: () => prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } })
   });
+  if (result?.duplicate) return { ignored: true, reason: 'DUPLICATE_EVENT' };
   if (result?.activatedSubscription?.customer?.userId) {
     await notifyUserSafely({
       userId: result.activatedSubscription.customer.userId,
@@ -248,16 +254,18 @@ async function verifyClientPayment(req, res, next) {
     if (payment.providerOrderId !== input.razorpayOrderId) throw fail(400, 'PAYMENT_ORDER_MISMATCH', 'Payment does not belong to the expected order.');
 
     const customer = await getCustomer(req);
-    const owns = payment.booking?.customerId === customer.id || payment.subscription?.customerId === customer.id;
-    if (!owns) throw fail(403, 'FORBIDDEN', 'You cannot verify this payment.');
+    if (!paymentBelongsToCustomer(payment, customer.id)) throw fail(403, 'FORBIDDEN', 'You cannot verify this payment.');
     if (payment.status === 'PAID') return res.json({ payment: serializeCustomerPayment(payment), verified: true });
 
-    const expected = hmacHex(env.RAZORPAY_KEY_SECRET ?? '', `${input.razorpayOrderId}|${input.razorpayPaymentId}`);
-    if (!timingSafeHexEqual(expected, input.razorpaySignature)) throw fail(400, 'INVALID_PAYMENT_SIGNATURE', 'Payment signature verification failed.');
+    if (!hasValidClientPaymentSignature(env.RAZORPAY_KEY_SECRET ?? '', input.razorpayOrderId, input.razorpayPaymentId, input.razorpaySignature)) {
+      throw fail(400, 'INVALID_PAYMENT_SIGNATURE', 'Payment signature verification failed.');
+    }
 
     const remote = await razorpayRequest(`/payments/${encodeURIComponent(input.razorpayPaymentId)}`);
     if (remote?.order_id !== payment.providerOrderId) throw fail(400, 'PAYMENT_ORDER_MISMATCH', 'Payment does not belong to the expected order.');
-    if (Number(remote.amount) !== amountToPaise(payment.amount) || remote.currency !== payment.currency) throw fail(400, 'PAYMENT_AMOUNT_MISMATCH', 'Paid amount or currency does not match the server payment record.');
+    if (!providerAmountMatches(amountToPaise(payment.amount), remote.amount) || !providerCurrencyMatches(payment.currency, remote.currency)) {
+      throw fail(400, 'PAYMENT_AMOUNT_MISMATCH', 'Paid amount or currency does not match the server payment record.');
+    }
 
     const result = await markPaymentFromProvider({ providerOrderId: payment.providerOrderId, providerPaymentId: input.razorpayPaymentId, providerStatus: remote.status, rawEvent: { source: 'client_verification', payment: remote }, eventType: `client.payment.${remote.status}` });
     return res.json({ payment: serializeCustomerPayment(result.payment), verified: result.payment?.status === 'PAID' });
@@ -269,23 +277,27 @@ async function markRefundFromProvider({ payment, refundEntity, rawEvent, eventTy
   const existingEvent = await prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } });
   if (existingEvent) return;
 
-  await prisma.$transaction(async tx => {
-    await tx.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {}, processedAt: new Date() } });
-    const refund = await tx.refund.findFirst({ where: { paymentId: payment.id, OR: [{ providerRefundId: refundEntity.id }, { id: refundEntity.notes?.tcareRefundId ?? '__none__' }] } });
-    if (!refund) return;
+  const result = await runWebhookTransaction({
+    run: () => prisma.$transaction(async tx => {
+      await tx.paymentEvent.create({ data: { paymentId: payment.id, provider, providerEventId: eventId, eventType, payload: rawEvent ?? {}, processedAt: new Date() } });
+      const refund = await tx.refund.findFirst({ where: { paymentId: payment.id, OR: [{ providerRefundId: refundEntity.id }, { id: refundEntity.notes?.tcareRefundId ?? '__none__' }] } });
+      if (!refund) return;
 
-    const nextRefundStatus = refundEntity.status === 'processed' ? (Number(refund.amount) >= Number(payment.amount) ? 'REFUNDED' : 'PARTIALLY_REFUNDED')
-      : refundEntity.status === 'failed' ? 'FAILED' : 'PENDING';
-    const saved = await tx.refund.update({ where: { id: refund.id }, data: { status: nextRefundStatus, providerRefundId: refund.providerRefundId ?? refundEntity.id, ...(nextRefundStatus !== 'PENDING' ? { processedAt: new Date() } : {}) } });
-    if (nextRefundStatus === 'FAILED') {
-      await tx.payment.update({ where: { id: payment.id }, data: { status: 'PAID' } });
-    } else if (nextRefundStatus === 'REFUNDED' || nextRefundStatus === 'PARTIALLY_REFUNDED') {
-      const successfulRefunds = await tx.refund.findMany({ where: { paymentId: payment.id, status: { in: ['REFUNDED', 'PARTIALLY_REFUNDED'] } } });
-      const totalRefunded = successfulRefunds.reduce((sum, item) => sum + Number(item.amount), 0);
-      await tx.payment.update({ where: { id: payment.id }, data: { status: totalRefunded >= Number(payment.amount) - 0.0001 ? 'REFUNDED' : 'PARTIALLY_REFUNDED' } });
-    }
-    await tx.auditLog.create({ data: { actorUserId: null, action: 'PAYMENT_EVENT', entityType: 'Refund', entityId: saved.id, metadata: { eventType, providerRefundId: refundEntity.id, status: nextRefundStatus } } });
+      const nextRefundStatus = refundEntity.status === 'processed' ? (Number(refund.amount) >= Number(payment.amount) ? 'REFUNDED' : 'PARTIALLY_REFUNDED')
+        : refundEntity.status === 'failed' ? 'FAILED' : 'PENDING';
+      const saved = await tx.refund.update({ where: { id: refund.id }, data: { status: nextRefundStatus, providerRefundId: refund.providerRefundId ?? refundEntity.id, ...(nextRefundStatus !== 'PENDING' ? { processedAt: new Date() } : {}) } });
+      if (nextRefundStatus === 'FAILED') {
+        await tx.payment.update({ where: { id: payment.id }, data: { status: 'PAID' } });
+      } else if (nextRefundStatus === 'REFUNDED' || nextRefundStatus === 'PARTIALLY_REFUNDED') {
+        const successfulRefunds = await tx.refund.findMany({ where: { paymentId: payment.id, status: { in: ['REFUNDED', 'PARTIALLY_REFUNDED'] } } });
+        const totalRefunded = successfulRefunds.reduce((sum, item) => sum + Number(item.amount), 0);
+        await tx.payment.update({ where: { id: payment.id }, data: { status: totalRefunded >= Number(payment.amount) - 0.0001 ? 'REFUNDED' : 'PARTIALLY_REFUNDED' } });
+      }
+      await tx.auditLog.create({ data: { actorUserId: null, action: 'PAYMENT_EVENT', entityType: 'Refund', entityId: saved.id, metadata: { eventType, providerRefundId: refundEntity.id, status: nextRefundStatus } } });
+    }),
+    eventExists: () => prisma.paymentEvent.findUnique({ where: { provider_providerEventId: { provider, providerEventId: eventId } } })
   });
+  if (result?.duplicate) return;
 }
 
 // Webhook must be mounted before express.json() in app.js so req.body remains the raw bytes.
@@ -296,8 +308,9 @@ export async function razorpayWebhook(req, res) {
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
     if (!signature || !raw.length) return res.status(400).json({ error: 'INVALID_WEBHOOK', message: 'Webhook signature and raw body are required.' });
 
-    const expected = hmacHex(env.RAZORPAY_WEBHOOK_SECRET, raw);
-    if (!timingSafeHexEqual(expected, signature)) return res.status(400).json({ error: 'INVALID_WEBHOOK_SIGNATURE', message: 'Webhook signature verification failed.' });
+    if (!hasValidWebhookSignature(env.RAZORPAY_WEBHOOK_SECRET, raw, signature)) {
+      return res.status(400).json({ error: 'INVALID_WEBHOOK_SIGNATURE', message: 'Webhook signature verification failed.' });
+    }
 
     let payload;
     try { payload = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).json({ error: 'INVALID_WEBHOOK_BODY', message: 'Webhook body is not valid JSON.' }); }
@@ -319,11 +332,11 @@ export async function razorpayWebhook(req, res) {
     if (!localPayment) return res.status(200).json({ received: true, ignored: true });
     const remoteAmount = paymentEntity?.amount ?? orderEntity?.amount;
     const remoteCurrency = paymentEntity?.currency ?? orderEntity?.currency;
-    if (remoteAmount != null && Number(remoteAmount) !== amountToPaise(localPayment.amount)) {
+    if (remoteAmount != null && !providerAmountMatches(amountToPaise(localPayment.amount), remoteAmount)) {
       await prisma.auditLog.create({ data: { actorUserId: null, action: 'PAYMENT_EVENT', entityType: 'Payment', entityId: localPayment.id, metadata: { eventType, rejected: 'AMOUNT_MISMATCH' } } });
       return res.status(400).json({ error: 'PAYMENT_AMOUNT_MISMATCH', message: 'Webhook amount does not match the server payment record.' });
     }
-    if (remoteCurrency && remoteCurrency !== localPayment.currency) return res.status(400).json({ error: 'PAYMENT_CURRENCY_MISMATCH', message: 'Webhook currency does not match the server payment record.' });
+    if (remoteCurrency && !providerCurrencyMatches(localPayment.currency, remoteCurrency)) return res.status(400).json({ error: 'PAYMENT_CURRENCY_MISMATCH', message: 'Webhook currency does not match the server payment record.' });
 
     await markPaymentFromProvider({ providerOrderId, providerPaymentId, providerStatus: paymentEntity?.status, rawEvent: payload, eventType });
     return res.status(200).json({ received: true });
