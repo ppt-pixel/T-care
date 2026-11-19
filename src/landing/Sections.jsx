@@ -42,7 +42,7 @@ export function useCart(toast){
     } catch {
       if(!storageWarningShown.current){
         storageWarningShown.current=true;
-        toast?.('Your cart could not be saved in this browser.',{type:'warning'});
+        toast?.('Items could not be saved to your cart. Please try again.',{type:'warning'});
       }
     }
   },[items,toast]);
@@ -59,7 +59,7 @@ export function CartDrawer({cart}){
       <div className="ld-head"><h3>Your cart <small>({cart.count})</small></h3><button className="ib" onClick={()=>cart.setOpen(false)} aria-label="Close cart"><X size={17}/></button></div>
       {cart.items.length?<>
         <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label="Decrease"><Minus size={13}/></button><i>{x.qty}</i><button onClick={()=>cart.setQty(x.id,x.qty+1)} aria-label="Increase"><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
-        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Checkout and order fulfilment are not enabled yet. Your cart is saved in this browser for later browsing.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
+        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">The store is currently for browsing only. You can add items to your cart, but orders and delivery are not available yet.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
       </>:<div className="cart-empty"><ShoppingBag size={34}/><p>Your cart is empty.</p><LBtn variant="gold" to="#market" onClick={()=>cart.setOpen(false)}>Browse the market</LBtn></div>}
     </motion.aside></>}</AnimatePresence>;
 }
@@ -137,7 +137,7 @@ function HeroImpl({theme}){
       <p className="h2-typed" aria-label={C.TYPED[0]}><Typewriter phrases={C.TYPED}/></p>
       <h1 className="h2-title"><span className="w"><motion.span style={{display:'inline-block'}} initial={{y:'110%'}} animate={{y:0}} transition={{delay:.2,duration:.8,ease:[.22,1,.36,1]}}>T-Care</motion.span></span></h1>
       <motion.p className="h2-sub" initial={{opacity:0}} animate={{opacity:1}} transition={{delay:.7}}><em>every leaf has a keeper.</em></motion.p>
-      <p className="h2-text">Expert gardeners, living care records and gentle reminders — one calm home for every plant you love.</p>
+      <p className="h2-text">Book plant-care visits, manage your plants and keep service reports in one place.</p>
       <div className="h2-cta"><LBtn to="/garden/book" variant="gold">Book a visit <ArrowRight size={15}/></LBtn><LBtn to="/services" variant="ghost"><Leaf size={15}/>See our services</LBtn></div>
       <ul className="h2-ticks">{C.HERO_TICKS.map(x=><li key={x}><Check size={14}/>{x}</li>)}</ul>
       <div className="h2-stats">{C.HERO_STATS.map(([ic,v,l],k)=>{const I=ICON[ic]||Star;return <motion.div key={l} className="h2-stat" initial={{opacity:0,y:18}} animate={{opacity:1,y:0}} transition={{delay:.9+k*.08}}><I size={14}/><b>{v}</b><span>{l}</span></motion.div>})}</div>
@@ -157,7 +157,7 @@ function WhyChooseImpl(){
   const s=C.WHY[i];
   return <section className="lsec why" id="about">
     <div className="why-copy"><Head eyebrow="Why T-Care">Why choose <em>T-Care</em>?</Head>
-      <p className="lead">Expert home-gardening care that fits around your life, so every plant gets what it needs.</p>
+      <p className="lead">Book plant-care visits and keep each plant’s details and service notes together.</p>
       <ul className="pains">{C.WHY_PAINS.map((x,k)=><Reveal as="li" key={x} delay={k*.08}><span><Check size={13}/></span>{x}</Reveal>)}</ul>
       <LBtn to="/garden/book" variant="gold">Book a first visit <ArrowRight size={15}/></LBtn></div>
     <div className="why-stage" onMouseEnter={()=>setHold(true)} onMouseLeave={()=>setHold(false)}>
@@ -165,14 +165,14 @@ function WhyChooseImpl(){
         <ShowcaseArt kind={s.kind}/><div className="why-cap"><b>{s.title}</b><span>{s.text}</span></div>
       </motion.div></AnimatePresence>
       <div className="why-dots" role="tablist" aria-label="Highlights">{C.WHY.map((x,k)=><button key={x.kind} role="tab" aria-selected={k===i} aria-label={x.title} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
-      <div className="why-badge"><b>Care records</b><span>Linked to your garden</span></div>
+      <div className="why-badge"><b>Care records</b><span>For your plant collection</span></div>
     </div>
   </section>;
 }
 
 /* ---------- what every visit includes ---------- */
 function IncludedImpl(){
-  return <section className="lsec incl"><Head center eyebrow="Care areas" sub="The actual scope depends on the service and the booking confirmed with T-Care.">Thoughtful care for <em>your plants</em></Head>
+  return <section className="lsec incl"><Head center eyebrow="Care areas" sub="What’s included depends on the service you book.">Thoughtful care for <em>your plants</em></Head>
     <div className="incl-grid">{C.INCLUDED.map(([ic,t,d],i)=>{const I=ICON[ic];return <Reveal key={t} delay={i*.06} className="incl-card"><span className="ic"><I size={20}/></span><h3>{t}</h3><p>{d}</p></Reveal>})}</div></section>;
 }
 
@@ -187,12 +187,12 @@ export function ServiceBanner({services=[]}){
   const {items:popular,loading,error,retry}=usePublicList('/services/popular?range=30d','services');
   if(!loading&&!error&&!popular.length)return null;
   return <section className="lsec nsure"><Reveal className="nsure-card">
-    <div><h2>Popular with <em>plant parents</em></h2><p>Service highlights are calculated from saved, non-cancelled bookings over the last 30 days.</p></div>
+    <div><h2>Popular with <em>plant parents</em></h2><p>Services customers booked most often in the last 30 days.</p></div>
     <div className="nsure-side">
-      {loading&&!popular.length?<div className="public-state">Loading booking trends…</div>:null}
+      {loading&&!popular.length?<div className="public-state">Loading popular services…</div>:null}
       {error&&!popular.length?<div className="public-state" role="alert"><p>Popular services are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
       {!!popular.length&&<div className="nsure-rows">{popular.slice(0,3).map(item=><div key={item.id}><i/><div><b>{item.name}</b><span>{item.description}</span></div><em>{item.bookingCount} bookings</em></div>)}</div>}
-      <div className="nsure-cta"><LBtn to="/services" variant="mint">Browse active services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="glass">Book a visit</LBtn></div>
+      <div className="nsure-cta"><LBtn to="/services" variant="mint">Browse care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="glass">Book a visit</LBtn></div>
     </div>
   </Reveal></section>;
 }
@@ -201,16 +201,16 @@ export function ServiceBanner({services=[]}){
 export function Plans(){
   const {items:plans,loading,error,retry}=usePublicList('/subscriptions/plans','plans');
   return <section className="lsec plans" id="plans"><Head center eyebrow="Plans & pricing">Care plans that <em>grow with you</em></Head>
-    {loading&&!plans.length?<div className="public-state" role="status">Loading current subscription plans…</div>:null}
-    {error&&!plans.length?<div className="public-state" role="alert"><p>Live subscription plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!plans.length?<div className="public-state"><p>No active subscription plans are published yet.</p><span>Check back after the T-Care team publishes its plans, or explore individual care services in the meantime.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
+    {loading&&!plans.length?<div className="public-state" role="status">Loading plans…</div>:null}
+    {error&&!plans.length?<div className="public-state" role="alert"><p>Plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
+    {!loading&&!error&&!plans.length?<div className="public-state"><p>No subscription plans are available at the moment. Explore individual care services or contact T-CARE for help choosing a plan.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
     {!!plans.length&&<div className="plan-grid">{plans.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(i===1?' dark':'')}>
-      <small>Subscription</small><h3>{p.name}</h3><p>{p.description||'A T-Care plan for your plant collection.'}</p>
-      <ul><li><Leaf size={13}/>{p.billingCycle} billing cycle</li>{p.plantLimit==null?<li><Leaf size={13}/>Plant limit set with the care team</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
+      <small>Subscription</small><h3>{p.name}</h3>{p.description&&<p>{p.description}</p>}
+      <ul><li><Leaf size={13}/>Billed {p.billingCycle}</li>{p.plantLimit==null?<li><Leaf size={13}/>No stated plant limit</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
       <div className="plan-price"><b>{money(p.price)}</b><span>/ {p.billingCycle}</span></div>
       <LBtn to="/garden/plan" variant={i===1?'gold':'dark'} full>Request this plan <ArrowRight size={14}/></LBtn>
     </Reveal>)}</div>}
-    <p className="catalog-note">Plan requests are recorded in your account. Online payment is not enabled in this catalogue flow; a request remains pending until payment is verified.</p>
+    <p className="catalog-note">A plan becomes active after payment is confirmed.</p>
     <div className="plan-more"><LBtn to="/garden/plan" variant="outline">Open your subscription account</LBtn></div></section>;
 }
 
@@ -219,7 +219,7 @@ function WaBtn({children,variant='outline'}){
   return href?<a className={`lb lb-${variant}`} href={href} target="_blank" rel="noopener noreferrer"><MessageCircle size={15}/>{children}</a>:null;
 }
 
-/* ---------- illustrative makeover concepts (not customer project photos) ---------- */
+/* ---------- illustrative makeover concepts ---------- */
 export function Transformations(){
   const [i,setI]=React.useState(0),[hold,setHold]=React.useState(false);
   React.useEffect(()=>{if(hold||reduceMotion())return;const id=setInterval(()=>setI(n=>(n+1)%C.TRANSFORMS.length),5200);return()=>clearInterval(id)},[hold]);
@@ -231,14 +231,14 @@ export function Transformations(){
       <div className="trans-dots">{C.TRANSFORMS.map((x,k)=><button key={x.id} aria-label={x.tab} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
       <div className="trans-thumbs">{C.TRANSFORMS.map((x,k)=><button key={x.id} className={k===i?'on':''} onClick={()=>setI(k)}><span className="thumb-art"><TransformScene id={x.id}/></span><em>{x.tab}</em></button>)}</div>
     </div>
-    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See how plants change a balcony, a living room or a terrace — one thoughtful makeover at a time.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative makeover concepts</span><LBtn to="/services" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
+    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See ideas for adding greenery to a balcony, indoor corner or terrace.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative concepts</span><LBtn to="/services" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
   </div></section>;
 }
 
 /* ---------- brand story ---------- */
 export function Story(){
   return <section className="lsec story"><div className="story-copy"><Head eyebrow="Our story">Plant care that feels <em>personal</em></Head>
-      <h3><Sun size={20}/>Why we exist</h3><p>Good plant care shouldn’t depend on luck or free weekends. Our gardeners bring skill, patience and a clear record of every visit, so you always know how your plants are doing and what they need next.</p></div>
+      <h3><Sun size={20}/>Why we exist</h3><p>Plant care takes time and attention. T-CARE helps you find a suitable service, arrange a visit and keep your plant details and care notes together.</p></div>
     <div className="values">{C.STORY_VALUES.map(([ic,t,d],i)=>{const I=ICON[ic];return <Reveal key={t} delay={i*.07} className="value"><I size={20}/><b>{t}</b><p>{d}</p></Reveal>})}</div></section>;
 }
 
@@ -249,10 +249,10 @@ function Row({children,label}){
 }
 export function Market({cart}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
-  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Plants and essentials listed in the live product catalogue.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
-    {loading&&!products.length?<div className="public-state">Loading current products…</div>:null}
+  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Browse the plants and gardening essentials currently listed in the store.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
+    {loading&&!products.length?<div className="public-state">Loading products…</div>:null}
     {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!products.length?<div className="public-state"><p>No products are currently listed.</p><span>Explore T-Care's plant-care services while the store catalogue is being prepared.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
+    {!loading&&!error&&!products.length?<div className="public-state"><p>No products are available at the moment. You can still explore our plant-care services.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
   </section>;
 }
@@ -266,9 +266,9 @@ function ReviewsImpl(){
   return <section className="lsec reviews"><Head center eyebrow="Published customer feedback">Experiences shared by <em>T-Care customers</em></Head>
     {loading&&!reviews.length?<div className="public-state">Loading published reviews…</div>:null}
     {error&&!reviews.length?<div className="public-state" role="alert"><p>Published reviews are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!reviews.length?<div className="public-state"><p>Customer reviews will appear here after they are approved for publication.</p><span>Learn what T-Care offers while customer feedback is being prepared.</span><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
+    {!loading&&!error&&!reviews.length?<div className="public-state"><p>Customer reviews will appear here when feedback is shared and published.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!reviews.length&&<Row label="published customer reviews">{reviews.map(r=><figure className="review" key={r.id}><div className="stars" aria-label={`${r.rating} out of 5`}>{[0,1,2,3,4].map(k=><Star key={k} size={13} className={k<r.rating?'on':''}/>)}</div>
-      {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Rated this completed T-Care service.</blockquote>}
+      {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Customer rating for this completed service.</blockquote>}
       <figcaption><span className="av">T</span><div><b>T-Care customer</b><small>{r.booking?.service?.name||'Completed service'}{r.booking?.assignment?.gardener?.user?.fullName?` · Gardener ${r.booking.assignment.gardener.user.fullName}`:''}</small><small>{new Date(r.createdAt).toLocaleDateString('en-IN')}</small></div></figcaption></figure>)}</Row>}
   </section>;
 }
@@ -292,7 +292,7 @@ const SOCIAL_LINKS=Object.entries({
 function SiteFooterImpl(){
   const phoneHref=C.PUBLIC_PHONE_NUMBER?`tel:${C.PUBLIC_PHONE_NUMBER.replace(/[^+\d]/g,'')}`:null;
   return <footer className="lfoot"><div className="lfoot-top">
-    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Plant-care services, verified Gardener profiles and living care records in one place.</p>
+    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Explore plant-care services, arrange visits and keep your plant notes together.</p>
       {SOCIAL_LINKS.length>0&&<div className="socials">{SOCIAL_LINKS.map(({name,url})=><a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{Social[name]}</a>)}</div>}</div>
     <div className="lfoot-cols">{C.FOOTER_COLS.map(([heading,links])=><div key={heading}><h5>{heading}</h5>{links.map(([label,to])=><L key={label} to={to}>{label}</L>)}</div>)}</div></div>
     <div className="lfoot-contact"><h5>Contact T-CARE</h5><div className="lfoot-contact-grid">

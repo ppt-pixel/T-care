@@ -12,7 +12,7 @@ const request = createApiRequest({
 });
 const json = value => JSON.stringify(value);
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
-const dateTime = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not scheduled';
+const dateTime = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 const dateOnly = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : '—';
 const statusLabel = value => String(value || 'UNKNOWN').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 let razorpayCheckoutPromise;
@@ -27,13 +27,13 @@ function loadRazorpayCheckout() {
         if (typeof window.Razorpay === 'function') resolve();
         else {
           razorpayCheckoutPromise = null;
-          reject(new Error('Razorpay Checkout did not initialize.'));
+          reject(new Error('Secure checkout could not be opened. Please try again.'));
         }
       };
       script.onerror = () => {
         razorpayCheckoutPromise = null;
         script.remove();
-        reject(new Error('Razorpay Checkout could not be loaded. Check your connection and try again.'));
+        reject(new Error('Secure checkout could not be opened. Check your connection and try again.'));
       };
       document.head.appendChild(script);
     });
@@ -48,17 +48,17 @@ const errorText = error => {
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
     return 'T-CARE could not be reached. Check your connection and try again.';
   }
-  return error?.message || 'Something went wrong. Please try again.';
+  return error?.message || 'We couldn’t complete that request. Please try again.';
 };
 
 function Notice({ error, success }) {
   if (!error && !success) return null;
   return <div className={`p5-notice ${error ? 'is-error' : 'is-success'}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true">{error || success}</div>;
 }
-function State({ loading, error, empty, onRetry }) {
-  if (loading) return <div className="p5-state" role="status" aria-live="polite"><span className="p5-spinner"/>Loading live T-CARE data…</div>;
-  if (error) return <div className="p5-state p5-error" role="alert"><b>Unable to load this section</b><p>{error}</p><button className="p5-button" onClick={onRetry}>Try again</button></div>;
-  if (empty) return <div className="p5-state" role="status"><b>Nothing here yet</b><p>Records will appear here when they are created in T-CARE.</p></div>;
+function State({ loading, error, empty, onRetry, emptyTitle = 'Nothing to show yet', emptyText }) {
+  if (loading) return <div className="p5-state" role="status" aria-live="polite"><span className="p5-spinner"/>Loading…</div>;
+  if (error) return <div className="p5-state p5-error" role="alert"><b>We couldn’t load this section</b><p>{error}</p><button className="p5-button" onClick={onRetry}>Try again</button></div>;
+  if (empty) return <div className="p5-state" role="status"><b>{emptyTitle}</b>{emptyText && <p>{emptyText}</p>}</div>;
   return null;
 }
 function useLoad(path, fallbackKey, pollMs = 0) {
@@ -136,7 +136,7 @@ export function AccountSecurityPage({ Shell }) {
     }catch(requestError){setError(errorText(requestError));}
     finally{setBusy(false);}
   };
-  return <Shell title="Security & password" sub="Change your password without leaving your T-CARE account.">
+  return <Shell title="Security & password" sub="Update your account password.">
     <Notice error={error} success={success}/>
     <Panel title="Change password" sub="Use at least 12 characters. Changing your password signs out other active sessions.">
       <form onSubmit={submit}>
@@ -154,7 +154,7 @@ function Panel({ title, sub, children, action }) {
   return <section className="p5-panel"><div className="p5-panel-head"><div>{title && <h3>{title}</h3>}{sub && <p>{sub}</p>}</div>{action}</div>{children}</section>;
 }
 function Pill({ children, tone }) { return <span className={`p5-pill ${tone || ''}`}>{children}</span>; }
-function Empty({ title = 'No records yet', text = 'Records will appear here once they are created.' }) { return <div className="p5-empty"><b>{title}</b><p>{text}</p></div>; }
+function Empty({ title = 'Nothing to show yet', text }) { return <div className="p5-empty"><b>{title}</b>{text && <p>{text}</p>}</div>; }
 function Field({ label, children, hint }) { return <label className="p5-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
 function Button({ children, onClick, type = 'button', disabled, variant = 'primary' }) { return <button type={type} className={`p5-button ${variant}`} disabled={disabled} onClick={onClick}>{children}</button>; }
 function FormGrid({ children }) { return <div className="p5-form-grid">{children}</div>; }
@@ -187,7 +187,7 @@ export function CustomerProfilePage({ Shell }) {
     } catch (e2) { setMessage(errorText(e2)); }
     finally { setBusy(false); }
   };
-  return <Shell title="Your profile" sub="Manage your Customer account details and verification status.">
+  return <Shell title="Your profile" sub="Keep your name and contact details current.">
     <Notice error={error || (message && /failed|cannot|invalid|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found/i.test(message) ? message : ''}/>
     <State loading={loading} error={error} onRetry={load}/>
     {user && <>
@@ -224,18 +224,18 @@ export function CustomerDashboardPage({ Shell }) {
   const loading = plantsState.loading || bookingsState.loading || subscriptionsState.loading;
   const error = plantsState.error || bookingsState.error || subscriptionsState.error;
   const load = () => Promise.all([plantsState.load(), bookingsState.load(), subscriptionsState.load(), refreshNotificationFeed({ force: true })]);
-  return <Shell title="Your garden today" sub="Your plants, upcoming visits and T-CARE updates refresh automatically while this page is open.">
+  return <Shell title="Your garden today" sub="See your plants, upcoming visits and recent updates.">
     <div className="p5-metrics"><div><small>Plants in your care</small><b>{loading ? '—' : plants.length}</b></div><div><small>Upcoming bookings</small><b>{loading ? '—' : upcoming.length}</b></div><div><small>Notifications</small><b>{loading ? '—' : notificationFeed.unreadCount ?? notifications.filter(n => !n.readAt).length} unread</b></div><div><small>Subscription</small><b>{loading ? '—' : currentSubscription ? statusLabel(currentSubscription.status) : 'No plan'}</b></div></div>
     <Notice error={error}/><State loading={loading} error={error} onRetry={load}/>
     {!loading && !error && <div className="p5-columns">
-      <Panel title="Upcoming visits" sub="Live booking records from your account" action={<Link to="/garden/visits">All visits →</Link>}>
+      <Panel title="Upcoming visits" action={<Link to="/garden/visits">All visits →</Link>}>
         {upcoming.length ? upcoming.map(b => <Link className="p5-list-row" key={b.id} to={`/garden/visits/${b.id}`}><div><b>{b.service?.name || 'T-CARE service'}</b><small>{b.reference} · {dateTime(b.scheduledStart)}</small></div><Pill>{statusLabel(b.status)}</Pill><strong>{money(b.total)}</strong></Link>) : <Empty title="No upcoming visits" text="Book a service to get your plant care on the calendar."/>}
       </Panel>
-      <Panel title="Your plants" sub="Live customer plant records" action={<Link to="/garden/plants">View plants →</Link>}>
+      <Panel title="Your plants" action={<Link to="/garden/plants">View plants →</Link>}>
         {plants.slice(0, 5).map(p => <Link className="p5-list-row" key={p.id} to={`/garden/plants/${p.id}`}><div><b>{p.name}</b><small>{p.type || 'Plant'} · {statusLabel(p.healthStatus)}</small></div><Pill>{p.nextCareAt ? dateOnly(p.nextCareAt) : 'No care date'}</Pill></Link>)}
-        {!plants.length && <Empty title="Your collection is waiting" text="Add your first plant to start building its care history."/>}
+        {!plants.length && <Empty title="No plants added yet" text="Add a plant to keep its care details here."/>}
       </Panel>
-      <Panel title="Your subscription" sub="Plan status and renewal information from your account." action={<Link to="/garden/plan">Manage plans →</Link>}>
+      <Panel title="Your subscription" sub="Your current plan and renewal date." action={<Link to="/garden/plan">Manage plans →</Link>}>
         {currentSubscription ? <div className="p5-list-row"><div><b>{currentSubscription.plan?.name || 'T-CARE plan'}</b><small>{currentSubscription.plan?.billingCycle} · {currentSubscription.renewsAt ? `Renews ${dateOnly(currentSubscription.renewsAt)}` : currentSubscription.status === 'PENDING' ? 'Payment verification pending' : 'No renewal date recorded'}</small></div><Pill tone={currentSubscription.status === 'ACTIVE' ? 'success' : currentSubscription.status === 'PENDING' ? 'warning' : ''}>{statusLabel(currentSubscription.status)}</Pill></div> : <Empty title="No active plan" text="Browse available subscription plans to choose ongoing plant-care support."/>}
       </Panel>
     </div>}
@@ -251,14 +251,14 @@ export function CustomerServicesPage({ Shell }) {
   const categories = ['All', ...new Set(all.map(s => s.category).filter(Boolean))];
   const visible = all.filter(s => category === 'All' || s.category === category);
   const top = popular[0];
-  return <Shell title="Services" sub="Browse services configured by T-CARE operations, with live prices and booking demand.">
-    {top && <Panel title="Most booked — last 30 days" sub={`Based on ${popularState.data?.range || '30d'} non-cancelled booking records. Updated ${dateTime(popularState.data?.generatedAt)}.`}>
-      <div className="p5-popular-service"><div><Pill tone="success">Most booked</Pill><h3>{top.name}</h3><p>{top.description}</p><small>{top.bookingCount} bookings in the selected period</small></div><div className="p5-popular-action"><b>{(top.prices || []).length ? `From ${money(top.prices[0].amount)}` : 'Price on request'}</b><Link className="p5-button primary" to="/garden/book">Book this service</Link></div></div>
+  return <Shell title="Services" sub="Explore available plant-care services and their prices.">
+    {top && <Panel title="Most booked in the past 30 days">
+      <div className="p5-popular-service"><div><Pill tone="success">Most booked</Pill><h3>{top.name}</h3><p>{top.description}</p><small>{top.bookingCount} bookings in the last 30 days</small></div><div className="p5-popular-action"><b>{(top.prices || []).length ? `From ${money(top.prices[0].amount)}` : 'Price on request'}</b><Link className="p5-button primary" to="/garden/book">Book this service</Link></div></div>
     </Panel>}
     <div className="p5-toolbar">{categories.map(c => <button key={c} className={`p5-filter ${category === c ? 'active' : ''}`} onClick={() => setCategory(c)}>{c}</button>)}</div>
-    <State loading={loading} error={error} empty={!all.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!all.length && !loading && !error} emptyTitle="No services available" emptyText="Contact T-CARE if you need help arranging plant care." onRetry={load}/>
     <Notice error={popularState.error}/>
-    <div className="p5-card-grid">{visible.map(s => <article className="p5-card" key={s.id}><div className="p5-card-top"><Pill>{s.category}</Pill><Pill tone="success">{statusLabel(s.status)}</Pill></div><h3>{s.name}</h3><p>{s.description}</p><div className="p5-card-meta"><span>{s.durationLabel}</span>{s.durationMinutes ? <span>{s.durationMinutes} min</span> : null}</div><div className="p5-price-list">{(s.prices || []).length ? s.prices.map(p => <div key={p.id}><span>{p.minPlants || 1}{p.maxPlants ? `–${p.maxPlants}` : '+'} plants</span><b>{money(p.amount)}</b></div>) : <small>No currently applicable price. Contact T-CARE before booking.</small>}</div><Link className="p5-button primary" to="/garden/book">Book this service</Link></article>)}</div>
+    <div className="p5-card-grid">{visible.map(s => <article className="p5-card" key={s.id}><div className="p5-card-top"><Pill>{s.category}</Pill><Pill tone="success">{statusLabel(s.status)}</Pill></div><h3>{s.name}</h3><p>{s.description}</p><div className="p5-card-meta"><span>{s.durationLabel}</span>{s.durationMinutes ? <span>{s.durationMinutes} min</span> : null}</div><div className="p5-price-list">{(s.prices || []).length ? s.prices.map(p => <div key={p.id}><span>{p.minPlants || 1}{p.maxPlants ? `–${p.maxPlants}` : '+'} plants</span><b>{money(p.amount)}</b></div>) : <small>No price is available for this number of plants. Contact T-CARE before booking.</small>}</div><Link className="p5-button primary" to="/garden/book">Book this service</Link></article>)}</div>
   </Shell>;
 }
 
@@ -306,9 +306,9 @@ export function CustomerAddressesPage({ Shell }) {
     try { await request(`/customer/addresses/${address.id}`, { method: 'PATCH', body: json({ isDefault: true }) }); setMessage(`${address.label} is now your default address.`); await load(); }
     catch (e) { setFormError(errorText(e)); } finally { setBusy(false); }
   };
-  return <Shell title="My addresses" sub="Manage the saved locations used when you schedule T-CARE visits." action={<Button onClick={() => open(null)}>＋ Add address</Button>}>
+  return <Shell title="My addresses" sub="Save the addresses where you would like T-CARE visits." action={<Button onClick={() => open(null)}>＋ Add address</Button>}>
     <Notice error={formError || error} success={message}/>
-    {showForm && <Panel title={editing ? 'Edit address' : 'Add a new address'} sub="Only addresses saved to your account can be selected for your bookings.">
+    {showForm && <Panel title={editing ? 'Edit address' : 'Add a new address'} sub="Enter the address where you would like your plants cared for.">
       <form onSubmit={save}>
         <FormGrid>
           <Field label="Address label"><input required maxLength="80" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Home, office, etc."/></Field>
@@ -325,7 +325,7 @@ export function CustomerAddressesPage({ Shell }) {
         <div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save address'}</Button><Button variant="ghost" disabled={busy} onClick={() => { setShowForm(false); setEditing(null); setFormError(''); }}>Cancel</Button></div>
       </form>
     </Panel>}
-    <State loading={loading} error={error} empty={!addresses.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!addresses.length && !loading && !error} emptyTitle="No saved addresses" emptyText="Add an address so you can choose where your next visit should take place." onRetry={load}/>
     {!loading && !error && <div className="p5-card-grid">{addresses.map(address => <Panel key={address.id} title={address.label} sub={`${statusLabel(address.type)} · ${address.city}, ${address.state}`} action={address.isDefault ? <Pill tone="success">Default</Pill> : null}>
       <p>{address.line1}{address.line2 ? `, ${address.line2}` : ''}<br/>{address.city}, {address.state} {address.postalCode}</p>
       {(address.latitude != null || address.longitude != null) && <small>Coordinates: {address.latitude ?? '—'}, {address.longitude ?? '—'}</small>}
@@ -343,9 +343,9 @@ export function CustomerPlantsPage({ Shell }) {
   const open = plant => { setEditing(plant || null); setForm(plant ? { name: plant.name, type: plant.type || '', locationInHome: plant.locationInHome || '', notes: plant.notes || '', nextCareAt: plant.nextCareAt ? new Date(plant.nextCareAt).toISOString().slice(0, 10) : '', healthStatus: plant.healthStatus || 'HEALTHY' } : { name: '', type: '', locationInHome: '', notes: '', nextCareAt: '', healthStatus: 'HEALTHY' }); setShowForm(true); setFormError(''); };
   const save = async e => { e.preventDefault(); setBusy(true); setFormError(''); setMessage(''); try { const body = { ...form, nextCareAt: form.nextCareAt ? new Date(`${form.nextCareAt}T12:00:00`).toISOString() : undefined }; await request(editing ? `/customer/plants/${editing.id}` : '/customer/plants', { method: editing ? 'PATCH' : 'POST', body: json(body) }); setShowForm(false); setMessage(editing ? 'Plant updated.' : 'Plant added to your collection.'); await load(); } catch (e2) { setFormError(errorText(e2)); } finally { setBusy(false); } };
   const remove = async plant => { if (!window.confirm(`Delete ${plant.name} from your collection?`)) return; try { await request(`/customer/plants/${plant.id}`, { method: 'DELETE' }); setMessage('Plant removed.'); await load(); } catch (e) { setFormError(errorText(e)); } };
-  return <Shell title="My plants" sub="Manage your plant collection, care dates and notes from your saved customer profile." action={<Button onClick={() => open(null)}>＋ Add plant</Button>}>
+  return <Shell title="My plants" sub="Keep each plant’s details, photos and care notes in one place." action={<Button onClick={() => open(null)}>＋ Add plant</Button>}>
     <Notice error={formError || error} success={message}/><State loading={loading} error={error} onRetry={load}/>
-    {showForm && <Panel title={editing ? 'Edit plant' : 'Add a plant'} sub="This record is saved to your customer profile."><form onSubmit={save}><FormGrid>
+    {showForm && <Panel title={editing ? 'Edit plant' : 'Add a plant'}><form onSubmit={save}><FormGrid>
       <Field label="Plant name"><input required minLength="1" maxLength="120" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></Field>
       <Field label="Type / species"><input maxLength="120" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}/></Field>
       <Field label="Location in home"><input maxLength="160" value={form.locationInHome} onChange={e => setForm({ ...form, locationInHome: e.target.value })}/></Field>
@@ -353,7 +353,7 @@ export function CustomerPlantsPage({ Shell }) {
       <Field label="Next care date"><input type="date" value={form.nextCareAt} onChange={e => setForm({ ...form, nextCareAt: e.target.value })}/></Field>
       <Field label="Care notes"><textarea maxLength="2000" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}/></Field>
     </FormGrid><div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save plant'}</Button><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button></div></form></Panel>}
-    {!loading && !error && <div className="p5-card-grid">{plants.map(p => <article className="p5-card" key={p.id}><div className="p5-card-top"><Pill>{statusLabel(p.healthStatus)}</Pill><small>{p.type || 'Plant'}</small></div><h3>{p.name}</h3><p>{p.locationInHome || 'Location not specified'}</p><p>{p.notes || 'No care notes yet.'}</p><div className="p5-card-meta"><span>Next care: {dateOnly(p.nextCareAt)}</span><span>{(p.photos || []).length} photos</span></div><div className="p5-actions"><Link className="p5-button primary" to={`/garden/plants/${p.id}`}>Open record</Link><Button variant="ghost" onClick={() => open(p)}>Edit</Button><Button variant="danger" onClick={() => remove(p)}>Delete</Button></div></article>)}{!plants.length && <Empty title="No plants added yet" text="Use Add plant to create the first live record."/>}</div>}
+    {!loading && !error && <div className="p5-card-grid">{plants.map(p => <article className="p5-card" key={p.id}><div className="p5-card-top"><Pill>{statusLabel(p.healthStatus)}</Pill><small>{p.type || 'Plant'}</small></div><h3>{p.name}</h3><p>{p.locationInHome || 'Location not specified'}</p><p>{p.notes || 'No care notes yet.'}</p><div className="p5-card-meta"><span>Next care: {dateOnly(p.nextCareAt)}</span><span>{(p.photos || []).length} photos</span></div><div className="p5-actions"><Link className="p5-button primary" to={`/garden/plants/${p.id}`}>View plant</Link><Button variant="ghost" onClick={() => open(p)}>Edit</Button><Button variant="danger" onClick={() => remove(p)}>Delete</Button></div></article>)}{!plants.length && <Empty title="No plants added yet" text="Add your first plant to start a care record."/>}</div>}
   </Shell>;
 }
 
@@ -371,7 +371,7 @@ export function CustomerPlantDetailPage({ Shell }) {
     e.preventDefault(); setSavingHealth(true); setMessage('');
     try {
       await request(`/customer/plants/${plant.id}`, { method: 'PATCH', body: json({ healthStatus: healthForm.healthStatus, notes: healthForm.notes, nextCareAt: healthForm.nextCareAt ? new Date(`${healthForm.nextCareAt}T12:00:00`).toISOString() : null }) });
-      setMessage('Plant care update saved. Assigned Gardeners have been notified when this plant is part of an active visit.');
+      setMessage('Plant care update saved. The assigned Gardener will be notified if this plant is part of an active visit.');
       await load();
     } catch (e2) { setMessage(errorText(e2)); }
     finally { setSavingHealth(false); }
@@ -385,12 +385,12 @@ export function CustomerPlantDetailPage({ Shell }) {
       setMessage('Photo uploaded and linked to this plant.'); await load();
     } catch (e2) { setMessage(errorText(e2)); } finally { setUploading(false); e.target.value = ''; }
   };
-  const removePhoto = async photo => { if (!window.confirm('Delete this plant photo from T-CARE Storage?')) return; setUploading(true); try { await request(`/customer/plants/${plant.id}/photos/${photo.id}`, { method: 'DELETE' }); setMessage('Plant photo deleted.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setUploading(false); } };
-  return <Shell title={plant?.name || 'Plant record'} sub="Plant information, uploaded photos and care history." action={<Link className="p5-button ghost" to="/garden/plants">Back to plants</Link>}>
+  const removePhoto = async photo => { if (!window.confirm('Delete this plant photo?')) return; setUploading(true); try { await request(`/customer/plants/${plant.id}/photos/${photo.id}`, { method: 'DELETE' }); setMessage('Plant photo deleted.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setUploading(false); } };
+  return <Shell title={plant?.name || 'Plant record'} sub="View photos, update details and follow this plant’s care history." action={<Link className="p5-button ghost" to="/garden/plants">Back to plants</Link>}>
     <Notice error={error || (message && /failed|error|invalid|cannot|not found|denied|required/i.test(message) ? message : '')} success={message && !/failed|error|invalid|cannot|not found|denied|required/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {plant && <><div className="p5-metrics"><div><small>Health</small><b>{statusLabel(plant.healthStatus)}</b></div><div><small>Next care</small><b>{dateOnly(plant.nextCareAt)}</b></div><div><small>Photos</small><b>{plant.photos?.length || 0}</b></div></div>
       <Panel title="Plant details" sub={`${plant.type || 'Type not specified'} · ${plant.locationInHome || 'Location not specified'}`} action={<label className="p5-button primary">{uploading ? 'Uploading…' : 'Upload photo'}<input hidden type="file" accept="image/jpeg,image/png,image/webp,image/heic" onChange={addPhoto} disabled={uploading}/></label>}><p>{plant.notes || 'No notes have been added.'}</p></Panel>
-      <Panel title="Update plant health" sub="Tell T-CARE about the latest condition. A health change is saved to the care history and shared with an assigned Gardener when relevant.">
+      <Panel title="Update plant health" sub="If this plant is part of an active visit, the assigned Gardener can review your update.">
         <form onSubmit={saveHealth}><FormGrid>
           <Field label="Plant health"><select value={healthForm.healthStatus} onChange={e => setHealthForm({ ...healthForm, healthStatus: e.target.value })}>{['EXCELLENT','HEALTHY','NEEDS_ATTENTION','CRITICAL'].map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></Field>
           <Field label="Next care date"><input type="date" value={healthForm.nextCareAt} onChange={e => setHealthForm({ ...healthForm, nextCareAt: e.target.value })}/></Field>
@@ -398,8 +398,8 @@ export function CustomerPlantDetailPage({ Shell }) {
         <Field label="Current observations / notes"><textarea maxLength="2000" value={healthForm.notes} onChange={e => setHealthForm({ ...healthForm, notes: e.target.value })} placeholder="Describe yellow leaves, watering concerns, pests or recent changes."/></Field>
         <Button type="submit" disabled={savingHealth}>{savingHealth ? 'Saving report…' : 'Save health update'}</Button></form>
       </Panel>
-      <Panel title="Photos" sub="Private Supabase Storage assets linked to this plant.">{plant.photos?.length ? <div className="p5-photo-grid">{plant.photos.map(photo => <div key={photo.id}><img src={photo.url || ''} alt={photo.altText || plant.name} onError={e => { e.currentTarget.style.display = 'none'; }}/><small>{photo.altText || 'Plant photo'} · {dateOnly(photo.createdAt)}</small>{photo.mediaAssetId && <Button variant="danger" disabled={uploading} onClick={() => removePhoto(photo)}>Delete photo</Button>}</div>)}</div> : <Empty title="No plant photos" text="Upload a JPG, PNG or WebP image up to 10 MB."/>}</Panel>
-      <Panel title="Care history" sub="Completed service and care records.">{plant.careRecords?.length ? <div className="p5-record-list">{plant.careRecords.map(r => <div key={r.id}><b>{r.title}</b><p>{r.notes || 'No notes recorded.'}</p><small>{dateTime(r.recordedAt)}{r.nextCareAt ? ` · Next care ${dateOnly(r.nextCareAt)}` : ''}</small></div>)}</div> : <Empty title="No care history yet"/>}</Panel>
+      <Panel title="Photos" sub="">{plant.photos?.length ? <div className="p5-photo-grid">{plant.photos.map(photo => <div key={photo.id}><img src={photo.url || ''} alt={photo.altText || plant.name} onError={e => { e.currentTarget.style.display = 'none'; }}/><small>{photo.altText || 'Plant photo'} · {dateOnly(photo.createdAt)}</small>{photo.mediaAssetId && <Button variant="danger" disabled={uploading} onClick={() => removePhoto(photo)}>Delete photo</Button>}</div>)}</div> : <Empty title="No plant photos" text="Add a photo to keep a visual record of your plant. Use a JPG, PNG or WebP image up to 10 MB."/>}</Panel>
+      <Panel title="Care history" sub="">{plant.careRecords?.length ? <div className="p5-record-list">{plant.careRecords.map(r => <div key={r.id}><b>{r.title}</b><p>{r.notes || 'No notes recorded.'}</p><small>{dateTime(r.recordedAt)}{r.nextCareAt ? ` · Next care ${dateOnly(r.nextCareAt)}` : ''}</small></div>)}</div> : <Empty title="No care history yet"/>}</Panel>
     </>}
   </Shell>;
 }
@@ -429,20 +429,20 @@ export function CustomerBookingCreatePage({ Shell }) {
     const result = await request('/bookings', { method: 'POST', body: json({ serviceId, plantIds, addressId, scheduledStart: new Date(scheduledStart).toISOString(), specialInstructions }) });
     nav(`/garden/visits/${result.booking.id}`, { replace: true });
   } catch (e2) { setError(errorText(e2)); } finally { setBusy(false); } };
-  return <Shell title="Book a service" sub="Create a real booking against your plants, saved address and the live service catalogue.">
+  return <Shell title="Book a service" sub="Choose the care you need, then select your plants, visit address and preferred time.">
     <Notice error={error} success={success}/><State loading={loading} error={error} onRetry={load}/>
     {!loading && <form className="p5-panel" onSubmit={submit}>
-      <PageTitle eyebrow="Booking details" title="Tell us what you need" sub="Choose an Admin-approved service, select the plants it should cover and schedule your visit." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
-      <div className="p5-booking-intent" aria-live="polite"><span>I need</span><strong>{selectedService?.name || 'a T-CARE service plan'}</strong><span>for</span><strong>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'}</strong></div>
+      <PageTitle eyebrow="Booking details" title="Tell us what you need" sub="Select a service, choose the plants to include, then set your address and visit time." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
+      <div className="p5-booking-intent" aria-live="polite"><span>I need</span><strong>{selectedService?.name || 'a service'}</strong><span>for</span><strong>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'}</strong></div>
       <FormGrid>
-        <Field label="Choose your service plan"><select required value={serviceId} onChange={e => setServiceId(e.target.value)}><option value="">Select service</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.durationLabel}</option>)}</select></Field>
+        <Field label="Choose a service"><select required value={serviceId} onChange={e => setServiceId(e.target.value)}><option value="">Select service</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.durationLabel}</option>)}</select></Field>
         <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}/></Field>
       </FormGrid>
-      <Panel title="Select plants" sub="Only plants belonging to your Customer profile are shown.">
-        {plants.length ? <div className="p5-check-grid">{plants.map(p => <label key={p.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(p.id)} onChange={e => setPlantIds(current => e.target.checked ? [...current, p.id] : current.filter(id => id !== p.id))}/><span><b>{p.name}</b><small>{p.type || statusLabel(p.healthStatus)}</small></span></label>)}</div> : <Empty title="Add plants before booking" text="Create at least one plant record in My plants."/>}
+      <Panel title="Plants for this visit">
+        {plants.length ? <div className="p5-check-grid">{plants.map(p => <label key={p.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(p.id)} onChange={e => setPlantIds(current => e.target.checked ? [...current, p.id] : current.filter(id => id !== p.id))}/><span><b>{p.name}</b><small>{p.type || statusLabel(p.healthStatus)}</small></span></label>)}</div> : <Empty title="Add a plant before booking" text="Add a plant to your collection to request a visit."/>}
       </Panel>
       <Panel title="Service address" action={<Button variant="ghost" onClick={() => setShowAddress(v => !v)}>{showAddress ? 'Close' : '+ Add address'}</Button>}>
-        {addresses.length ? <div className="p5-check-grid">{addresses.map(a => <label className="p5-check" key={a.id}><input type="radio" name="address" checked={addressId === a.id} onChange={() => setAddressId(a.id)}/><span><b>{a.label} {a.isDefault ? '· Default' : ''}</b><small>{[a.line1, a.line2, a.city, a.state, a.postalCode].filter(Boolean).join(', ')}</small></span></label>)}</div> : <Empty title="No saved addresses" text="Add the service address where the Gardener should visit."/>}
+        {addresses.length ? <div className="p5-check-grid">{addresses.map(a => <label className="p5-check" key={a.id}><input type="radio" name="address" checked={addressId === a.id} onChange={() => setAddressId(a.id)}/><span><b>{a.label} {a.isDefault ? '· Default' : ''}</b><small>{[a.line1, a.line2, a.city, a.state, a.postalCode].filter(Boolean).join(', ')}</small></span></label>)}</div> : <Empty title="No saved addresses" text="Add the address where you’d like the Gardener to visit."/>}
         {showAddress && <div className="p5-address-editor"><FormGrid><Field label="Label"><input required value={address.label} onChange={e => setAddress({ ...address, label: e.target.value })}/></Field><Field label="Address type"><select value={address.type} onChange={e => setAddress({ ...address, type: e.target.value })}><option>HOME</option><option>OFFICE</option><option>OTHER</option></select></Field><Field label="Address line 1"><input required value={address.line1} onChange={e => setAddress({ ...address, line1: e.target.value })}/></Field><Field label="Address line 2"><input value={address.line2} onChange={e => setAddress({ ...address, line2: e.target.value })}/></Field><Field label="City"><input required value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })}/></Field><Field label="State"><input required value={address.state} onChange={e => setAddress({ ...address, state: e.target.value })}/></Field><Field label="Postal code"><input required value={address.postalCode} onChange={e => setAddress({ ...address, postalCode: e.target.value })}/></Field></FormGrid><Button onClick={createAddress} disabled={busy}>Save address</Button></div>}
       </Panel>
       <Field label="Special instructions"><textarea maxLength="2000" value={specialInstructions} onChange={e => setSpecialInstructions(e.target.value)} placeholder="Access notes, plant-care priorities or other details"/></Field>
@@ -450,15 +450,15 @@ export function CustomerBookingCreatePage({ Shell }) {
         <h3 id="booking-review-title">Review your booking request</h3>
         <dl>
           <div><dt>Service</dt><dd>{selectedService?.name || 'Choose a service'}</dd></div>
-          <div><dt>Scope and duration</dt><dd>{selectedService ? `${selectedService.description || 'As described in the service catalogue'}${selectedService.durationLabel ? ` · ${selectedService.durationLabel}` : ''}` : 'Shown after you choose a service'}</dd></div>
+          <div><dt>Service details</dt><dd>{selectedService ? `${selectedService.description || 'No additional service details available.'}${selectedService.durationLabel ? ` · ${selectedService.durationLabel}` : ''}` : 'Select a service to view its details.'}</dd></div>
           <div><dt>Plants</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'Select at least one plant'}</dd></div>
           <div><dt>Visit time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
           <div><dt>Service address</dt><dd>{selectedAddress ? `${selectedAddress.label} · ${[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}` : 'Choose or add an address'}</dd></div>
           <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
-          <div><dt>Estimated price</dt><dd>{selectedPrice ? money(selectedPrice.amount) : 'Price unavailable for this plant count'}</dd></div>
+          <div><dt>Estimated price</dt><dd>{selectedPrice ? money(selectedPrice.amount) : 'No price is available for the selected number of plants'}</dd></div>
         </dl>
       </section>
-      <p className="p5-booking-policy">Submitting creates a booking request and does not collect payment. The displayed price is an estimate; the server recalculates the total on submission. Final service scope and cancellation or rescheduling terms are not published here—check the <Link to="/contact">Contact page</Link> for configured channels to confirm them before the visit is finalized.</p>
+      <p className="p5-booking-policy">Sending this request does not charge you. The price shown is an estimate; T-CARE will confirm the final amount with your booking. Contact T-CARE if you need to change or cancel a visit.</p>
       <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !selectedPrice}>{busy ? 'Submitting request…' : 'Submit booking request'}</Button></div>
     </form>}
   </Shell>;
@@ -494,29 +494,29 @@ export function CustomerSubscriptionsPage({ Shell }) {
     } catch (e) { setMessage(errorText(e)); }
     finally { setBusyId(''); }
   };
-  return <Shell title="Subscription plans" sub="Choose a T-CARE plan for recurring plant care. A request remains pending until payment is verified; online checkout is a later integration.">
+  return <Shell title="Subscription plans" sub="Compare plans and choose the level of ongoing plant care that suits you. Your plan starts after payment is confirmed.">
     <Notice error={error || (message && /failed|cannot|invalid|not found|already|denied/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|already|denied/i.test(message) ? message : ''}/>
-    <Panel title="Your subscription history" sub="Status and renewal dates from your customer account.">
-      <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!subscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} onRetry={subscriptionsState.load}/>
+    <Panel title="Your subscription history">
+      <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!subscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} emptyTitle="No subscription history" emptyText="Your plan requests and subscription updates will appear here." onRetry={subscriptionsState.load}/>
       {subscriptions.map(item => <div className="p5-subscription-row" key={item.id}>
         <div><b>{item.plan?.name || 'T-CARE plan'}</b><small>{item.plan?.billingCycle} · {item.plan?.plantLimit ? `${item.plan.plantLimit} plant limit` : 'No stated plant limit'}</small><small>Requested {dateOnly(item.createdAt)} · {item.startedAt ? `Started ${dateOnly(item.startedAt)}` : 'Not started'}</small>{item.renewsAt && <small>Renews / ends {dateOnly(item.renewsAt)}</small>}</div>
         <div className="p5-subscription-actions"><Pill tone={item.status === 'ACTIVE' ? 'success' : item.status === 'PENDING' ? 'warning' : ''}>{statusLabel(item.status)}</Pill>
-          {item.status === 'PENDING' && <small>Awaiting verified payment</small>}
+          {item.status === 'PENDING' && <small>Awaiting payment confirmation</small>}
           {item.status === 'ACTIVE' && <Button variant="ghost" disabled={busyId === item.id} onClick={() => changeStatus(item, 'pause')}>Pause</Button>}
           {item.status === 'PAUSED' && <Button variant="ghost" disabled={busyId === item.id} onClick={() => changeStatus(item, 'resume')}>Resume</Button>}
           {['PENDING', 'ACTIVE', 'PAUSED'].includes(item.status) && <Button variant="danger" disabled={busyId === item.id} onClick={() => changeStatus(item, 'cancel')}>Cancel</Button>}
         </div>
       </div>)}
     </Panel>
-    <Panel title="Available plans" sub="Plans and prices are maintained by T-CARE Admin. Prices are displayed from the live catalogue.">
-      <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} onRetry={plansState.load}/>
+    <Panel title="Available plans">
+      <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} emptyTitle="No plans available" emptyText="Published subscription plans will appear here." onRetry={plansState.load}/>
       <div className="p5-subscription-grid">{plans.map(plan => <article className="p5-subscription-card" key={plan.id}>
-        <span className="eyebrow">T-CARE subscription</span><h3>{plan.name}</h3><div className="p5-plan-price">{money(plan.price)} <small>/ {plan.billingCycle}</small></div>
-        <p>{plan.description || 'Recurring plant-care support managed by T-CARE.'}</p>
-        <div className="p5-plan-includes"><span>{plan.plantLimit ? `Up to ${plan.plantLimit} plants` : 'Plant limit as agreed with T-CARE'}</span><span>Admin-managed service plan</span><span>Subscription status visible in your account</span></div>
-        <Button disabled={occupied || Boolean(busyId)} onClick={() => subscribe(plan)}>{busyId === plan.id ? 'Submitting…' : occupied ? 'Existing subscription active or pending' : 'Request this plan'}</Button>
+        <h3>{plan.name}</h3><div className="p5-plan-price">{money(plan.price)} <small>/ {plan.billingCycle}</small></div>
+        {plan.description && <p>{plan.description}</p>}
+        <div className="p5-plan-includes"><span>{plan.plantLimit ? `Up to ${plan.plantLimit} plants` : 'No stated plant limit'}</span></div>
+        <Button disabled={occupied || Boolean(busyId)} onClick={() => subscribe(plan)}>{busyId === plan.id ? 'Submitting…' : occupied ? 'Cancel your current plan first' : 'Request this plan'}</Button>
       </article>)}</div>
-      {occupied && <small className="p5-muted">You already have a pending, active or paused subscription. Cancel it before requesting another plan.</small>}
+      {occupied && <small className="p5-muted">Cancel your current plan before requesting another.</small>}
     </Panel>
   </Shell>;
 }
@@ -526,9 +526,9 @@ export function CustomerBookingsPage({ Shell }) {
   const { data, loading, error, load } = useLoad('/bookings', null, 30000); const all = data?.bookings || [];
   const filters = ['All', 'Upcoming', 'Completed', 'Cancelled'];
   const visible = all.filter(b => filter === 'All' || filter === 'Upcoming' && !['SERVICE_COMPLETED', 'CANCELLED'].includes(b.status) || filter === 'Completed' && b.status === 'SERVICE_COMPLETED' || filter === 'Cancelled' && b.status === 'CANCELLED');
-  return <Shell title="My visits" sub="Track each booking from confirmation through service completion." action={<Link className="p5-button primary" to="/garden/book">Book a service</Link>}>
+  return <Shell title="My visits" sub="See visit dates, booking updates and service reports." action={<Link className="p5-button primary" to="/garden/book">Book a service</Link>}>
     <div className="p5-toolbar">{filters.map(f => <button className={`p5-filter ${filter === f ? 'active' : ''}`} key={f} onClick={() => setFilter(f)}>{f}</button>)}</div>
-    <State loading={loading} error={error} empty={!visible.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!visible.length && !loading && !error} emptyTitle="No visits to show" emptyText="Your bookings and their updates will appear here." onRetry={load}/>
     {!loading && !error && <div className="p5-record-list">{visible.map(b => <Link to={`/garden/visits/${b.id}`} className="p5-booking-row" key={b.id}><div><small>{b.reference} · {dateTime(b.scheduledStart)}</small><h3>{b.service?.name}</h3><p>{b.plants?.map(x => x.plant?.name).filter(Boolean).join(', ')}</p><small>{b.address?.label}: {b.address?.line1}, {b.address?.city}</small></div><div className="p5-right"><Pill>{statusLabel(b.status)}</Pill><b>{money(b.total)}</b><span>Open record →</span></div></Link>)}</div>}
   </Shell>;
 }
@@ -546,7 +546,7 @@ export function CustomerBookingDetailPage({ Shell }) {
     setMessage('');
     try {
       const idempotencyKey = window.crypto?.randomUUID?.();
-      if (!idempotencyKey) throw new Error('Secure payment setup is not available in this browser.');
+      if (!idempotencyKey) throw new Error("Unable to start a secure payment request. Please try again or contact T-CARE for assistance.");
       const { payment, checkout } = await request(`/payments/customer/booking/${encodeURIComponent(id)}/order`, {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey },
@@ -595,7 +595,7 @@ export function CustomerBookingDetailPage({ Shell }) {
   };
   const submitReview = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/reviews', { method: 'POST', body: json({ bookingId: id, rating: Number(review.rating), comment: review.comment || null }) }); setMessage('Review submitted for moderation.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   const submitIssue = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/issues', { method: 'POST', body: json({ bookingId: id, ...issue }) }); setIssue({ subject: '', description: '' }); setMessage('Issue report submitted.'); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
-  return <Shell title={booking?.reference || 'Booking detail'} sub="Live booking record, service status, assignment and report.">
+  return <Shell title={booking?.reference || 'Booking detail'} sub="Check the visit schedule, progress and service report.">
     <Notice error={error || paymentAvailabilityError || (message && /failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {booking && <><div className="p5-booking-head"><div><Pill>{statusLabel(booking.status)}</Pill><h2>{booking.service?.name}</h2><p>{dateTime(booking.scheduledStart)} · {booking.address?.label} · {booking.address?.line1}, {booking.address?.city}</p></div><strong>{money(booking.total)}</strong></div>
       <div className="p5-metrics"><div><small>Subtotal</small><b>{money(booking.subtotal)}</b></div><div><small>Convenience fee</small><b>{money(booking.convenienceFee)}</b></div><div><small>Total</small><b>{money(booking.total)}</b></div></div>
@@ -606,7 +606,7 @@ export function CustomerBookingDetailPage({ Shell }) {
         {canPay && <div className="p5-actions"><Button onClick={startBookingPayment} disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${money(booking.total)}`}</Button></div>}
       </Panel>}
       <Panel title="Plants in this booking">{booking.plants?.map(x => <div className="p5-list-row" key={x.plantId}><b>{x.plant?.name}</b><small>{statusLabel(x.plant?.healthStatus)}</small></div>)}</Panel>
-      <Panel title="Gardener assignment">{booking.assignment ? <div className="p5-list-row"><div><b>{booking.assignment.gardener?.user?.fullName}</b><small>{booking.assignment.gardener?.user?.phone || 'Contact details not shared'}</small></div><Pill>{statusLabel(booking.assignment.status)}</Pill></div> : <Empty title="Awaiting assignment" text="A KYC-verified Gardener will be assigned by T-CARE operations."/>}</Panel>
+      <Panel title="Gardener assignment">{booking.assignment ? <div className="p5-list-row"><div><b>{booking.assignment.gardener?.user?.fullName}</b><small>{booking.assignment.gardener?.user?.phone || 'Contact details not shared'}</small></div><Pill>{statusLabel(booking.assignment.status)}</Pill></div> : <Empty title="Awaiting assignment" text="T-CARE will assign a verified Gardener to your visit."/>}</Panel>
       <Panel title="Booking timeline">{booking.statusHistory?.length ? <div className="p5-timeline">{booking.statusHistory.map(h => <div key={h.id}><i/><div><b>{statusLabel(h.toStatus)}</b><small>{dateTime(h.createdAt)}{h.note ? ` · ${h.note}` : ''}</small></div></div>)}</div> : <Empty/>}</Panel>
       {booking.report && <Panel title="Service report" sub={dateTime(booking.report.createdAt)}><h4>{booking.report.summary}</h4><p>{booking.report.observations}</p><p>{booking.report.recommendation}</p>{booking.report.checklistItems?.map(c => <div className="p5-list-row" key={c.id}><span>{c.label}</span><Pill tone={c.completed ? 'success' : 'warning'}>{c.completed ? 'Completed' : 'Pending'}</Pill></div>)}{booking.report.photos?.length > 0 && <div className="p5-photo-grid">{booking.report.photos.map(photo => <div key={photo.id}>{photo.url && <img src={photo.url} alt={photo.caption || 'Service evidence'} onError={e => { e.currentTarget.style.display = 'none'; }}/>}<small>{photo.caption || 'Service evidence'}</small></div>)}</div>}</Panel>}
       {booking.status === 'SERVICE_COMPLETED' && !booking.review && <Panel title="Review your service"><form onSubmit={submitReview}><Field label="Rating"><select value={review.rating} onChange={e => setReview({ ...review, rating: e.target.value })}>{[5,4,3,2,1].map(n => <option value={n} key={n}>{n} star{n > 1 ? 's' : ''}</option>)}</select></Field><Field label="Comment"><textarea maxLength="5000" value={review.comment} onChange={e => setReview({ ...review, comment: e.target.value })}/></Field><Button type="submit" disabled={busy}>Submit review</Button></form></Panel>}
@@ -631,33 +631,33 @@ export function GardenerDashboardPage({ Shell }) {
   const nextVisit = data?.nextVisit;
   const updates = data?.recentCustomerPlantUpdates || [];
   const rating = data?.profile?.rating;
-  return <Shell title="Your route" sub="A live view of today's assignments, upcoming visits, customer plant updates and recorded performance.">
+  return <Shell title="Your route" sub="See today’s visits, your next assignment and customer plant updates.">
     <div className="p5-metric-grid">
       <div className="p5-metric"><small>Today's jobs</small><b>{loading ? '—' : data?.today?.count ?? 0}</b></div>
       <div className="p5-metric"><small>Completed this month</small><b>{loading ? '—' : data?.month?.completedJobs ?? 0}</b></div>
-      <div className="p5-metric"><small>Gross completed booking value</small><b>{loading ? '—' : money(data?.month?.grossCompletedBookingValue)}</b><small>Includes the booking total; not Gardener earnings</small></div>
+      <div className="p5-metric"><small>Completed booking value</small><b>{loading ? '—' : money(data?.month?.grossCompletedBookingValue)}</b><small>Total value of completed customer bookings</small></div>
       <div className="p5-metric"><small>Current rating</small><b>{rating == null ? '—' : `${Number(rating).toFixed(1)} / 5`}</b></div>
     </div>
     <State loading={loading} error={error} onRetry={load}/>
-    {nextVisit && <Panel title="Next visit" sub="Next upcoming assignment on your route.">
+    {nextVisit && <Panel title="Next visit" sub="Your next assigned visit.">
       <Link to={`/crew/jobs/${nextVisit.id}`} className="p5-booking-row"><div><small>{gardenerJobLabel(nextVisit)} · {dateTime(nextVisit.booking?.scheduledStart)}</small><h3>{nextVisit.booking?.service?.name}</h3><p>{nextVisit.booking?.customer?.user?.fullName} · {nextVisit.booking?.address?.line1}, {nextVisit.booking?.address?.city}</p></div><div className="p5-right"><Pill>{statusLabel(nextVisit.status)}</Pill><span>Open visit →</span></div></Link>
     </Panel>}
-    <Panel title="Today's jobs" sub={`${todayJobs.length} active assignment${todayJobs.length === 1 ? '' : 's'} scheduled for your local day.`} action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
-      {todayJobs.length ? todayJobs.map(job => <Link to={`/crew/jobs/${job.id}`} className="p5-booking-row" key={job.id}><div><small>{gardenerJobLabel(job)} · {dateTime(job.booking?.scheduledStart)}</small><h3>{job.booking?.service?.name}</h3><p>{job.booking?.customer?.user?.fullName} · {job.booking?.address?.line1}, {job.booking?.address?.city}</p><small>{job.booking?.plants?.map(x => x.plant?.name).filter(Boolean).join(' · ')}</small></div><div className="p5-right"><Pill>{statusLabel(job.status)}</Pill><span>Open job →</span></div></Link>) : <Empty title="No jobs scheduled today" text="New assignments will appear here as soon as T-CARE operations assigns them."/>}
+    <Panel title="Today's jobs" sub={`${todayJobs.length} visit${todayJobs.length === 1 ? '' : 's'} scheduled for today.`} action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
+      {todayJobs.length ? todayJobs.map(job => <Link to={`/crew/jobs/${job.id}`} className="p5-booking-row" key={job.id}><div><small>{gardenerJobLabel(job)} · {dateTime(job.booking?.scheduledStart)}</small><h3>{job.booking?.service?.name}</h3><p>{job.booking?.customer?.user?.fullName} · {job.booking?.address?.line1}, {job.booking?.address?.city}</p><small>{job.booking?.plants?.map(x => x.plant?.name).filter(Boolean).join(' · ')}</small></div><div className="p5-right"><Pill>{statusLabel(job.status)}</Pill><span>Open job →</span></div></Link>) : <Empty title="No jobs scheduled today" text="Your assigned visits will appear here."/>}
     </Panel>
-    <Panel title="Customer plant-health updates" sub="Recent customer-reported notes for plants in your active assigned visits.">
-      {updates.length ? updates.map(record => <div className="p5-list-row" key={record.id}><div><b>{record.plant?.name || 'Customer plant'} · {statusLabel(record.plant?.healthStatus)}</b><small>{record.title} · {dateTime(record.recordedAt)}</small>{record.notes && <p>{record.notes}</p>}{record.nextCareAt && <small>Next care: {dateOnly(record.nextCareAt)}</small>}</div></div>) : <Empty title="No new customer plant updates" text="Customer health notes linked to active visits will appear here."/>}
+    <Panel title="Customer plant-health updates" sub="Recent notes customers have added for plants on your visits.">
+      {updates.length ? updates.map(record => <div className="p5-list-row" key={record.id}><div><b>{record.plant?.name || 'Customer plant'} · {statusLabel(record.plant?.healthStatus)}</b><small>{record.title} · {dateTime(record.recordedAt)}</small>{record.notes && <p>{record.notes}</p>}{record.nextCareAt && <small>Next care: {dateOnly(record.nextCareAt)}</small>}</div></div>) : <Empty title="No plant updates yet" text="Customer updates for your assigned visits will appear here."/>}
     </Panel>
-    <Panel title="Availability and verification"><div className="p5-metrics"><div><small>Active availability slots</small><b>{data?.availability?.activeSlots ?? 0}</b></div><div><small>KYC status</small><b>{statusLabel(data?.profile?.kycStatus)}</b></div><div><small>Service area</small><b>{data?.profile?.serviceArea || 'Not provided'}</b></div></div><Link to="/crew/hours">Manage availability →</Link></Panel>
+    <Panel title="Availability and verification"><div className="p5-metrics"><div><small>Available time slots</small><b>{data?.availability?.activeSlots ?? 0}</b></div><div><small>Identity verification</small><b>{statusLabel(data?.profile?.kycStatus)}</b></div><div><small>Service area</small><b>{data?.profile?.serviceArea || 'Not provided'}</b></div></div><Link to="/crew/hours">Manage availability →</Link></Panel>
   </Shell>;
 }
 export function GardenerJobsPage({ Shell }) {
   const [filter, setFilter] = React.useState('All');
   const path = filter === 'All' ? '/gardener/jobs?limit=100' : `/gardener/jobs?limit=100&status=${({ Assigned: 'ASSIGNED', Accepted: 'ACCEPTED', 'In progress': 'IN_PROGRESS', Completed: 'COMPLETED' })[filter]}`;
   const { data, loading, error, load } = useLoad(path, null, 30000); const jobs = data?.jobs || [];
-  return <Shell title="My jobs" sub="Accept assignments, update visit progress and complete service reports.">
+  return <Shell title="My jobs" sub="View your assignments, update visit progress and send service reports to Customers.">
     <div className="p5-toolbar">{['All', 'Assigned', 'Accepted', 'In progress', 'Completed'].map(f => <button key={f} className={`p5-filter ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>{f}</button>)}</div>
-    <State loading={loading} error={error} empty={!jobs.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!jobs.length && !loading && !error} emptyTitle="No assignments yet" emptyText="New visits assigned to you will appear here." onRetry={load}/>
     {jobs.map(j => <Link key={j.id} className="p5-booking-row" to={`/crew/jobs/${j.id}`}><div><small>{gardenerJobLabel(j)} · {dateTime(j.booking?.scheduledStart)}</small><h3>{j.booking?.service?.name}</h3><p>{j.booking?.customer?.user?.fullName} · {j.booking?.address?.line1}, {j.booking?.address?.city}</p><small>{j.booking?.plants?.map(x => x.plant?.name).join(', ')}</small></div><div className="p5-right"><Pill>{statusLabel(j.status)}</Pill><span>Open job →</span></div></Link>)}
   </Shell>;
 }
@@ -668,14 +668,14 @@ export function GardenerJobDetailPage({ Shell }) {
   const canEditVisitPlants = ['ASSIGNED', 'ACCEPTED'].includes(assignment?.status) && ['GARDENER_ASSIGNED', 'GARDENER_ACCEPTED', 'ON_THE_WAY', 'ARRIVED'].includes(booking?.status);
   const loadAvailablePlants = async () => { try { const result = await request(`/gardener/jobs/${id}/plants/available`); setAvailablePlants(result.plants || []); } catch (e) { setMessage(errorText(e)); } };
   React.useEffect(() => { if (booking?.id && canEditVisitPlants) loadAvailablePlants(); }, [booking?.id, canEditVisitPlants]);
-  const addVisitPlant = async plantId => { setPlantBusy(true); setMessage(''); try { await request(`/gardener/jobs/${id}/plants`, { method: 'POST', body: json({ plantId }) }); setMessage('Plant added to this visit. Customer inventory was not changed.'); await Promise.all([load(), loadAvailablePlants()]); } catch (e) { setMessage(errorText(e)); } finally { setPlantBusy(false); } };
-  const removeVisitPlant = async plant => { if (!window.confirm(`Remove ${plant.name} from this visit? It will remain in the customer's plant collection.`)) return; setPlantBusy(true); setMessage(''); try { await request(`/gardener/jobs/${id}/plants/${plant.id}`, { method: 'DELETE' }); setMessage('Plant removed from this visit; customer inventory is unchanged.'); await Promise.all([load(), loadAvailablePlants()]); } catch (e) { setMessage(errorText(e)); } finally { setPlantBusy(false); } };
+  const addVisitPlant = async plantId => { setPlantBusy(true); setMessage(''); try { await request(`/gardener/jobs/${id}/plants`, { method: 'POST', body: json({ plantId }) }); setMessage('Plant added to this visit.'); await Promise.all([load(), loadAvailablePlants()]); } catch (e) { setMessage(errorText(e)); } finally { setPlantBusy(false); } };
+  const removeVisitPlant = async plant => { if (!window.confirm(`Remove ${plant.name} from this visit? The plant will stay in the customer's collection.`)) return; setPlantBusy(true); setMessage(''); try { await request(`/gardener/jobs/${id}/plants/${plant.id}`, { method: 'DELETE' }); setMessage('Plant removed from this visit.'); await Promise.all([load(), loadAvailablePlants()]); } catch (e) { setMessage(errorText(e)); } finally { setPlantBusy(false); } };
   const action = async (name, payload = {}) => { setBusy(true); setMessage(''); try { await request(`/gardener/jobs/${id}/${name}`, { method: 'POST', body: json(payload) }); setMessage('Job status updated.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   return <Shell title={booking?.service?.name || 'Job detail'} sub={`${gardenerJobLabel(assignment)} · ${dateTime(booking?.scheduledStart)}`}>
     <Notice error={error || (message && /failed|cannot|invalid|not found|required/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|required/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {assignment && <><div className="p5-booking-head"><div><Pill>{statusLabel(assignment.status)}</Pill><h2>{booking?.customer?.user?.fullName}</h2><p>{booking?.address?.line1}, {booking?.address?.city}, {booking?.address?.state}</p></div><strong>{booking?.service?.name}</strong></div>
-      <Panel title="Customer instructions"><p>{booking?.specialInstructions || 'No special instructions.'}</p><div className="p5-record-list">{booking?.plants?.map(x => <div className="p5-list-row" key={x.plantId}><div><b>{x.plant?.name}</b><small>{x.plant?.type || 'Plant'} · {statusLabel(x.plant?.healthStatus)}</small>{x.plant?.careRecords?.[0] && <><small>Latest care update: {x.plant.careRecords[0].title} · {dateTime(x.plant.careRecords[0].recordedAt)}</small>{x.plant.careRecords[0].notes && <small>{x.plant.careRecords[0].notes}</small>}</>}</div>{canEditVisitPlants && <Button variant="danger" disabled={plantBusy} onClick={() => removeVisitPlant(x.plant)}>Remove from visit</Button>}</div>)}</div>{canEditVisitPlants && <><Field label="Add another plant from the customer's collection"><select value="" onChange={e => { if (e.target.value) addVisitPlant(e.target.value); }} disabled={plantBusy}><option value="">Select plant to add</option>{availablePlants.map(plant => <option key={plant.id} value={plant.id}>{plant.name} · {statusLabel(plant.healthStatus)}</option>)}</select></Field><small>Adding or removing changes this visit's plant list only. The customer's permanent plant collection remains untouched.</small></>}{!canEditVisitPlants && <small>The visit plant list is locked once service work begins.</small>}</Panel>
-      <Panel title="Job actions" sub="Only valid server-side booking transitions are enabled."><div className="p5-actions">
+      <Panel title="Customer instructions"><p>{booking?.specialInstructions || 'No special instructions.'}</p><div className="p5-record-list">{booking?.plants?.map(x => <div className="p5-list-row" key={x.plantId}><div><b>{x.plant?.name}</b><small>{x.plant?.type || 'Plant'} · {statusLabel(x.plant?.healthStatus)}</small>{x.plant?.careRecords?.[0] && <><small>Latest care update: {x.plant.careRecords[0].title} · {dateTime(x.plant.careRecords[0].recordedAt)}</small>{x.plant.careRecords[0].notes && <small>{x.plant.careRecords[0].notes}</small>}</>}</div>{canEditVisitPlants && <Button variant="danger" disabled={plantBusy} onClick={() => removeVisitPlant(x.plant)}>Remove from visit</Button>}</div>)}</div>{canEditVisitPlants && <><Field label="Add another plant from the customer's collection"><select value="" onChange={e => { if (e.target.value) addVisitPlant(e.target.value); }} disabled={plantBusy}><option value="">Select plant to add</option>{availablePlants.map(plant => <option key={plant.id} value={plant.id}>{plant.name} · {statusLabel(plant.healthStatus)}</option>)}</select></Field><small>This visit only; the plant will remain in the Customer’s collection.</small></>}{!canEditVisitPlants && <small>The plant list is locked once service work begins.</small>}</Panel>
+      <Panel title="Job actions" sub="Update the visit as you work."><div className="p5-actions">
         {assignment.status === 'ASSIGNED' && <><Button disabled={busy} onClick={() => action('accept')}>Accept assignment</Button><Button variant="danger" disabled={busy} onClick={() => { const reason = window.prompt('Reason for rejecting this assignment (optional)') || ''; action('reject', { reason }); }}>Reject assignment</Button></>}
         {assignment.status === 'ACCEPTED' && booking.status === 'GARDENER_ACCEPTED' && <Button disabled={busy} onClick={() => action('on-the-way')}>Mark on the way</Button>}
         {assignment.status === 'ACCEPTED' && booking.status === 'ON_THE_WAY' && <Button disabled={busy} onClick={() => action('arrived')}>Mark arrived</Button>}
@@ -698,7 +698,7 @@ export function GardenerReportPage({ Shell }) {
   const save = async e => { e.preventDefault(); setSaving(true); setMessage(''); try { const plants = (booking?.plants || []).map(p => ({ plantId: p.plantId, healthStatus: plantStates[p.plantId] || p.plant?.healthStatus || 'HEALTHY', conditionNote: plantNotes[p.plantId] || null, recommendation: plantRecommendations[p.plantId] || null })); await request(`/gardener/jobs/${id}/report`, { method: 'PUT', body: json({ summary, observations: observations || null, recommendation: recommendation || null, nextCareAt: nextCareAt ? new Date(`${nextCareAt}T12:00:00`).toISOString() : null, checklistItems: checks, plants }) }); setMessage('Service report saved.'); await Promise.all([load(), reportState.load()]); } catch (e2) { setMessage(errorText(e2)); } finally { setSaving(false); } };
   const addPhoto = async e => { const file = e.target.files?.[0]; if (!file || !report?.id) { setMessage('Save the report first, then upload photos.'); return; } setPhotoBusy(true); try { const asset = await uploadToStorage(file, { kind: 'SERVICE_REPORT_PHOTO', targetType: 'SERVICE_REPORT', targetId: report.id }); await request(`/gardener/jobs/${id}/report/photos`, { method: 'POST', body: json({ objectKey: asset.objectKey, caption: file.name }) }); setMessage('Report photo uploaded.'); await reportState.load(); } catch (e2) { setMessage(errorText(e2)); } finally { setPhotoBusy(false); e.target.value = ''; } };
   const removePhoto = async photo => { if (!window.confirm('Remove this service evidence photo?')) return; setPhotoBusy(true); try { await request(`/gardener/jobs/${id}/report/photos/${photo.id}`, { method: 'DELETE' }); setMessage('Report photo removed.'); await reportState.load(); } catch (e) { setMessage(errorText(e)); } finally { setPhotoBusy(false); } };
-  return <Shell title="Service report" sub="Document the work, plant condition and recommendations before completion."><Notice error={error || (message && /failed|cannot|required|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|required|invalid/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
+  return <Shell title="Service report" sub="Record the work completed, the plant’s condition and your care recommendations."><Notice error={error || (message && /failed|cannot|required|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|required|invalid/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {booking && <form className="p5-panel" onSubmit={save}><Field label="Service summary"><textarea required minLength="1" maxLength="5000" value={summary} onChange={e => setSummary(e.target.value)}/></Field><Field label="Observations"><textarea maxLength="10000" value={observations} onChange={e => setObservations(e.target.value)}/></Field><Field label="Recommendations"><textarea maxLength="10000" value={recommendation} onChange={e => setRecommendation(e.target.value)}/></Field><Field label="Next care date"><input type="date" value={nextCareAt} onChange={e => setNextCareAt(e.target.value)}/></Field>
       <Panel title="Checklist"><div className="p5-record-list">{checks.map((c, i) => <label className="p5-check" key={c.id || i}><input type="checkbox" checked={!!c.completed} onChange={e => setChecks(current => current.map((x, j) => j === i ? { ...x, completed: e.target.checked } : x))}/><span>{c.label}</span></label>)}</div><div className="p5-actions"><Button variant="ghost" onClick={() => setChecks(current => [...current, { label: `Additional task ${current.length + 1}`, completed: false }])}>Add checklist item</Button></div></Panel>
       <Panel title="Plant condition"><div className="p5-record-list">{booking.plants?.map(p => <div className="p5-list-row" key={p.plantId}><div><b>{p.plant?.name}</b><small>Customer-reported status: {statusLabel(p.plant?.healthStatus)}</small></div><Field label="Observed condition"><select value={plantStates[p.plantId] || p.plant?.healthStatus || 'HEALTHY'} onChange={e => setPlantStates(current => ({ ...current, [p.plantId]: e.target.value }))}>{['EXCELLENT','HEALTHY','NEEDS_ATTENTION','CRITICAL'].map(x => <option key={x}>{x}</option>)}</select></Field><Field label="Condition notes"><textarea maxLength="5000" value={plantNotes[p.plantId] || ''} onChange={e => setPlantNotes(current => ({ ...current, [p.plantId]: e.target.value }))} placeholder="Describe what you observed…"/></Field><Field label="Care recommendation"><textarea maxLength="5000" value={plantRecommendations[p.plantId] || ''} onChange={e => setPlantRecommendations(current => ({ ...current, [p.plantId]: e.target.value }))} placeholder="Suggested next steps…"/></Field></div>)}</div></Panel>
@@ -710,7 +710,7 @@ export function GardenerReportPage({ Shell }) {
 export function GardenerReportsPage({ Shell }) {
   const { data, loading, error, load } = useLoad('/gardener/history', null, 30000);
   const jobs = data?.jobs || [];
-  return <Shell title="Completed reports" sub="Completed Gardener assignments and their service outcomes."><State loading={loading} error={error} empty={!jobs.length && !loading && !error} onRetry={load}/>
+  return <Shell title="Completed reports" sub="Your completed visits and service reports."><State loading={loading} error={error} empty={!jobs.length && !loading && !error} emptyTitle="No completed reports yet" emptyText="Reports you submit after visits will appear here." onRetry={load}/>
     {jobs.map(job => <Link className="p5-booking-row" key={job.id} to={`/crew/jobs/${job.id}`}><div><small>{gardenerJobLabel(job)} · {dateTime(job.completedAt || job.booking?.scheduledEnd)}</small><h3>{job.booking?.service?.name}</h3><p>{job.booking?.customer?.user?.fullName} · {job.booking?.address?.city}</p></div><div className="p5-right"><Pill tone="success">Completed</Pill><span>View report →</span></div></Link>)}
   </Shell>;
 }
@@ -724,9 +724,9 @@ export function GardenerAvailabilityPage({ Shell }) {
   const edit = slot => { setEditing(slot.id); setForm({ dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, endTime: slot.endTime, isActive: slot.isActive }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const toggle = async slot => { setBusy(true); setMessage(''); try { await request(`/gardener/availability/${slot.id}`, { method: 'PATCH', body: json({ isActive: !slot.isActive }) }); setMessage(slot.isActive ? 'Availability paused.' : 'Availability activated.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   const remove = async slot => { if (!window.confirm(`Delete the ${days[slot.dayOfWeek]} ${slot.startTime}–${slot.endTime} slot?`)) return; setBusy(true); setMessage(''); try { await request(`/gardener/availability/${slot.id}`, { method: 'DELETE' }); setMessage('Availability slot deleted.'); if (editing === slot.id) { setEditing(null); setForm(emptyForm); } await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
-  return <Shell title="Availability" sub="Control the days and hours when T-CARE operations can assign visits to you."><Notice error={error || (message && /failed|cannot|overlap|invalid|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|overlap|invalid|not found/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
+  return <Shell title="Availability" sub="Choose the days and hours when you are available for visits."><Notice error={error || (message && /failed|cannot|overlap|invalid|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|overlap|invalid|not found/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     <Panel title={editing ? 'Edit availability slot' : 'Add availability'}><form onSubmit={save}><FormGrid><Field label="Day"><select value={form.dayOfWeek} onChange={e => setForm({ ...form, dayOfWeek: Number(e.target.value) })}>{days.map((d,i) => <option value={i} key={d}>{d}</option>)}</select></Field><Field label="Start time"><input type="time" required value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })}/></Field><Field label="End time"><input type="time" required value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })}/></Field></FormGrid><div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Update hours' : 'Save hours'}</Button>{editing && <Button variant="ghost" disabled={busy} onClick={() => { setEditing(null); setForm(emptyForm); }}>Cancel edit</Button>}</div></form></Panel>
-    <Panel title="Saved weekly availability" sub="Pause a slot temporarily or remove it when it no longer applies.">{(data?.availability || []).length ? data.availability.map(slot => <div className="p5-list-row" key={slot.id}><div><b>{days[slot.dayOfWeek]}</b><small>{slot.startTime}–{slot.endTime}</small></div><Pill tone={slot.isActive ? 'success' : undefined}>{slot.isActive ? 'Active' : 'Paused'}</Pill><div className="p5-actions"><Button variant="ghost" disabled={busy} onClick={() => edit(slot)}>Edit</Button><Button variant="ghost" disabled={busy} onClick={() => toggle(slot)}>{slot.isActive ? 'Pause' : 'Activate'}</Button><Button variant="danger" disabled={busy} onClick={() => remove(slot)}>Delete</Button></div></div>) : <Empty title="No availability entered" text="Add the weekdays and time ranges when you can accept assignments."/>}</Panel>
+    <Panel title="Saved weekly availability" sub="Pause a slot temporarily or remove it when it no longer applies.">{(data?.availability || []).length ? data.availability.map(slot => <div className="p5-list-row" key={slot.id}><div><b>{days[slot.dayOfWeek]}</b><small>{slot.startTime}–{slot.endTime}</small></div><Pill tone={slot.isActive ? 'success' : undefined}>{slot.isActive ? 'Active' : 'Paused'}</Pill><div className="p5-actions"><Button variant="ghost" disabled={busy} onClick={() => edit(slot)}>Edit</Button><Button variant="ghost" disabled={busy} onClick={() => toggle(slot)}>{slot.isActive ? 'Pause' : 'Activate'}</Button><Button variant="danger" disabled={busy} onClick={() => remove(slot)}>Delete</Button></div></div>) : <Empty title="No availability entered" text="Add the days and hours when you are available to take on assignments."/>}</Panel>
   </Shell>;
 }
 
@@ -737,12 +737,12 @@ export function GardenerPayoutsPage({ Shell }) {
   const totals = data?.totals || {};
   const last = data?.lastPaidPayout;
   const pagination = data?.pagination;
-  return <Shell title="Payouts" sub="A read-only record of payouts entered by T-CARE operations. No estimated commission or earnings formula is assumed.">
+  return <Shell title="Payouts" sub="See your payout amounts, payment dates and current status.">
     <State loading={loading} error={error} onRetry={load}/>
     <div className="p5-metric-grid"><div className="p5-metric"><small>Total paid</small><b>{money(totals.paid)}</b></div><div className="p5-metric"><small>Pending payout</small><b>{money(totals.pending)}</b></div><div className="p5-metric"><small>Last payout</small><b>{last ? money(last.amount) : '—'}</b><small>{last ? dateTime(last.paidAt) : 'No paid payout recorded'}</small></div></div>
-    <Panel title="Payout history" sub="Only actual Payout ledger rows appear here. Totals cover the full ledger; history is paginated 25 records at a time."><div className="p5-actions"><Button variant="ghost" onClick={load}>Refresh ledger</Button></div>{payouts.length ? <RecordTable headers={['Recorded','Period','Amount','Status','Paid on']}>
+    <Panel title="Payout history"><div className="p5-actions"><Button variant="ghost" onClick={load}>Refresh</Button></div>{payouts.length ? <RecordTable headers={['Recorded','Period','Amount','Status','Paid on']}>
       {payouts.map(p => <tr key={p.id}><td>{dateTime(p.createdAt)}</td><td>{p.periodStart || p.periodEnd ? `${dateOnly(p.periodStart)} – ${dateOnly(p.periodEnd)}` : 'Not specified'}</td><td>{money(p.amount)}</td><td><Pill tone={p.status === 'PAID' ? 'success' : undefined}>{statusLabel(p.status)}</Pill></td><td>{p.paidAt ? dateTime(p.paidAt) : '—'}</td></tr>)}
-    </RecordTable> : <Empty title="No payout records yet" text="Payout entries will appear here once T-CARE operations records them."/>}
+    </RecordTable> : <Empty title="No payout records yet"/>}
       {pagination?.pages > 1 && <div className="p5-actions"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</Button><small>Page {pagination.page} of {pagination.pages}</small><Button variant="ghost" disabled={page >= pagination.pages} onClick={() => setPage(value => Math.min(pagination.pages, value + 1))}>Next</Button></div>}
     </Panel>
   </Shell>;
@@ -760,7 +760,7 @@ export function CustomerPaymentsPage({ Shell }) {
   const netTotal = Math.max(0, paidTotal - refundedTotal);
   const referenceFor = item => item.booking?.reference || item.subscription?.plan?.name || (item.bookingId ? 'Service booking' : 'Subscription');
   const kindFor = item => item.booking ? (item.booking.service?.name || 'Service booking') : item.subscription ? `${item.subscription.plan?.name || 'Subscription'}${item.subscription.plan?.billingCycle ? ` · ${item.subscription.plan.billingCycle}` : ''}` : 'T-CARE payment';
-  return <Shell title="Payments & refunds" sub="A read-only record of verified payments and refunds associated with your T-CARE account.">
+  return <Shell title="Payments & refunds" sub="See payments and refunds for your visits and subscription plans.">
     <div className="p5-metric-grid">
       <div className="p5-metric"><small>Recorded paid amount</small><b>{money(paidTotal)}</b></div>
       <div className="p5-metric"><small>Processed refunds</small><b>{money(refundedTotal)}</b></div>
@@ -768,8 +768,8 @@ export function CustomerPaymentsPage({ Shell }) {
       <div className="p5-metric"><small>Payment records</small><b>{payments.length}</b></div>
     </div>
     <Notice error={error}/>
-    <Panel title="Payment history" sub="Payment status is updated from verified payment-provider events. This page does not initiate charges or refunds. Invoice PDF downloads are not currently available." action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
-      <State loading={loading} error={error} empty={!payments.length && !loading && !error} onRetry={load}/>
+    <Panel title="Payment history" action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
+      <State loading={loading} error={error} empty={!payments.length && !loading && !error} emptyTitle="No payment records yet" emptyText="Payments and refunds for your bookings and plans will appear here." onRetry={load}/>
       {payments.length > 0 && <RecordTable headers={['Date','For','Reference','Amount','Status','Paid at']}>
         {payments.map(item => <tr key={item.id}>
           <td>{dateTime(item.createdAt)}</td>
@@ -781,7 +781,7 @@ export function CustomerPaymentsPage({ Shell }) {
         </tr>)}
       </RecordTable>}
     </Panel>
-    {payments.some(item => item.refunds?.length) && <Panel title="Refund records" sub="Only refund entries returned for your own payment records are shown.">
+    {payments.some(item => item.refunds?.length) && <Panel title="Refund records">
       {payments.flatMap(item => (item.refunds || []).map(refund => ({ ...refund, paymentReference: referenceFor(item) }))).map(refund => <div className="p5-list-row" key={refund.id}>
         <div><b>{money(refund.amount)} · {statusLabel(refund.status)}</b><small>{refund.paymentReference} · Requested {dateTime(refund.createdAt)}</small>{refund.reason && <small>Reason: {refund.reason}</small>}</div>
         <Pill tone={refund.status === 'REFUNDED' || refund.status === 'PARTIALLY_REFUNDED' ? 'success' : 'warning'}>{statusLabel(refund.status)}</Pill>
@@ -797,10 +797,10 @@ export function NotificationsPage({ Shell }) {
   const [mutationError,setMutationError] = React.useState('');
   const markRead = async id => { setMutationError(''); try { await request(`/notifications/${id}/read`, { method: 'POST', body: '{}' }); await load(); window.dispatchEvent(new Event('tcare:notifications-changed')); } catch (error) { setMutationError(errorText(error)); } };
   const markAll = async () => { setMutationError(''); try { await request('/notifications/read-all', { method: 'POST', body: '{}' }); await load(); window.dispatchEvent(new Event('tcare:notifications-changed')); } catch (error) { setMutationError(errorText(error)); } };
-  return <Shell title="Notifications" sub="Your booking, service and account updates from T-CARE."><Notice error={error || mutationError}/><div className="p5-toolbar"><button className={`p5-filter ${!unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(false)}>All</button><button className={`p5-filter ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(true)}>Unread ({data?.unreadCount ?? '—'})</button><Button variant="ghost" onClick={markAll}>Mark all read</Button></div><State loading={loading} error={error} empty={!items.length && !loading && !error} onRetry={load}/>{items.map(n => <div className={`p5-notification ${n.readAt ? '' : 'unread'}`} key={n.id}><div><Pill>{statusLabel(n.type)}</Pill><h3>{n.title}</h3><p>{n.body}</p><small>{dateTime(n.createdAt)}</small></div>{!n.readAt && <Button variant="ghost" onClick={() => markRead(n.id)}>Mark read</Button>}</div>)}</Shell>;
+  return <Shell title="Notifications" sub="Updates about your bookings, visits and account."><Notice error={error || mutationError}/><div className="p5-toolbar"><button className={`p5-filter ${!unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(false)}>All</button><button className={`p5-filter ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(true)}>Unread ({data?.unreadCount ?? '—'})</button><Button variant="ghost" onClick={markAll}>Mark all read</Button></div><State loading={loading} error={error} empty={!items.length && !loading && !error} emptyTitle="No updates yet" emptyText="Booking, visit and account updates will appear here." onRetry={load}/>{items.map(n => <div className={`p5-notification ${n.readAt ? '' : 'unread'}`} key={n.id}><div><Pill>{statusLabel(n.type)}</Pill><h3>{n.title}</h3><p>{n.body}</p><small>{dateTime(n.createdAt)}</small></div>{!n.readAt && <Button variant="ghost" onClick={() => markRead(n.id)}>Mark read</Button>}</div>)}</Shell>;
 }
 
-// ---------------- Admin: live operations, user management, KYC, service catalogue, issues, CMS, analytics ----------------
+// ---------------- Admin: operations, accounts, verification, services, issues, content and analytics ----------------
 export function AdminNotificationsPage({ Shell }) {
   const [filter, setFilter] = React.useState('');
   const [unreadOnly, setUnreadOnly] = React.useState(false);
@@ -814,10 +814,10 @@ export function AdminNotificationsPage({ Shell }) {
   const notifications = data?.notifications || [];
   React.useEffect(() => { if (!form.userId && users.length) setForm(current => ({ ...current, userId: users[0].id })); }, [users, form.userId]);
   const send = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/notifications/admin/send', { method: 'POST', body: json(form) }); setMessage('Notification created and delivered to the in-app inbox.'); setForm(current => ({ ...current, title: '', body: '' })); await load(); } catch (e2) { setMessage(errorText(e2)); } finally { setBusy(false); } };
-  return <Shell title="Notification centre" sub="Inspect saved notifications and send a targeted in-app update to an active account."><Notice error={error || usersError || (message && /failed|cannot|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid/i.test(message) ? message : ''}/>
+  return <Shell title="Notification centre" sub="Review account updates and send messages to active Customers or Gardeners."><Notice error={error || usersError || (message && /failed|cannot|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid/i.test(message) ? message : ''}/>
     <Panel title="Send an in-app notification"><form onSubmit={send}><FormGrid><Field label="Recipient"><select required value={form.userId} onChange={e => setForm({ ...form, userId: e.target.value })} disabled={usersLoading || !users.length}><option value="">{usersLoading ? 'Loading accounts…' : 'Select active user'}</option>{users.map(u => <option key={u.id} value={u.id}>{u.fullName} · {u.role} · {u.email}</option>)}</select></Field><Field label="Notification type"><select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>{['BOOKING','SERVICE','PLANT_CARE','SYSTEM'].map(x => <option key={x}>{x}</option>)}</select></Field></FormGrid><Field label="Title"><input required minLength="1" maxLength="160" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></Field><Field label="Message"><textarea required minLength="1" maxLength="4000" value={form.body} onChange={e => setForm({ ...form, body: e.target.value })}/></Field><Button type="submit" disabled={busy || usersLoading || !form.userId}>{busy ? 'Sending…' : 'Create notification'}</Button></form></Panel>
     <div className="p5-toolbar"><select value={filter} onChange={e => setFilter(e.target.value)}><option value="">All types</option>{['BOOKING','SERVICE','PLANT_CARE','SYSTEM'].map(x => <option key={x}>{x}</option>)}</select><button className={`p5-filter ${!unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(false)}>All</button><button className={`p5-filter ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly(true)}>Unread only</button><Button variant="ghost" onClick={load}>Refresh</Button></div>
-    <State loading={loading} error={error} empty={!notifications.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!notifications.length && !loading && !error} emptyTitle="No notifications yet" emptyText="Customer and Gardener updates will appear here." onRetry={load}/>
     {notifications.map(n => <div className={`p5-notification ${n.readAt ? '' : 'unread'}`} key={n.id}><div><Pill>{statusLabel(n.type)}</Pill><h3>{n.title}</h3><p>{n.body}</p><small>{n.user?.fullName || n.user?.email || n.userId} · {n.user?.role || ''} · {dateTime(n.createdAt)} · {n.readAt ? 'Read' : 'Unread'}</small></div></div>)}
   </Shell>;
 }
@@ -833,32 +833,32 @@ export function AdminDashboardPage({ Shell }) {
     ['Active bookings', o?.activeBookings], ['Pending KYC', o?.pendingKyc], ['Open issues', o?.openIssues],
     ['Pending reviews', o?.pendingReviews], ['Pending payments', o?.pendingPayments]
   ];
-  return <Shell title="Operations pulse" sub="Live operational, financial and subscription metrics from the connected T-CARE database.">
+  return <Shell title="Operations overview" sub="See current bookings, accounts, payments and subscriptions.">
     <State loading={loading} error={error} onRetry={load}/>
     {o && <>
       <div className="p5-metric-grid">{metrics.map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value ?? 0}</b></div>)}</div>
-      <Panel title="Company collection snapshot" sub="Recorded payment events only. These figures are not accounting revenue or profit.">
+      <Panel title="Payment summary" sub="Totals reflect recorded payments and refunds, not accounting revenue or profit.">
         <div className="p5-metric-grid">
           {[["Gross collected",money(f.grossCollected)],['Refunded',money(f.refunded)],['Net collected',money(f.netCollected)],['Paid transactions',f.paidTransactionCount ?? 0],['Paid Gardener payouts',money(f.paidPayouts)],['Pending Gardener payouts',money(f.pendingPayouts)]].map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value}</b></div>)}
         </div>
       </Panel>
-      <Panel title="Subscription pulse" sub="Current persisted subscription states."><div className="p5-metric-grid"><div className="p5-metric"><small>Active subscriptions</small><b>{o.subscriptions?.active ?? 0}</b></div><div className="p5-metric"><small>Pending subscriptions</small><b>{o.subscriptions?.pending ?? 0}</b></div></div><Link className="p5-button ghost" to="/hq/plans">Open subscription management</Link></Panel>
-      <Panel title="Bookings by day" sub="Bookings created in the last 14 calendar days; grouped by UTC date.">
+      <Panel title="Subscriptions by status"><div className="p5-metric-grid"><div className="p5-metric"><small>Active subscriptions</small><b>{o.subscriptions?.active ?? 0}</b></div><div className="p5-metric"><small>Pending subscriptions</small><b>{o.subscriptions?.pending ?? 0}</b></div></div><Link className="p5-button ghost" to="/hq/plans">Manage subscriptions</Link></Panel>
+      <Panel title="Bookings by day" sub="Bookings created in the past 14 days.">
         {(o.dailyBookings || []).length ? <RecordTable headers={['Day','New bookings','Completed','Cancelled']}>{o.dailyBookings.map(row => <tr key={row.day}><td>{row.day}</td><td>{row.total}</td><td>{row.completed}</td><td>{row.cancelled}</td></tr>)}</RecordTable> : <Empty title="No daily booking activity"/>}
       </Panel>
     </>}
     <div className="p5-columns">
-      <Panel title="Popular services" sub="Top services by non-cancelled bookings in the last 30 days.">
-        <State loading={popularState.loading} error={popularState.error} empty={!popularState.data?.services?.length && !popularState.loading && !popularState.error} onRetry={popularState.load}/>
+      <Panel title="Popular services" sub="Most booked services in the past 30 days.">
+        <State loading={popularState.loading} error={popularState.error} empty={!popularState.data?.services?.length && !popularState.loading && !popularState.error} emptyTitle="No popular services yet" emptyText="Booking trends will appear after customers book services." onRetry={popularState.load}/>
         {(popularState.data?.services || []).map((service,index) => <div className="p5-list-row" key={service.id}><div><b>{index+1}. {service.name}</b><small>{service.category} · {statusLabel(service.status)}</small></div><Pill>{service.bookingCount} bookings</Pill></div>)}
       </Panel>
-      <Panel title="Recent admin activity" sub="Latest actions recorded in the audit log.">
-        <State loading={activityState.loading} error={activityState.error} empty={!activityState.data?.activities?.length && !activityState.loading && !activityState.error} onRetry={activityState.load}/>
-        {(activityState.data?.activities || []).map(activity => <div className="p5-list-row" key={activity.id}><div><b>{statusLabel(activity.action)} · {activity.entityType}</b><small>{activity.actor?.fullName || activity.actor?.email || 'System'} · {activity.actor?.role || 'SYSTEM'} · {dateTime(activity.createdAt)}</small><small>{activity.entityId || 'No entity ID'}</small></div></div>)}
+      <Panel title="Recent activity" sub="Recent changes made in T-CARE.">
+        <State loading={activityState.loading} error={activityState.error} empty={!activityState.data?.activities?.length && !activityState.loading && !activityState.error} emptyTitle="No recent activity" emptyText="New account, booking and payment activity will appear here." onRetry={activityState.load}/>
+        {(activityState.data?.activities || []).map(activity => <div className="p5-list-row" key={activity.id}><div><b>{statusLabel(activity.action)} · {activity.entityType}</b><small>{activity.actor?.fullName || activity.actor?.email || 'System'} · {activity.actor?.role || 'SYSTEM'} · {dateTime(activity.createdAt)}</small><small>{activity.entityId || 'No record reference'}</small></div></div>)}
         <Link to="/hq/money" className="p5-button ghost">Open finance records</Link>
       </Panel>
     </div>
-    <div className="p5-columns"><Panel title="Admin work queues"><Link className="p5-list-row" to="/hq/crew"><b>Gardener KYC review</b><span>Review documents and eligibility →</span></Link><Link className="p5-list-row" to="/hq/visits"><b>Booking operations</b><span>Assign verified Gardeners and manage permitted statuses →</span></Link><Link className="p5-list-row" to="/hq/reviews"><b>Reviews and customer issues</b><span>Moderate ratings and resolve reports →</span></Link><Link className="p5-list-row" to="/hq/notifications"><b>Notification centre</b><span>Inspect customer and Gardener updates →</span></Link></Panel><Panel title="Refresh data"><p>Dashboard data refreshes while this page is visible. Refresh individual sections when you need an immediate read.</p><div className="p5-actions"><Button variant="ghost" onClick={load}>Refresh overview</Button><Button variant="ghost" onClick={activityState.load}>Refresh activity</Button><Button variant="ghost" onClick={popularState.load}>Refresh popular services</Button></div></Panel></div>
+    <div className="p5-columns"><Panel title="Work queues"><Link className="p5-list-row" to="/hq/crew"><b>Gardener verification</b><span>Review identity documents →</span></Link><Link className="p5-list-row" to="/hq/visits"><b>Bookings</b><span>Assign Gardeners and update booking status →</span></Link><Link className="p5-list-row" to="/hq/reviews"><b>Reviews and customer issues</b><span>Review feedback and resolve reports →</span></Link><Link className="p5-list-row" to="/hq/notifications"><b>Notification centre</b><span>Review and send account updates →</span></Link></Panel><Panel title="Refresh data"><div className="p5-actions"><Button variant="ghost" onClick={load}>Refresh overview</Button><Button variant="ghost" onClick={activityState.load}>Refresh activity</Button><Button variant="ghost" onClick={popularState.load}>Refresh popular services</Button></div></Panel></div>
   </Shell>;
 }
 
@@ -893,9 +893,9 @@ export function AdminSubscriptionsPage({ Shell }) {
     try { await request(`/subscriptions/admin/${subscription.id}/status`, { method: 'PATCH', body: json({ status }) }); setMessage(`Subscription status updated to ${status}.`); await subscriptionsState.load(); }
     catch (e) { setMessage(errorText(e)); await subscriptionsState.load(); }
   };
-  return <Shell title="Subscription management" sub="Create Admin-owned plans and track Customer subscription records. Payment-dependent activation remains guarded by verified payment records.">
+  return <Shell title="Subscription management" sub="Create and update plans, then review customer subscriptions.">
     <Notice error={plansState.error || subscriptionsState.error || (message && /failed|cannot|not found|unsupported|required|payment/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|unsupported|required|payment/i.test(message) ? message : ''}/>
-    <Panel title={editing ? 'Edit subscription plan' : 'Create subscription plan'} sub="Customer subscription plans are published from this Admin-managed catalogue.">
+    <Panel title={editing ? 'Edit subscription plan' : 'Create subscription plan'} sub="Set the plan details customers will see.">
       <form onSubmit={savePlan}><FormGrid>
         <Field label="Plan name"><input required minLength="2" maxLength="120" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></Field>
         <Field label="Billing duration"><select value={form.billingCycle} onChange={e => setForm({ ...form, billingCycle: e.target.value })}>{['1 month','3 months','6 months','12 months','24 months'].map(c => <option key={c}>{c}</option>)}</select></Field>
@@ -905,13 +905,13 @@ export function AdminSubscriptionsPage({ Shell }) {
       </FormGrid><Field label="Description"><textarea maxLength="2000" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}/></Field>
       <div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save plan changes' : 'Create plan'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm(initialForm); }}>Cancel</Button>}</div></form>
     </Panel>
-    <Panel title="Plan catalogue" sub={`${plans.length} Admin-managed plans`}>
-      <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} onRetry={plansState.load}/>
-      {plans.map(plan => <div className="p5-list-row" key={plan.id}><div><b>{plan.name} · {money(plan.price)}</b><small>{plan.billingCycle} · {plan.plantLimit ? `${plan.plantLimit} plants` : 'No plant limit'} · {statusLabel(plan.status)} · {plan._count?.subscriptions ?? '—'} subscriptions</small><small>{plan.description || 'No description supplied.'}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(plan.id); setForm({ name: plan.name, description: plan.description || '', billingCycle: plan.billingCycle, plantLimit: plan.plantLimit ?? '', price: String(plan.price), status: plan.status }); }}>Edit</Button><Button variant="danger" onClick={() => deletePlan(plan)}>Delete / deactivate</Button></div></div>)}
+    <Panel title="Plans" sub={`${plans.length} plans`}>
+      <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} emptyTitle="No plans created" emptyText="Create a plan to make it available for Customers." onRetry={plansState.load}/>
+      {plans.map(plan => <div className="p5-list-row" key={plan.id}><div><b>{plan.name} · {money(plan.price)}</b><small>{plan.billingCycle} · {plan.plantLimit ? `${plan.plantLimit} plants` : 'No plant limit'} · {statusLabel(plan.status)} · {plan._count?.subscriptions ?? '—'} subscriptions</small><small>{plan.description || 'No description added yet.'}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(plan.id); setForm({ name: plan.name, description: plan.description || '', billingCycle: plan.billingCycle, plantLimit: plan.plantLimit ?? '', price: String(plan.price), status: plan.status }); }}>Edit</Button><Button variant="danger" onClick={() => deletePlan(plan)}>Delete / deactivate</Button></div></div>)}
     </Panel>
-    <Panel title="Customer subscription records" sub="Admin can review and change lifecycle states. A PENDING subscription cannot become ACTIVE until a verified PAID payment record exists.">
+    <Panel title="Customer subscriptions" sub="Activate a pending subscription only after confirming payment.">
       <div className="p5-toolbar"><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">All subscription states</option>{['PENDING','ACTIVE','PAUSED','CANCELLED','EXPIRED'].map(s => <option key={s}>{s}</option>)}</select><Button variant="ghost" onClick={subscriptionsState.load}>Refresh</Button></div>
-      <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!visibleSubscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} onRetry={subscriptionsState.load}/>
+      <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!visibleSubscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} emptyTitle="No subscriptions to show" emptyText="Customer subscription records will appear here." onRetry={subscriptionsState.load}/>
       {visibleSubscriptions.map(item => <div className="p5-list-row" key={item.id}><div><b>{item.customer?.user?.fullName || 'Customer'} · {item.plan?.name}</b><small>{item.customer?.user?.email} · {item.plan?.billingCycle} · {money(item.plan?.price)}</small><small>{statusLabel(item.status)} · Created {dateTime(item.createdAt)} · Renews {dateOnly(item.renewsAt)}</small></div><div className="p5-actions"><select aria-label="New subscription status" value={item.status} onChange={e => updateSubscription(item, e.target.value)}>{['PENDING','ACTIVE','PAUSED','CANCELLED','EXPIRED'].map(s => <option key={s}>{s}</option>)}</select></div></div>)}
     </Panel>
   </Shell>;
@@ -942,18 +942,18 @@ export function AdminFinancePage({ Shell }) {
     } catch (error) { setReceiptError(errorText(error)); }
     finally { setReceiptBusy(''); }
   };
-  return <Shell title="Finance visibility" sub="Payment history, receipt delivery and Gardener payout records from verified transactions.">
+  return <Shell title="Finance" sub="Review payments, receipt delivery and Gardener payouts.">
     <Notice error={overviewState.error || paymentsState.error || payoutsState.error || receiptError} success={receiptNotice}/>
     <State loading={overviewState.loading} error={overviewState.error} onRetry={overviewState.load}/>
     {overviewState.data && <div className="p5-metric-grid">{[["Gross collected",money(f.grossCollected)],['Refunded',money(f.refunded)],['Net collected',money(f.netCollected)],['Paid transactions',f.paidTransactionCount ?? 0],['Payouts paid',money(f.paidPayouts)],['Payouts pending',money(f.pendingPayouts)]].map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value}</b></div>)}</div>}
-    <Panel title="Payment ledger" sub="Search and review all recorded payment attempts, confirmed transactions, refunds and receipt delivery status.">
+    <Panel title="Payments" sub="Search payments, refunds and receipt status.">
       <form className="p5-toolbar" onSubmit={event=>{event.preventDefault();setPaymentPage(1);setPaymentSearch(paymentSearchInput.trim().slice(0,120));}}>
         <input type="search" aria-label="Search payments" maxLength={120} placeholder="Search customer, email, service or transaction…" value={paymentSearchInput} onChange={event=>setPaymentSearchInput(event.target.value)}/>
         <Button type="submit">Search</Button>
         <Button variant="ghost" type="button" onClick={()=>{setPaymentSearchInput('');setPaymentSearch('');setPaymentPage(1);}}>Clear</Button>
         <Button variant="ghost" type="button" onClick={paymentsState.load}>Refresh</Button>
       </form>
-      <State loading={paymentsState.loading} error={paymentsState.error} empty={!payments.length && !paymentsState.loading && !paymentsState.error} onRetry={paymentsState.load}/>
+      <State loading={paymentsState.loading} error={paymentsState.error} empty={!payments.length && !paymentsState.loading && !paymentsState.error} emptyTitle="No payments recorded" emptyText="Confirmed payments will appear here." onRetry={paymentsState.load}/>
       {payments.length > 0 && <RecordTable headers={['Created','Customer','Reference / purpose','Amount','Method','Status','Transaction ID','Receipt','Action']}>
         {payments.map(p=>{
           const email=p.booking?.customer?.user?.email||p.subscription?.customer?.user?.email||'';
@@ -980,8 +980,8 @@ export function AdminFinancePage({ Shell }) {
         </div>
       </div>}
     </Panel>
-    <Panel title="Gardener payout ledger" sub="Only existing payout records are displayed. Do not treat completed service value as a payout or earnings calculation.">
-      <State loading={payoutsState.loading} error={payoutsState.error} empty={!payouts.length && !payoutsState.loading && !payoutsState.error} onRetry={payoutsState.load}/>
+    <Panel title="Gardener payouts" sub="Review payout amounts and status recorded for Gardeners.">
+      <State loading={payoutsState.loading} error={payoutsState.error} empty={!payouts.length && !payoutsState.loading && !payoutsState.error} emptyTitle="No Gardener payouts yet" emptyText="Payout records will appear here when payments are processed." onRetry={payoutsState.load}/>
       {payouts.length > 0 && <RecordTable headers={['Gardener','Amount','Period','Status','Paid at','Created']}>
         {payouts.map(p => <tr key={p.id}><td>{p.gardener?.user?.fullName || 'Gardener'}<small>{p.gardener?.user?.email || ''}</small></td><td>{money(p.amount)}</td><td>{dateOnly(p.periodStart)} – {dateOnly(p.periodEnd)}</td><td><Pill tone={p.status === 'PAID' ? 'success' : 'warning'}>{statusLabel(p.status)}</Pill></td><td>{dateTime(p.paidAt)}</td><td>{dateTime(p.createdAt)}</td></tr>)}
       </RecordTable>}
@@ -1009,7 +1009,7 @@ export function AdminServicesPage({ Shell }) {
     try { await request(`/services/admin/${service.id}/prices/${price.id}`, { method: 'PATCH', body: json({ amount, minPlants: minText.trim() ? Number(minText) : null, maxPlants: maxText.trim() ? Number(maxText) : null }) }); setMessage('Price tier updated.'); await load(); } catch (e) { setMessage(errorText(e)); }
   };
   const deletePrice = async (service, price) => { if (!window.confirm(`Delete the ${money(price.amount)} price tier for ${service.name}?`)) return; try { await request(`/services/admin/${service.id}/prices/${price.id}`, { method: 'DELETE' }); setMessage('Price tier deleted.'); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Service catalogue" sub="Manage customer-visible services, availability and effective price tiers."><Notice error={error || (message && /failed|cannot|invalid|already|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|already|not found/i.test(message) ? message : ''}/>
+  return <Shell title="Service catalogue" sub="Manage the services Customers can book, including availability and prices."><Notice error={error || (message && /failed|cannot|invalid|already|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|already|not found/i.test(message) ? message : ''}/>
     <Panel title={editing ? 'Edit service' : 'Create service'}><form onSubmit={saveService}><FormGrid><Field label="Service name"><input required minLength="2" maxLength="120" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></Field><Field label="Category"><input required maxLength="80" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}/></Field><Field label="Duration label"><input required maxLength="80" value={form.durationLabel} onChange={e => setForm({ ...form, durationLabel: e.target.value })}/></Field><Field label="Duration minutes"><input type="number" min="1" max="1440" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })}/></Field><Field label="Status"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>ACTIVE</option><option>INACTIVE</option></select></Field></FormGrid><Field label="Description"><textarea required maxLength="2000" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}/></Field><div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Update service' : 'Create service'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm({ name: '', description: '', category: 'Care', durationLabel: '60 min', durationMinutes: 60, status: 'ACTIVE' }); }}>Cancel</Button>}</div></form></Panel>
     <State loading={loading} error={error} onRetry={load}/>
     {!loading && <div className="p5-record-list">{services.map(s => <Panel key={s.id} title={s.name} sub={`${s.category} · ${s.durationLabel} · ${statusLabel(s.status)}`} action={<div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(s.id); setForm({ name: s.name, description: s.description, category: s.category, durationLabel: s.durationLabel, durationMinutes: s.durationMinutes || 60, status: s.status }); }}>Edit</Button><Button variant="danger" onClick={() => deactivate(s)}>Delete / deactivate</Button></div>}>
@@ -1017,7 +1017,7 @@ export function AdminServicesPage({ Shell }) {
         {(s.prices || []).map(p => <tr key={p.id}><td>{money(p.amount)}</td><td>{p.minPlants ?? 'Any'}</td><td>{p.maxPlants ?? 'No limit'}</td><td>{dateOnly(p.effectiveFrom)}</td><td>{p.effectiveTo ? dateOnly(p.effectiveTo) : 'Open ended'}</td><td><div className="p5-actions"><Button variant="ghost" onClick={() => editPrice(s, p)}>Edit</Button><Button variant="danger" onClick={() => deletePrice(s, p)}>Delete</Button></div></td></tr>)}
       </RecordTable>
       <form className="p5-inline-form" onSubmit={e => addPrice(s.id, e)}><Field label="Amount (INR)"><input required type="number" min="0" step="0.01" value={priceForms[s.id]?.amount ?? ''} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { minPlants: 1, maxPlants: '', ...v[s.id], amount: e.target.value } }))}/></Field><Field label="Min plants"><input type="number" min="1" value={priceForms[s.id]?.minPlants ?? 1} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { amount: '', maxPlants: '', ...v[s.id], minPlants: e.target.value } }))}/></Field><Field label="Max plants (optional)"><input type="number" min="1" value={priceForms[s.id]?.maxPlants ?? ''} onChange={e => setPriceForms(v => ({ ...v, [s.id]: { amount: '', minPlants: 1, ...v[s.id], maxPlants: e.target.value } }))}/></Field><Button type="submit" disabled={busy}>Add price tier</Button></form>
-    </Panel>)}{!services.length && <Empty title="No services configured" text="Create the actual service names and price tiers agreed by T-CARE."/>}</div>}
+    </Panel>)}{!services.length && <Empty title="No services configured" text="Add a service and its prices to make them available for booking."/>}</div>}
   </Shell>;
 }
 
@@ -1085,7 +1085,7 @@ export function AdminAccountManagementPage({ Shell }) {
     if (!credential) return;
     setError(''); setMessage('');
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
+      if (!navigator.clipboard?.writeText) throw new Error('Your browser could not copy the password automatically. Select the password and copy it manually.');
       await navigator.clipboard.writeText(credential.password);
       setMessage('Temporary password copied. Share it through a trusted channel, then clear it from this screen.');
     } catch (copyError) {
@@ -1093,10 +1093,10 @@ export function AdminAccountManagementPage({ Shell }) {
     }
   };
 
-  return <Shell title="Account management" sub="Create managed Customer and Gardener accounts, or restore access to an existing Customer.">
+  return <Shell title="Account management" sub="Create Customer and Gardener accounts or reset an existing Customer’s password.">
     <Notice error={error} success={message}/>
     <div className="p5-columns">
-      <Panel title="Create an account" sub="A secure temporary password is generated by the server and shown only once.">
+      <Panel title="Create an account" sub="A temporary password will appear once after the account is created.">
         <form onSubmit={createAccount}>
           <FormGrid>
             <Field label="Full name"><input required minLength="2" maxLength="100" autoComplete="name" value={form.fullName} onChange={event => updateForm('fullName', event.target.value)}/></Field>
@@ -1104,12 +1104,12 @@ export function AdminAccountManagementPage({ Shell }) {
             <Field label="Phone number (optional)"><input type="tel" maxLength="20" autoComplete="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)}/></Field>
             <Field label="Account type"><select value={form.role} onChange={event => updateForm('role', event.target.value)}><option value="CUSTOMER">Customer</option><option value="GARDENER">Gardener</option></select></Field>
           </FormGrid>
-          <p className="p5-account-security-note">Creating an account never replaces an existing record. Confirm the email address with the person before sharing credentials.</p>
+          <p className="p5-account-security-note">Check the email address before creating the account. Share the temporary password through a trusted channel.</p>
           <div className="p5-actions"><Button type="submit" disabled={Boolean(busy)}><UserPlus size={16}/>{busy === 'create' ? 'Creating account…' : 'Create account'}</Button></div>
         </form>
       </Panel>
 
-      <Panel title="Find a Customer" sub="Search by the exact email address. Resetting changes only the password and session version; customer records stay intact.">
+      <Panel title="Find a Customer" sub="Search by the Customer's email address to reset their password.">
         <form onSubmit={findCustomer}>
           <Field label="Customer email address"><input required type="email" maxLength="254" autoComplete="email" value={searchEmail} onChange={event => setSearchEmail(event.target.value)}/></Field>
           <div className="p5-actions"><Button type="submit" disabled={Boolean(busy)}>{busy === 'lookup' ? 'Searching…' : 'Find Customer'}</Button></div>
@@ -1122,12 +1122,12 @@ export function AdminAccountManagementPage({ Shell }) {
       </Panel>
     </div>
 
-    {credential && <Panel title={credential.action === 'created' ? 'Account credentials' : 'New Customer credentials'} sub="This temporary password is displayed only in this response. T-CARE never stores or reveals it in plaintext.">
+    {credential && <Panel title={credential.action === 'created' ? 'Account credentials' : 'New Customer credentials'} sub="Copy this temporary password now. It will not be shown again.">
       <div className="p5-credential-display">
         <div><small>Login email</small><b>{credential.email}</b></div>
         <div><small>Temporary password</small><code>{credential.password}</code></div>
       </div>
-      <p className="p5-account-security-note">Copy it now and provide it to the account holder through a trusted channel. It cannot be retrieved after it is cleared or this page is left.</p>
+      <p className="p5-account-security-note">Share it through a trusted channel, then clear it from this screen.</p>
       <div className="p5-actions"><Button onClick={copyPassword}><Copy size={16}/>Copy temporary password</Button><Button variant="ghost" onClick={() => setCredential(null)}>Clear credentials</Button></div>
     </Panel>}
   </Shell>;
@@ -1137,10 +1137,10 @@ export function AdminUsersPage({ Shell, role }) {
   const [search, setSearch] = React.useState(''); const [status, setStatus] = React.useState(''); const path = `/admin/users?limit=100${role ? `&role=${role}` : ''}${status ? `&status=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
   const { data, loading, error, load } = useLoad(path, null, 30000); const users = data?.users || []; const [message, setMessage] = React.useState('');
   const updateStatus = async (user, next) => { if (user.role === 'ADMIN') return; if (!window.confirm(`Set ${user.fullName} to ${next}?`)) return; try { await request(`/admin/users/${user.id}/status`, { method: 'PATCH', body: json({ status: next }) }); setMessage(`Account status changed to ${next}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title={role === 'GARDENER' ? 'Gardeners' : 'Customers'} sub="Live accounts from PostgreSQL, with role, status, verification and activity fields.">
+  return <Shell title={role === 'GARDENER' ? 'Gardeners' : 'Customers'} sub="Search accounts and review their status, email verification and recent activity.">
     <Notice error={error || (message && /failed|cannot|not found|forbidden/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|forbidden/i.test(message) ? message : ''}/>
     <div className="p5-toolbar"><input placeholder="Search name, email or phone" value={search} onChange={e => setSearch(e.target.value)}/><select value={status} onChange={e => setStatus(e.target.value)}><option value="">All account statuses</option>{['ACTIVE','PENDING','BLOCKED','INACTIVE'].map(s => <option key={s}>{s}</option>)}</select><Button variant="ghost" onClick={load}>Refresh</Button></div>
-    <State loading={loading} error={error} empty={!users.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!users.length && !loading && !error} emptyTitle="No accounts match your search" emptyText="Try another name, email address or account status." onRetry={load}/>
     {!loading && <RecordTable headers={['User', 'Role', 'Email verified', 'Account status', 'Last login', 'Actions']}>
       {users.map(u => <tr key={u.id}><td><Link to={`/hq/people/${u.id}`}><b>{u.fullName}</b></Link><small>{u.email}</small></td><td>{u.role}</td><td>{u.emailVerifiedAt ? 'Verified' : 'Unverified'}</td><td><Pill tone={u.status === 'ACTIVE' ? 'success' : 'warning'}>{u.status}</Pill></td><td>{dateTime(u.lastLoginAt)}</td><td><div className="p5-actions">{u.status !== 'BLOCKED' ? <Button variant="danger" onClick={() => updateStatus(u, 'BLOCKED')}>Block</Button> : <Button onClick={() => updateStatus(u, 'ACTIVE')}>Activate</Button>}</div></td></tr>)}
     </RecordTable>}
@@ -1152,11 +1152,11 @@ export function AdminUserDetailPage({ Shell }) {
   const { data, loading, error, load } = useLoad(`/admin/users/${id}`, null, 30000);
   const user = data?.user; const [message, setMessage] = React.useState(''); const [busy, setBusy] = React.useState(false);
   const updateStatus = async status => { if (!user || user.role === 'ADMIN') return; if (!window.confirm(`Change ${user.fullName}'s account status to ${status}?`)) return; setBusy(true); try { await request(`/admin/users/${user.id}/status`, { method: 'PATCH', body: json({ status }) }); setMessage(`Account status changed to ${status}.`); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
-  return <Shell title={user?.fullName || 'User details'} sub="Administrative view of a single account and its linked customer or gardener profile." action={<Link className="p5-button ghost" to={user?.role === 'GARDENER' ? '/hq/crew' : '/hq/people'}>Back to users</Link>}>
+  return <Shell title={user?.fullName || 'Account details'} sub="View account status and profile information." action={<Link className="p5-button ghost" to={user?.role === 'GARDENER' ? '/hq/crew' : '/hq/people'}>Back to users</Link>}>
     <Notice error={error || (message && /failed|cannot|forbidden|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|forbidden|not found/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {user && <><Panel title="Account information"><FormGrid><div><small>Email</small><b>{user.email}</b></div><div><small>Role</small><b>{user.role}</b></div><div><small>Status</small><Pill>{user.status}</Pill></div><div><small>Email verification</small><Pill tone={user.emailVerifiedAt ? 'success' : 'warning'}>{user.emailVerifiedAt ? 'Verified' : 'Unverified'}</Pill></div><div><small>Created</small><b>{dateTime(user.createdAt)}</b></div><div><small>Last login</small><b>{dateTime(user.lastLoginAt)}</b></div></FormGrid><div className="p5-actions">{user.role !== 'ADMIN' && user.status !== 'BLOCKED' && <Button variant="danger" disabled={busy} onClick={() => updateStatus('BLOCKED')}>Block account</Button>}{user.role !== 'ADMIN' && user.status === 'BLOCKED' && <Button disabled={busy} onClick={() => updateStatus('ACTIVE')}>Reactivate account</Button>}</div></Panel>
       {user.customerProfile && <><Panel title="Customer addresses">{user.customerProfile.addresses?.length ? user.customerProfile.addresses.map(a => <div className="p5-list-row" key={a.id}><b>{a.label}</b><small>{a.line1}, {a.city}, {a.state} {a.postalCode}</small></div>) : <Empty/>}</Panel><Panel title="Customer plants">{user.customerProfile.plants?.length ? user.customerProfile.plants.map(p => <div className="p5-list-row" key={p.id}><b>{p.name}</b><small>{p.type || 'Plant'} · {statusLabel(p.healthStatus)}</small></div>) : <Empty/>}</Panel></>}
-      {user.gardenerProfile && <Panel title="Gardener profile"><FormGrid><div><small>KYC status</small><Pill>{user.gardenerProfile.kycStatus}</Pill></div><div><small>Service area</small><b>{user.gardenerProfile.serviceArea || 'Not provided'}</b></div><div><small>Rating</small><b>{user.gardenerProfile.rating == null ? '—' : Number(user.gardenerProfile.rating).toFixed(1)}</b></div></FormGrid><p>{user.gardenerProfile.bio || 'No professional bio provided.'}</p><Link to="/hq/crew">Open Gardener verification →</Link></Panel>}
+      {user.gardenerProfile && <Panel title="Gardener profile"><FormGrid><div><small>Identity verification</small><Pill>{statusLabel(user.gardenerProfile.kycStatus)}</Pill></div><div><small>Service area</small><b>{user.gardenerProfile.serviceArea || 'Not provided'}</b></div><div><small>Rating</small><b>{user.gardenerProfile.rating == null ? '—' : Number(user.gardenerProfile.rating).toFixed(1)}</b></div></FormGrid><p>{user.gardenerProfile.bio || 'No professional bio provided.'}</p><Link to="/hq/crew">Review identity documents →</Link></Panel>}
     </>}
   </Shell>;
 }
@@ -1164,14 +1164,14 @@ export function AdminUserDetailPage({ Shell }) {
 export function AdminGardenersKycPage({ Shell }) {
   const [status, setStatus] = React.useState(''); const [search, setSearch] = React.useState(''); const path = `/admin/gardeners?limit=100${status ? `&kycStatus=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
   const { data, loading, error, load } = useLoad(path, null, 30000); const gardeners = data?.gardeners || []; const [message, setMessage] = React.useState(''); const [review, setReview] = React.useState({});
-  const decide = async (g, kycStatus) => { if (kycStatus === 'VERIFIED' && !(g.kycDocuments || []).length) { setMessage(`Cannot verify ${g.user.fullName}: no KYC documents are on record.`); return; } if (!window.confirm(`${kycStatus} KYC for ${g.user.fullName}?`)) return; try { await request(`/admin/gardeners/${g.id}/kyc`, { method: 'PATCH', body: json({ kycStatus, note: review[g.id] || '' }) }); setMessage(`KYC status updated for ${g.user.fullName}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Gardener verification" sub="Review uploaded identity documents and approve or reject professional access."><Notice error={error || (message && /cannot|failed|not found|required/i.test(message) ? message : '')} success={message && !/cannot|failed|not found|required/i.test(message) ? message : ''}/>
-    <div className="p5-toolbar"><input placeholder="Search gardeners" value={search} onChange={e => setSearch(e.target.value)}/><select value={status} onChange={e => setStatus(e.target.value)}><option value="">All KYC states</option>{['NOT_STARTED','PENDING','VERIFIED','REJECTED'].map(s => <option key={s}>{s}</option>)}</select></div>
-    <State loading={loading} error={error} empty={!gardeners.length && !loading && !error} onRetry={load}/>
+  const decide = async (g, kycStatus) => { if (kycStatus === 'VERIFIED' && !(g.kycDocuments || []).length) { setMessage(`Cannot verify ${g.user.fullName}: no identity documents have been submitted.`); return; } if (!window.confirm(`${kycStatus === 'VERIFIED' ? 'Approve' : kycStatus === 'REJECTED' ? 'Reject' : 'Mark pending'} identity verification for ${g.user.fullName}?`)) return; try { await request(`/admin/gardeners/${g.id}/kyc`, { method: 'PATCH', body: json({ kycStatus, note: review[g.id] || '' }) }); setMessage(`Identity verification updated for ${g.user.fullName}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
+  return <Shell title="Gardener verification" sub="Review submitted documents and update each Gardener’s verification status."><Notice error={error || (message && /cannot|failed|not found|required/i.test(message) ? message : '')} success={message && !/cannot|failed|not found|required/i.test(message) ? message : ''}/>
+    <div className="p5-toolbar"><input placeholder="Search gardeners" value={search} onChange={e => setSearch(e.target.value)}/><select value={status} onChange={e => setStatus(e.target.value)}><option value="">All verification statuses</option>{['NOT_STARTED','PENDING','VERIFIED','REJECTED'].map(s => <option key={s}>{statusLabel(s)}</option>)}</select></div>
+    <State loading={loading} error={error} empty={!gardeners.length && !loading && !error} emptyTitle="No Gardeners match these filters" emptyText="Try changing the search or verification status." onRetry={load}/>
     {gardeners.map(g => <Panel key={g.id} title={g.user.fullName} sub={`${g.user.email} · ${g.user.phone || 'No phone'} · ${g.serviceArea || 'No service area'}`} action={<div className="p5-actions"><Pill>{`KYC ${statusLabel(g.kycStatus)}`}</Pill><Pill tone={g.user.status === 'ACTIVE' ? 'success' : 'warning'}>{`Account ${statusLabel(g.user.status)}`}</Pill></div>}>
-      <div className="p5-record-list">{(g.kycDocuments || []).map(d => <div key={d.id} className="p5-list-row"><div><b>{statusLabel(d.documentType)}</b><small>{d.originalFileName} · {d.contentType} · {dateOnly(d.createdAt)}</small></div><Pill>{statusLabel(d.status)}</Pill><Button variant="ghost" onClick={() => { const preview = window.open('about:blank', '_blank'); request(`/media/${d.mediaAssetId}`).then(result => { if (preview) preview.location.href = result.url; }).catch(e => { preview?.close(); setMessage(errorText(e)); }); }}>View document</Button></div>)}{!g.kycDocuments?.length && <Empty title="No KYC documents" text="Gardener has not submitted identity documents."/>}</div>
+      <div className="p5-record-list">{(g.kycDocuments || []).map(d => <div key={d.id} className="p5-list-row"><div><b>{statusLabel(d.documentType)}</b><small>{d.originalFileName} · {dateOnly(d.createdAt)}</small></div><Pill>{statusLabel(d.status)}</Pill><Button variant="ghost" onClick={() => { const preview = window.open('about:blank', '_blank'); request(`/media/${d.mediaAssetId}`).then(result => { if (preview) preview.location.href = result.url; }).catch(e => { preview?.close(); setMessage(errorText(e)); }); }}>View document</Button></div>)}{!g.kycDocuments?.length && <Empty title="No identity documents" text="This Gardener has not submitted any documents."/>}</div>
       <Field label="Review note"><textarea maxLength="1000" value={review[g.id] || ''} onChange={e => setReview(v => ({ ...v, [g.id]: e.target.value }))} placeholder="Reason for approval or rejection"/></Field>
-      <div className="p5-actions"><Button onClick={() => decide(g, 'VERIFIED')}>Approve KYC</Button><Button variant="danger" onClick={() => decide(g, 'REJECTED')}>Reject KYC</Button><Button variant="ghost" onClick={() => decide(g, 'PENDING')}>Mark pending</Button></div>
+      <div className="p5-actions"><Button onClick={() => decide(g, 'VERIFIED')}>Approve verification</Button><Button variant="danger" onClick={() => decide(g, 'REJECTED')}>Decline verification</Button><Button variant="ghost" onClick={() => decide(g, 'PENDING')}>Mark pending</Button></div>
     </Panel>)}
   </Shell>;
 }
@@ -1179,11 +1179,11 @@ export function AdminGardenersKycPage({ Shell }) {
 export function GardenerKycDocumentsPage({ Shell }) {
   const { data, loading, error, load } = useLoad('/gardener/kyc/documents'); const [type, setType] = React.useState('GOVERNMENT_ID'); const [message, setMessage] = React.useState(''); const [busy, setBusy] = React.useState(false);
   const documents = data?.documents || [];
-  const submit = async e => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setMessage(''); try { const profile = await request('/gardener/profile'); const asset = await uploadToStorage(file, { kind: 'KYC_DOCUMENT', targetType: 'KYC_DOCUMENT', targetId: profile.profile.id }); await request('/gardener/kyc/documents', { method: 'POST', body: json({ documentType: type, mediaAssetId: asset.id, originalFileName: file.name }) }); setMessage('KYC document submitted. Your status is now awaiting Admin review.'); await load(); } catch (e2) { setMessage(errorText(e2)); } finally { setBusy(false); e.target.value = ''; } };
+  const submit = async e => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setMessage(''); try { const profile = await request('/gardener/profile'); const asset = await uploadToStorage(file, { kind: 'KYC_DOCUMENT', targetType: 'KYC_DOCUMENT', targetId: profile.profile.id }); await request('/gardener/kyc/documents', { method: 'POST', body: json({ documentType: type, mediaAssetId: asset.id, originalFileName: file.name }) }); setMessage('Document submitted for review.'); await load(); } catch (e2) { setMessage(errorText(e2)); } finally { setBusy(false); e.target.value = ''; } };
   const removeDocument = async d => { if (!window.confirm(`Remove ${d.originalFileName} from your KYC submission?`)) return; try { await request(`/gardener/kyc/documents/${d.id}`, { method: 'DELETE' }); setMessage('KYC document removed.'); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Identity verification" sub="Upload identity documents securely for T-CARE Admin review."><Notice error={error || (message && /failed|cannot|not supported|invalid|missing/i.test(message) ? message : '')} success={message && !/failed|cannot|not supported|invalid|missing/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
-    <Panel title="Submit a document" sub="Images or PDF documents up to 10 MB. Keep the original document accessible and legible."><Field label="Document type"><select value={type} onChange={e => setType(e.target.value)}><option value="GOVERNMENT_ID">Government identity document</option><option value="ADDRESS_PROOF">Address proof</option><option value="PROFESSIONAL_CERTIFICATE">Professional certificate</option><option value="OTHER">Other supporting document</option></select></Field><label className="p5-button primary">{busy ? 'Uploading…' : 'Choose and upload file'}<input hidden type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={submit} disabled={busy}/></label></Panel>
-    <Panel title="Submitted documents">{documents.length ? documents.map(d => <div className="p5-list-row" key={d.id}><div><b>{statusLabel(d.documentType)}</b><small>{d.originalFileName} · {dateTime(d.createdAt)}</small>{d.reviewNote && <small>Review note: {d.reviewNote}</small>}</div><Pill>{statusLabel(d.status)}</Pill>{d.status !== 'VERIFIED' && <Button variant="danger" onClick={() => removeDocument(d)}>Remove</Button>}</div>) : <Empty title="No documents submitted" text="Upload your identity document to start KYC verification."/>}</Panel>
+  return <Shell title="Identity verification" sub="Upload the documents needed to verify your Gardener account."><Notice error={error || (message && /failed|cannot|not supported|invalid|missing/i.test(message) ? message : '')} success={message && !/failed|cannot|not supported|invalid|missing/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
+    <Panel title="Upload a document" sub="Upload a clear image or PDF (up to 10 MB)."><Field label="Document type"><select value={type} onChange={e => setType(e.target.value)}><option value="GOVERNMENT_ID">Government identity document</option><option value="ADDRESS_PROOF">Address proof</option><option value="PROFESSIONAL_CERTIFICATE">Professional certificate</option><option value="OTHER">Other supporting document</option></select></Field><label className="p5-button primary">{busy ? 'Uploading…' : 'Choose a file'}<input hidden type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={submit} disabled={busy}/></label></Panel>
+    <Panel title="Your documents">{documents.length ? documents.map(d => <div className="p5-list-row" key={d.id}><div><b>{statusLabel(d.documentType)}</b><small>{d.originalFileName} · {dateTime(d.createdAt)}</small>{d.reviewNote && <small>Review note: {d.reviewNote}</small>}</div><Pill>{statusLabel(d.status)}</Pill>{d.status !== 'VERIFIED' && <Button variant="danger" onClick={() => removeDocument(d)}>Remove</Button>}</div>) : <Empty title="No documents submitted" text="Upload an identity document to begin verification."/>}</Panel>
   </Shell>;
 }
 
@@ -1193,10 +1193,10 @@ export function AdminBookingsPage({ Shell }) {
   React.useEffect(() => { request('/admin/gardeners?limit=100&kycStatus=VERIFIED').then(d => setGardeners(d.gardeners || [])).catch(() => setGardeners([])); }, []);
   const assign = async (bookingId, gardenerId) => { if (!gardenerId) return; try { await request(`/admin/bookings/${bookingId}/assign`, { method: 'POST', body: json({ gardenerId }) }); setMessage('Gardener assignment saved.'); await load(); } catch (e) { setMessage(errorText(e)); } };
   const transitions = { CONFIRMED: ['CANCELLED'], GARDENER_ASSIGNED: ['CONFIRMED','CANCELLED'], GARDENER_ACCEPTED: ['CANCELLED'], ON_THE_WAY: ['CANCELLED'], ARRIVED: ['CANCELLED'], SERVICE_STARTED: [], SERVICE_COMPLETED: [], CANCELLED: [] };
-  const changeStatus = async (booking, status) => { try { await request(`/admin/bookings/${booking.id}/status`, { method: 'PATCH', body: json({ status, note: 'Administrative update from T-CARE operations.' }) }); setMessage(`Booking status changed to ${statusLabel(status)}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Booking operations" sub="Inspect booking details, assign KYC-verified Gardeners and perform permitted status transitions."><Notice error={error || (message && /failed|cannot|invalid|not found|kyc/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|kyc/i.test(message) ? message : ''}/>
+  const changeStatus = async (booking, status) => { try { await request(`/admin/bookings/${booking.id}/status`, { method: 'PATCH', body: json({ status, note: 'Booking status updated by T-CARE.' }) }); setMessage(`Booking status changed to ${statusLabel(status)}.`); await load(); } catch (e) { setMessage(errorText(e)); } };
+  return <Shell title="Bookings" sub="Review booking details, assign verified Gardeners and update visit status."><Notice error={error || (message && /failed|cannot|invalid|not found|kyc/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|kyc/i.test(message) ? message : ''}/>
     <div className="p5-toolbar"><input placeholder="Search reference or customer" value={search} onChange={e => setSearch(e.target.value)}/><select value={filter} onChange={e => setFilter(e.target.value)}><option value="">All statuses</option>{['CONFIRMED','GARDENER_ASSIGNED','GARDENER_ACCEPTED','ON_THE_WAY','ARRIVED','SERVICE_STARTED','SERVICE_COMPLETED','CANCELLED'].map(s => <option key={s}>{s}</option>)}</select></div>
-    <State loading={loading} error={error} empty={!bookings.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!bookings.length && !loading && !error} emptyTitle="No bookings match these filters" emptyText="Try changing the booking status or search term." onRetry={load}/>
     {bookings.map(b => <Panel key={b.id} title={`${b.reference} · ${b.service?.name}`} sub={`${b.customer?.user?.fullName} · ${b.customer?.user?.email} · ${dateTime(b.scheduledStart)}`} action={<Pill>{statusLabel(b.status)}</Pill>}>
       <p>{b.address?.line1}, {b.address?.city} · {b.plants?.length || 0} plants · {money(b.total)}</p>
       <p>{b.plants?.map(x => x.plant?.name).join(', ')}</p>
@@ -1211,9 +1211,9 @@ export function AdminReviewsIssuesPage({ Shell, mode = 'reviews' }) {
   const { data, loading, error, load } = useLoad(path, null, 30000); const rows = mode === 'reviews' ? data?.reviews || [] : data?.issues || []; const [message, setMessage] = React.useState('');
   const update = async (item, status) => { try { await request(mode === 'reviews' ? `/reviews-issues/admin/reviews/${item.id}` : `/reviews-issues/admin/issues/${item.id}`, { method: 'PATCH', body: json({ status }) }); setMessage(`${mode === 'reviews' ? 'Review' : 'Issue'} updated.`); await load(); } catch (e) { setMessage(errorText(e)); } };
   const options = mode === 'reviews' ? ['PENDING','PUBLISHED','HIDDEN'] : ['OPEN','IN_REVIEW','RESOLVED','CLOSED'];
-  return <Shell title={mode === 'reviews' ? 'Review moderation' : 'Customer issues'} sub={mode === 'reviews' ? 'Publish or hide customer reviews. Published reviews update the Gardener rating.' : 'Track and resolve customer support issues.'}><Notice error={error || (message && /failed|cannot|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid/i.test(message) ? message : ''}/>
+  return <Shell title={mode === 'reviews' ? 'Customer reviews' : 'Customer issues'} sub={mode === 'reviews' ? 'Review Customer feedback and choose which reviews to publish.' : 'Review Customer reports and update their status.'}><Notice error={error || (message && /failed|cannot|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid/i.test(message) ? message : ''}/>
     <div className="p5-toolbar"><select value={filter} onChange={e => setFilter(e.target.value)}><option value="">All statuses</option>{options.map(x => <option key={x}>{x}</option>)}</select></div>
-    <State loading={loading} error={error} empty={!rows.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!rows.length && !loading && !error} emptyTitle={mode === 'reviews' ? 'No reviews to review' : 'No open customer issues'} emptyText={mode === 'reviews' ? 'New customer reviews will appear here.' : 'Customer reports will appear here.'} onRetry={load}/>
     {rows.map(item => <Panel key={item.id} title={mode === 'reviews' ? `${item.rating}/5 · ${item.booking?.service?.name || 'Service review'}` : item.subject} sub={`${item.customer?.user?.fullName || 'Customer'} · ${item.customer?.user?.email || ''} · ${dateTime(item.createdAt)}`} action={<Pill>{statusLabel(item.status)}</Pill>}>
       <p>{mode === 'reviews' ? item.comment || 'No written comment.' : item.description}</p>
       {item.booking && <small>Booking: {item.booking.reference || item.booking.id} · {item.booking.service?.name}</small>}
@@ -1225,12 +1225,12 @@ export function AdminReviewsIssuesPage({ Shell, mode = 'reviews' }) {
 export function AdminCmsPage({ Shell }) {
   const [status, setStatus] = React.useState(''); const [search, setSearch] = React.useState(''); const path = `/cms/admin?limit=100${status ? `&status=${status}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
   const { data, loading, error, load } = useLoad(path, null, 60000); const items = data?.items || []; const [form, setForm] = React.useState({ key: '', title: '', body: '', status: 'DRAFT' }); const [editing, setEditing] = React.useState(null); const [message, setMessage] = React.useState(''); const [busy, setBusy] = React.useState(false);
-  const save = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request(editing ? `/cms/admin/${editing}` : '/cms/admin', { method: editing ? 'PATCH' : 'POST', body: json(form) }); setEditing(null); setForm({ key: '', title: '', body: '', status: 'DRAFT' }); setMessage('CMS content saved.'); await load(); } catch (e2) { setMessage(errorText(e2)); } finally { setBusy(false); } };
+  const save = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request(editing ? `/cms/admin/${editing}` : '/cms/admin', { method: editing ? 'PATCH' : 'POST', body: json(form) }); setEditing(null); setForm({ key: '', title: '', body: '', status: 'DRAFT' }); setMessage('Website content saved.'); await load(); } catch (e2) { setMessage(errorText(e2)); } finally { setBusy(false); } };
   const statusAction = async (id, action) => { try { await request(`/cms/admin/${id}/${action}`, { method: 'POST', body: '{}' }); setMessage(action === 'publish' ? 'Content published.' : 'Content archived.'); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Content management" sub="Create durable CMS records, publish public content and archive retired content."><Notice error={error || (message && /failed|cannot|exists|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|exists|not found|invalid/i.test(message) ? message : ''}/>
+  return <Shell title="Content management" sub="Update website information and publish or archive announcements."><Notice error={error || (message && /failed|cannot|exists|not found|invalid/i.test(message) ? message : '')} success={message && !/failed|cannot|exists|not found|invalid/i.test(message) ? message : ''}/>
     <Panel title={editing ? 'Edit content' : 'New content'}><form onSubmit={save}><FormGrid><Field label="Unique key"><input required maxLength="120" value={form.key} onChange={e => setForm({ ...form, key: e.target.value })} disabled={!!editing}/></Field><Field label="Title"><input required maxLength="200" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></Field><Field label="Status"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option>DRAFT</option><option>PUBLISHED</option><option>ARCHIVED</option></select></Field></FormGrid><Field label="Body"><textarea required maxLength="50000" rows={7} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })}/></Field><div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save content'}</Button>{editing && <Button variant="ghost" onClick={() => setEditing(null)}>Cancel edit</Button>}</div></form></Panel>
     <div className="p5-toolbar"><input placeholder="Search content" value={search} onChange={e => setSearch(e.target.value)}/><select value={status} onChange={e => setStatus(e.target.value)}><option value="">All statuses</option>{['DRAFT','PUBLISHED','ARCHIVED'].map(s => <option key={s}>{s}</option>)}</select></div>
-    <State loading={loading} error={error} empty={!items.length && !loading && !error} onRetry={load}/>
+    <State loading={loading} error={error} empty={!items.length && !loading && !error} emptyTitle="No content items match your filters" emptyText="Try another search or status, or create a new page announcement." onRetry={load}/>
     {items.map(item => <Panel key={item.id} title={item.title} sub={`${item.key} · ${statusLabel(item.status)} · Updated ${dateOnly(item.updatedAt)}`}><p className="p5-body-preview">{item.body}</p><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(item.id); setForm({ key: item.key, title: item.title, body: item.body, status: item.status }); }}>Edit</Button>{item.status !== 'PUBLISHED' && <Button onClick={() => statusAction(item.id, 'publish')}>Publish</Button>}{item.status !== 'ARCHIVED' && <Button variant="danger" onClick={() => statusAction(item.id, 'archive')}>Archive</Button>}</div></Panel>)}
   </Shell>;
 }
@@ -1243,10 +1243,10 @@ export function AdminAnalyticsPage({ Shell }) {
   const [series, setSeries] = React.useState({ bookings: [], revenue: [], gardeners: [] }); const [seriesError, setSeriesError] = React.useState('');
   React.useEffect(() => { let live = true; setSeriesError(''); Promise.all([request(`/analytics/bookings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request(`/analytics/revenue?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), request('/analytics/gardeners')]).then(([b,r,g]) => { if (live) setSeries({ bookings: b.rows || [], revenue: r.rows || [], gardeners: g.gardeners || [] }); }).catch(e => { if (live) setSeriesError(errorText(e)); }); return () => { live = false; }; }, [from, to]);
   const labels = [['Users',o?.users],['Customers',o?.customers],['Gardeners',o?.gardeners],['Bookings',o?.bookings],['Completed',o?.completedBookings],['Cancelled',o?.cancelledBookings],['Paid volume',money(o?.grossPaid)],['Issues',o?.issues],['Reviews',o?.reviews]];
-  return <Shell title="Analytics" sub="Live database-backed metrics. Revenue metrics are read-only; payment processing remains out of scope."><Notice error={seriesError}/><div className="p5-toolbar"><select value={range} onChange={e => setRange(Number(e.target.value))}><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option><option value={365}>Last 365 days</option></select></div><State loading={loading} error={error} onRetry={load}/>{o && <div className="p5-metric-grid">{labels.map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value ?? 0}</b></div>)}</div>}
-    <div className="p5-columns"><Panel title="Booking activity" sub={`${series.bookings.length} daily data points`}>{series.bookings.length ? <RecordTable headers={['Day','Bookings','Completed','Cancelled']}>{series.bookings.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{r.total}</td><td>{r.completed}</td><td>{r.cancelled}</td></tr>)}</RecordTable> : <Empty title="No booking activity in this range"/>}</Panel><Panel title="Gardener performance" sub="Assignment counts, ratings and KYC state">{series.gardeners.length ? <RecordTable headers={['Gardener','Assignments','Rating','KYC']}>
+  return <Shell title="Analytics" sub="Review booking, payment and Gardener trends over the last 30, 90, 180 or 365 days."><Notice error={seriesError}/><div className="p5-toolbar"><select value={range} onChange={e => setRange(Number(e.target.value))}><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option><option value={365}>Last 365 days</option></select></div><State loading={loading} error={error} onRetry={load}/>{o && <div className="p5-metric-grid">{labels.map(([label,value]) => <div className="p5-metric" key={label}><small>{label}</small><b>{value ?? 0}</b></div>)}</div>}
+    <div className="p5-columns"><Panel title="Booking activity" sub={`${series.bookings.length} daily data points`}>{series.bookings.length ? <RecordTable headers={['Day','Bookings','Completed','Cancelled']}>{series.bookings.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{r.total}</td><td>{r.completed}</td><td>{r.cancelled}</td></tr>)}</RecordTable> : <Empty title="No booking activity in this range"/>}</Panel><Panel title="Gardener performance" sub="Assignments, ratings and identity verification">{series.gardeners.length ? <RecordTable headers={['Gardener','Assignments','Rating','KYC']}>
       {series.gardeners.map(g => <tr key={g.id}><td>{g.user?.fullName}</td><td>{g._count?.assignments || 0}</td><td>{g.rating == null ? '—' : Number(g.rating).toFixed(1)}</td><td>{statusLabel(g.kycStatus)}</td></tr>)}</RecordTable> : <Empty/>}</Panel></div>
-    <Panel title="Paid volume and refunds" sub="Read-only payment records; collection and refund execution are excluded from this Phase 5 scope.">{series.revenue.length ? <RecordTable headers={['Day','Paid volume','Refunded']}>{series.revenue.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{money(r.paid)}</td><td>{money(r.refunded)}</td></tr>)}</RecordTable> : <Empty title="No recorded payment activity in this range"/>}</Panel>
+    <Panel title="Payments and refunds" sub="Confirmed payments and recorded refunds.">{series.revenue.length ? <RecordTable headers={['Day','Paid volume','Refunded']}>{series.revenue.map(r => <tr key={String(r.day)}><td>{dateOnly(r.day)}</td><td>{money(r.paid)}</td><td>{money(r.refunded)}</td></tr>)}</RecordTable> : <Empty title="No payment activity in this period"/>}</Panel>
   </Shell>;
 }
 
@@ -1257,8 +1257,8 @@ export function AdminPlantKnowledgePage({ Shell }) {
   const [form, setForm] = React.useState({ commonName: '', scientificName: '', category: '', watering: '', light: '', feeding: '', notes: '' }); const [editing, setEditing] = React.useState(null); const [message, setMessage] = React.useState('');
   const save = async e => { e.preventDefault(); try { await request(editing ? `/admin/plant-knowledge/${editing}` : '/admin/plant-knowledge', { method: editing ? 'PATCH' : 'POST', body: json(form) }); setMessage('Plant knowledge saved.'); setEditing(null); setForm({ commonName: '', scientificName: '', category: '', watering: '', light: '', feeding: '', notes: '' }); await load(); } catch (e2) { setMessage(errorText(e2)); } };
   const del = async item => { if (!window.confirm(`Delete knowledge record for ${item.commonName}?`)) return; try { await request(`/admin/plant-knowledge/${item.id}`, { method: 'DELETE' }); await load(); } catch (e) { setMessage(errorText(e)); } };
-  return <Shell title="Plant database" sub="Manage the shared care reference library and monitor Customer-owned plant health records."><Notice error={error || (message && /failed|cannot|exists|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|exists|not found/i.test(message) ? message : ''}/><Panel title={editing ? 'Edit plant knowledge' : 'Add plant knowledge'}><form onSubmit={save}><FormGrid>{['commonName','scientificName','category','watering','light','feeding'].map(k => <Field label={statusLabel(k)} key={k}><input value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })}/></Field>)}</FormGrid><Field label="Notes"><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}/></Field><Button type="submit">Save record</Button></form></Panel><State loading={loading} error={error} empty={!items.length && !loading && !error} onRetry={load}/>{items.map(item => <div className="p5-list-row" key={item.id}><div><b>{item.commonName}</b><small>{item.scientificName} · {item.category}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(item.id); setForm(Object.fromEntries(Object.keys(form).map(k => [k, item[k] || '']))); }}>Edit</Button><Button variant="danger" onClick={() => del(item)}>Delete</Button></div></div>)}
-    <Panel title="Customer plant tracker" sub="Live view of customer-owned plants. Health updates are written by Customers and assigned Gardeners; Admin view is read-only."><State loading={trackedPlantsState.loading} error={trackedPlantsState.error} empty={!trackedPlants.length && !trackedPlantsState.loading && !trackedPlantsState.error} onRetry={trackedPlantsState.load}/>{trackedPlants.length > 0 && <RecordTable headers={['Plant','Customer','Health','Next care','Last updated']}>{trackedPlants.map(plant => <tr key={plant.id}><td><b>{plant.name}</b><small>{plant.type || 'Plant'}</small></td><td>{plant.customer?.user?.fullName || 'Customer'}<small>{plant.customer?.user?.email || ''}</small></td><td><Pill>{statusLabel(plant.healthStatus)}</Pill></td><td>{dateOnly(plant.nextCareAt)}</td><td>{dateTime(plant.updatedAt)}</td></tr>)}</RecordTable>}</Panel>
+  return <Shell title="Plant care library" sub="Manage plant-care guidance and review customer plant updates."><Notice error={error || (message && /failed|cannot|exists|not found/i.test(message) ? message : '')} success={message && !/failed|cannot|exists|not found/i.test(message) ? message : ''}/><Panel title={editing ? 'Edit plant guidance' : 'Add plant guidance'}><form onSubmit={save}><FormGrid>{['commonName','scientificName','category','watering','light','feeding'].map(k => <Field label={statusLabel(k)} key={k}><input value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })}/></Field>)}</FormGrid><Field label="Notes"><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}/></Field><Button type="submit">Save guidance</Button></form></Panel><State loading={loading} error={error} empty={!items.length && !loading && !error} emptyTitle="No plant-care guides yet" emptyText="Add guidance to make it available to the team." onRetry={load}/>{items.map(item => <div className="p5-list-row" key={item.id}><div><b>{item.commonName}</b><small>{item.scientificName} · {item.category}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(item.id); setForm(Object.fromEntries(Object.keys(form).map(k => [k, item[k] || '']))); }}>Edit</Button><Button variant="danger" onClick={() => del(item)}>Delete</Button></div></div>)}
+    <Panel title="Customer plants" sub="Customer plant health and upcoming care dates."><State loading={trackedPlantsState.loading} error={trackedPlantsState.error} empty={!trackedPlants.length && !trackedPlantsState.loading && !trackedPlantsState.error} onRetry={trackedPlantsState.load}/>{trackedPlants.length > 0 && <RecordTable headers={['Plant','Customer','Health','Next care','Last updated']}>{trackedPlants.map(plant => <tr key={plant.id}><td><b>{plant.name}</b><small>{plant.type || 'Plant'}</small></td><td>{plant.customer?.user?.fullName || 'Customer'}<small>{plant.customer?.user?.email || ''}</small></td><td><Pill>{statusLabel(plant.healthStatus)}</Pill></td><td>{dateOnly(plant.nextCareAt)}</td><td>{dateTime(plant.updatedAt)}</td></tr>)}</RecordTable>}</Panel>
   </Shell>;
 }
 
@@ -1317,15 +1317,15 @@ export function AdminProductsPage({ Shell }) {
     catch (e) { setMessage(errorText(e)); setMovements([]); }
     finally { setMovementLoading(false); }
   };
-  return <Shell title="Plant Store catalogue" sub="Create products, maintain published details and record every stock movement. Product checkout is not enabled in this release.">
+  return <Shell title="Plant store" sub="Manage product listings and stock. Customers can browse the store, but checkout and delivery are not available yet.">
     <Notice error={error || (message && /failed|cannot|invalid|not found|insufficient|must/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|insufficient|must/i.test(message) ? message : ''}/>
-    <Panel title={editing ? 'Edit product details' : 'Add a product'} sub="Only approved product names, images, prices and stock should be published. Stock is not changed through the edit form.">
+    <Panel title={editing ? 'Edit product details' : 'Add a product'} sub="Edit product information here. Update available quantities separately under Adjust stock.">
       <form onSubmit={save}>
         <FormGrid>
           <Field label="SKU"><input required minLength="2" maxLength="80" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })}/></Field>
           <Field label="Product name"><input required minLength="2" maxLength="160" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></Field>
           <Field label="Category"><input required minLength="2" maxLength="80" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}/></Field>
-          <Field label="Illustration type (optional)"><input maxLength="40" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} placeholder="e.g. monstera"/></Field>
+          <Field label="Product illustration style (optional)"><input maxLength="40" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} placeholder="e.g. Monstera"/></Field>
           <Field label="Image URL (optional)"><input type="url" maxLength="2000" value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })}/></Field>
           <Field label="Pot colour (optional)"><input maxLength="40" value={form.potColor} onChange={e => setForm({ ...form, potColor: e.target.value })}/></Field>
           <Field label="Selling price (INR)"><input required type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}/></Field>
@@ -1337,11 +1337,11 @@ export function AdminProductsPage({ Shell }) {
         <div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save product details' : 'Create product'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm(initialForm); }}>Cancel</Button>}</div>
       </form>
     </Panel>
-    <Panel title="Live inventory" sub={`${products.length} product records · stock movements are audit-logged`} action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
-      <State loading={loading} error={error} empty={!products.length && !loading && !error} onRetry={load}/>
+    <Panel title="Inventory" sub={`${products.length} products`} action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
+      <State loading={loading} error={error} empty={!products.length && !loading && !error} emptyTitle="No products listed" emptyText="Add a product to make it available in the store." onRetry={load}/>
       {!!products.length && <RecordTable headers={['Product','SKU / category','Price','Stock','Status','Actions']}>
         {products.map(product => <tr key={product.id}>
-          <td><b>{product.name}</b><small>{product.imageUrl ? 'Custom image configured' : 'No custom image'}</small></td>
+          <td><b>{product.name}</b><small>{product.imageUrl ? 'Custom image added' : 'Using the standard product image'}</small></td>
           <td>{product.sku}<small>{product.category}</small></td>
           <td>{money(product.price)}{product.compareAtPrice != null && <small>Compare at {money(product.compareAtPrice)}</small>}</td>
           <td><b>{product.stockQuantity}</b></td><td><Pill tone={product.status === 'ACTIVE' ? 'good' : ''}>{statusLabel(product.status)}</Pill></td>
@@ -1349,13 +1349,13 @@ export function AdminProductsPage({ Shell }) {
         </tr>)}
       </RecordTable>}
     </Panel>
-    {movementProduct && <Panel title={`Stock history · ${movementProduct.name}`} sub={`Latest ${movements.length} recorded stock changes`} action={<Button variant="ghost" onClick={() => setMovementProduct(null)}>Close</Button>}>
-      {movementLoading ? <State loading/> : movements.length ? <RecordTable headers={['Date','Change','Reason','Admin user ID']}>{movements.map(item => <tr key={item.id}><td>{dateTime(item.createdAt)}</td><td><b>{item.quantityChange > 0 ? '+' : ''}{item.quantityChange}</b></td><td>{item.reason}</td><td>{item.actorUserId || 'System'}</td></tr>)}</RecordTable> : <Empty title="No stock movements" text="No stock changes have been recorded for this product yet."/>}
+    {movementProduct && <Panel title={`Stock history · ${movementProduct.name}`} sub={`${movements.length} recent adjustments`} action={<Button variant="ghost" onClick={() => setMovementProduct(null)}>Close</Button>}>
+      {movementLoading ? <State loading/> : movements.length ? <RecordTable headers={['Date','Change','Reason','Updated by']}>{movements.map(item => <tr key={item.id}><td>{dateTime(item.createdAt)}</td><td><b>{item.quantityChange > 0 ? '+' : ''}{item.quantityChange}</b></td><td>{item.reason}</td><td>{item.actorUserId || 'T-CARE'}</td></tr>)}</RecordTable> : <Empty title="No stock adjustments yet"/>}
     </Panel>}
-    <Panel title="Store release status"><p>Customer checkout, payment collection, delivery scheduling and order fulfilment are not enabled in this release. The public store is a live catalogue and cart preview only.</p></Panel>
+    <Panel title="Customer store"><p>Customers can browse products and save items to their cart. Online orders, payment and delivery are not available yet.</p></Panel>
   </Shell>;
 }
 
-export function OutOfScopePage({ Shell, title = 'Not in this completion scope', sub = 'This module is intentionally deferred.' }) {
-  return <Shell title={title} sub={sub}><Panel title="Deferred by project scope"><p>T-CARE payment processing, refunds, payouts and payment-dependent subscription billing are intentionally excluded from this Phase 5 build. No mock transaction controls are presented as live functionality.</p></Panel></Shell>;
+export function OutOfScopePage({ Shell, title = 'Not available', sub = 'This section is not available at the moment. Contact T-CARE if you need assistance.' }) {
+  return <Shell title={title} sub={sub}><Panel title="This section is unavailable" sub="Please contact T-CARE if you need help with this request."/></Shell>;
 }

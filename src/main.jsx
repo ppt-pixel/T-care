@@ -37,9 +37,9 @@ async function authApi(path, body) {
 
 /* ---------- role navigation ---------- */
 const roles={
-  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Me',UserRound]]},
-  crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['inbox','Inbox',Bell],['me','Me',UserRound]]},
-  hq:{label:'Admin',base:'/hq',nav:[['','Pulse',LayoutGrid],['accounts','Account management',UserRound],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
+  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Profile',UserRound]]},
+  crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['inbox','Inbox',Bell],['me','Profile',UserRound]]},
+  hq:{label:'Admin',base:'/hq',nav:[['','Overview',LayoutGrid],['accounts','Account management',UserRound],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
 const roleOf=p=>p.startsWith('/crew')?'crew':p.startsWith('/hq')?'hq':'garden';
 
 /* ---------- app state ---------- */
@@ -152,7 +152,7 @@ function Palette({onClose}){const nav=useNavigate();const {authUser,toggleTheme,
   const all=[...(authUser?.role==='CUSTOMER'?[{label:'Book a service',group:'Action',icon:CalendarDays,run:()=>nav('/garden/book')}]:[]),{label:theme==='dark'?'Switch to light':'Switch to dark',group:'Action',icon:theme==='dark'?Sun:Moon,run:toggleTheme,keep:1},...Object.entries(roles).filter(([k])=>mine.includes(k)).flatMap(([,r])=>r.nav.map(([p,l,I])=>({label:l,group:r.label,icon:I,run:()=>nav(r.base+(p?'/'+p:''))}))),{label:'Home page',group:'Action',icon:Leaf,run:()=>nav('/')}];
   const res=all.filter(x=>(x.label+x.group).toLowerCase().includes(q.toLowerCase())).slice(0,9);const run=x=>{if(!x)return;x.run();if(!x.keep)onClose()};
   const key=e=>{const n=Math.max(res.length,1);if(e.key==='ArrowDown'){e.preventDefault();setI((i+1)%n)}else if(e.key==='ArrowUp'){e.preventDefault();setI((i-1+n)%n)}else if(e.key==='Enter')run(res[i]);else if(e.key==='Escape')onClose()};
-  return <motion.div className="overlay top" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}><motion.div className="palette" initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.95,opacity:0}} onClick={e=>e.stopPropagation()}><div className="pin"><Search size={18}/><input autoFocus value={q} onChange={e=>{setQ(e.target.value);setI(0)}} onKeyDown={key} placeholder="Jump to a page or action…"/><kbd>esc</kbd></div><div className="pl">{res.length?res.map((x,n)=><button key={x.group+x.label} className={n===i?'on':''} onMouseEnter={()=>setI(n)} onClick={()=>run(x)}><x.icon size={16}/><span>{x.label}</span><small>{x.group}</small>{n===i&&<CornerDownLeft size={13}/>}</button>):<p className="empty">Nothing for “{q}”</p>}</div></motion.div></motion.div>}
+  return <motion.div className="overlay top" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}><motion.div className="palette" initial={{scale:.9,opacity:0}} animate={{scale:1,opacity:1}} exit={{scale:.95,opacity:0}} onClick={e=>e.stopPropagation()}><div className="pin"><Search size={18}/><input autoFocus value={q} onChange={e=>{setQ(e.target.value);setI(0)}} onKeyDown={key} placeholder="Jump to a page or action…"/><kbd>esc</kbd></div><div className="pl">{res.length?res.map((x,n)=><button key={x.group+x.label} className={n===i?'on':''} onMouseEnter={()=>setI(n)} onClick={()=>run(x)}><x.icon size={16}/><span>{x.label}</span><small>{x.group}</small>{n===i&&<CornerDownLeft size={13}/>}</button>):<p className="empty">No results found.</p>}</div></motion.div></motion.div>}
 function Notif(){
   const {authUser}=useApp();
   const role=authUser?.role;
@@ -175,8 +175,8 @@ function Notif(){
     <button className="ib" onClick={()=>setO(v=>!v)} aria-label={unread?`Open notifications, ${unread} unread`:'Open notifications'} aria-expanded={o} aria-haspopup="true" title="Notifications"><Bell size={17}/>{unread>0&&<i className="ping"/>}</button>
     <AnimatePresence>{o&&<motion.div className="nmenu" role="region" aria-label="Notifications" initial={{opacity:0,scale:.9,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:.9,y:8}} transition={{duration:.18}}>
       <b>Notifications{unread>0?` · ${unread} unread`:''}</b>
-      {!live?<p className="nmenu-note">Review and send in-app notifications from the notification centre.</p>
-        :feed.status==='loading'?<p className="nmenu-note">Loading…</p>
+      {!live?<p className="nmenu-note">Manage customer and Gardener updates in the notification centre.</p>
+        :feed.status==='loading'?<p className="nmenu-note">Loading notifications…</p>
         :feed.status==='error'&&!feed.items.length?<p className="nmenu-note">Notifications could not be loaded right now.</p>
         :!feed.items.length?<p className="nmenu-note">You’re all caught up.</p>
         :feed.items.map(n=><div key={n.id} className={n.readAt?'':'unread'}><span className={'dot'+(n.readAt?' read':'')}/><p>{n.title||'Update'}<small>{when(n.createdAt)}</small></p></div>)}
@@ -228,11 +228,11 @@ function WorkspaceSidebar({R,pathname,collapsed,onToggle,mobileOpen,onClose}){
   return <>
     {mobileOpen&&<button className="workspace-sidebar-backdrop" aria-label="Close navigation" onClick={onClose}/>}
     <motion.aside id="workspace-sidebar" className={`workspace-sidebar${collapsed&&!mobileOpen?' is-collapsed':''}${mobileOpen?' mobile-open':''}`} animate={{width:collapsed&&!mobileOpen?82:252}} transition={{type:'spring',stiffness:260,damping:30}} aria-label={`${R.label} workspace sidebar`}>
-      <div className="workspace-sidebar-head"><span className="workspace-sidebar-mark"><Leaf size={20}/></span>{showLabels&&<span><b>{R.label}</b><small>Workspace</small></span>}<button className="workspace-sidebar-toggle" type="button" onClick={onToggle} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}</button>{mobileOpen&&<button className="workspace-sidebar-close" type="button" onClick={onClose} aria-label="Close workspace navigation"><X size={17}/></button>}</div>
+      <div className="workspace-sidebar-head"><span className="workspace-sidebar-mark"><Leaf size={20}/></span>{showLabels&&<span><b>{R.label}</b><small>Account</small></span>}<button className="workspace-sidebar-toggle" type="button" onClick={onToggle} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}</button>{mobileOpen&&<button className="workspace-sidebar-close" type="button" onClick={onClose} aria-label="Close workspace navigation"><X size={17}/></button>}</div>
       <nav className="workspace-sidebar-nav" aria-label={`${R.label} pages`}>
         {R.nav.map(([p,label,Icon])=>{const to=R.base+(p?'/'+p:''),active=pathname===to||(p&&pathname.startsWith(to+'/'));return <Link key={to} to={to} className={active?'active':''} aria-current={active?'page':undefined} title={!showLabels?label:undefined} onClick={onClose}><Icon size={19}/><span>{label}</span></Link>})}
       </nav>
-      <div className="workspace-sidebar-foot">{showLabels&&<small>Plant care, thoughtfully managed.</small>}<button type="button" onClick={onToggle} aria-label={collapsed?'Expand navigation':'Collapse navigation'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}<span>{collapsed?'Expand':'Collapse'}</span></button></div>
+      <div className="workspace-sidebar-foot">{showLabels&&<small>{role==='garden'?'Your plants and bookings':role==='crew'?'Your visits and reports':'Accounts and services'}</small>}<button type="button" onClick={onToggle} aria-label={collapsed?'Expand navigation':'Collapse navigation'}>{collapsed&&!mobileOpen?<ChevronRight size={17}/>:<ChevronLeft size={17}/>}<span>{collapsed?'Expand':'Collapse'}</span></button></div>
     </motion.aside>
   </>;
 }
@@ -381,7 +381,7 @@ function Home(){
   </div>}
 
 /* ---------- reusable loading and error states ---------- */
-function LoadingState({label='Loading your workspace…'}){
+function LoadingState({label='Loading your account…'}){
   return <div className="loading-state" role="status" aria-live="polite"><span className="loader"/><p>{label}</p></div>;
 }
 function ErrorState({title='Something needs attention',text='Please try again or contact T-Care support.',onRetry}){
@@ -454,13 +454,13 @@ function GardenerProfile(){
   const kycLabels={NOT_STARTED:'Not started',PENDING:'Under review',VERIFIED:'Verified',REJECTED:'Needs attention'};
   const kycTone=profile?.kycStatus==='VERIFIED'?'g':profile?.kycStatus==='REJECTED'?'n':'a';
   const kycDescription={
-    NOT_STARTED:'Identity verification has not been started. Your account is active, but KYC approval is required before you can receive job assignments.',
-    PENDING:'Your identity verification is awaiting review. Job assignments remain restricted until verification is approved.',
-    VERIFIED:'Your identity verification is approved. You meet the KYC requirement for Gardener job assignments.',
-    REJECTED:'Your identity verification needs attention. Please contact T-CARE support for the next steps.'
+    NOT_STARTED:'Submit your identity documents to complete verification and become eligible for assignments.',
+    PENDING:'T-CARE is reviewing your identity documents.',
+    VERIFIED:'Your identity documents are approved. You can receive assignments when work is available in your service area.',
+    REJECTED:'Your documents need attention. Review the note from T-CARE or contact the team for help.'
   };
 
-  return <Shell title="Profile" sub="Manage your professional details, service area and account verification." action={!loading&&!loadError?<Btn ghost arrow={false} onClick={()=>{setEditing(value=>!value);setSaveError('');}}> {editing?'Cancel editing':'Edit profile'} </Btn>:null}>
+  return <Shell title="Profile" sub="Keep your professional details, service area and verification status up to date." action={!loading&&!loadError?<Btn ghost arrow={false} onClick={()=>{setEditing(value=>!value);setSaveError('');}}> {editing?'Cancel editing':'Edit profile'} </Btn>:null}>
     {loading?<LoadingState label="Loading your Gardener profile…"/>:loadError?<ErrorState title="Your profile could not be loaded" text={loadError} onRetry={loadProfile}/>:<>
       <div className="gardener-profile-summary">
         <div className="gardener-profile-avatar"><UserRound size={25}/></div>
@@ -475,17 +475,17 @@ function GardenerProfile(){
       <section className="gardener-profile-section" aria-labelledby="account-verification-title">
         <div className="sh"><div><span className="eyebrow">Account security</span><h2 id="account-verification-title">Account verification</h2></div></div>
         <div className="gardener-status-grid">
-          <div className="gardener-status-card"><span>Account status</span><b>{profile.user?.status==='ACTIVE'?'Active':profile.user?.status||'Unknown'}</b><Badge tone={profile.user?.status==='ACTIVE'?'g':'a'}>{profile.user?.status==='ACTIVE'?'Active':'Needs attention'}</Badge></div>
+          <div className="gardener-status-card"><span>Account status</span><b>{profile.user?.status==='ACTIVE'?'Active':'Inactive'}</b><Badge tone={profile.user?.status==='ACTIVE'?'g':'a'}>{profile.user?.status==='ACTIVE'?'Active':'Inactive'}</Badge></div>
           <div className="gardener-status-card"><span>Email verification</span><b>{authUser?.emailVerified?'Verified':'Not verified'}</b><Badge tone={authUser?.emailVerified?'g':'a'}>{authUser?.emailVerified?'Verified':'Unverified'}</Badge></div>
-          <div className="gardener-status-card"><span>Account type</span><b>Gardener</b><Badge>GARDENER</Badge></div>
+          <div className="gardener-status-card"><span>Account type</span><b>Gardener</b><Badge>Gardener</Badge></div>
         </div>
       </section>
 
       <section className="gardener-profile-section" aria-labelledby="kyc-title">
-        <div className="sh"><div><span className="eyebrow">Professional verification</span><h2 id="kyc-title">KYC status</h2></div><Badge tone={kycTone}>{kycLabels[profile.kycStatus]||'Unknown'}</Badge></div>
+        <div className="sh"><div><span className="eyebrow">Professional verification</span><h2 id="kyc-title">Identity verification</h2></div><Badge tone={kycTone}>{kycLabels[profile.kycStatus]||'Unknown'}</Badge></div>
         <div className={`gardener-kyc-panel ${profile.kycStatus==='VERIFIED'?'is-verified':''}`}>
           <div className="gardener-kyc-icon"><FileText size={21}/></div>
-          <div><h3>{kycLabels[profile.kycStatus]||'KYC status unavailable'}</h3><p>{kycDescription[profile.kycStatus]||'Your KYC status could not be interpreted. Please contact T-CARE support.'}</p><Link className="btn ghost" to="/crew/kyc">Manage identity documents <ArrowUpRight size={14}/></Link></div>
+          <div><h3>{kycLabels[profile.kycStatus]||'Verification status unavailable'}</h3><p>{kycDescription[profile.kycStatus]||'Your verification status is unavailable. Please try again later.'}</p><Link className="btn ghost" to="/crew/kyc">Manage identity documents <ArrowUpRight size={14}/></Link></div>
         </div>
       </section>
 
@@ -503,11 +503,11 @@ function GardenerProfile(){
           <div className="gardener-detail"><span>Email address</span><b>{profile.user?.email||'Not available'}</b></div>
           <div className="gardener-detail"><span>Phone number</span><b>{profile.user?.phone||'Not added yet'}</b></div>
           <div className="gardener-detail"><span>Service area</span><b>{profile.serviceArea||'Not added yet'}</b></div>
-          <div className="gardener-detail gardener-detail-wide"><span>Professional bio</span><p>{profile.bio||'No professional bio has been added yet.'}</p></div>
+          <div className="gardener-detail gardener-detail-wide"><span>Professional bio</span><p>{profile.bio||'No introduction added.'}</p></div>
           <div className="gardener-detail"><span>Gardener rating</span><b>{profile.rating==null?'No ratings yet':`${Number(profile.rating).toFixed(1)} / 5`}</b></div>
           <div className="gardener-detail"><span>Profile created</span><b>{dateLabel(profile.createdAt)}</b></div>
         </div>}
-        <p className="gardener-profile-footnote">Profile information is loaded from your T-CARE account. Skills are not yet represented in the Gardener profile API; KYC document submission and review are available separately in the Verification section.</p>
+        <p className="gardener-profile-footnote">Keep your service area and professional introduction current. Upload or update your identity documents in the Identity verification section.</p>
       </section>
     </>}
   </Shell>;
@@ -655,7 +655,7 @@ function Auth(){
   return <div className="auth">
     <div className="auth-art">
       <Link to="/" className="brand"><Leaf size={22}/><b>T-CARE</b></Link>
-      <div><span className="eyebrow">A quieter way to care</span><h1>Welcome to your <em>green space.</em></h1><p>Manage plants, book trusted care and keep every visit beautifully organized.</p></div>
+      <div><span className="eyebrow">A quieter way to care</span><h1>Welcome to your <em>green space.</em></h1><p>Manage your plants, book care visits and review service reports.</p></div>
       <div className="auth-proof"><Check size={16}/> Secure access for every T-CARE account.</div>
       <AuthScenery/>
     </div>
@@ -666,7 +666,7 @@ function Auth(){
       </div>
 
       {step==='forgot-request' ? <>
-        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Forgot your password?</h2><p>Enter the email address associated with your T-CARE account. If it is eligible, we will send a one-time reset code.</p></div>
+        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Forgot your password?</h2><p>Enter the email address linked to your T-CARE account. If the account can be recovered, we’ll send a one-time reset code.</p></div>
         <form onSubmit={requestPasswordReset}>
           <label>Email address<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))} placeholder="you@example.com"/></label>
           {error&&<p className="auth-alert" role="alert">{error}</p>}
@@ -674,7 +674,7 @@ function Auth(){
           <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setMode('login');setError('')}}>Back to sign in</button>
         </form>
       </> : step==='forgot-reset' ? <>
-        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Choose a new password.</h2><p>{recoveryNotice || 'Enter the one-time code sent to your registered email address.'}</p></div>
+        <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Choose a new password.</h2><p>{recoveryNotice || 'Enter the reset code sent to your email address.'}</p></div>
         <form onSubmit={completePasswordReset}>
           <label>Registered email<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))}/></label>
           <label>Six-digit reset code<input required inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={recovery.code} onChange={event=>setRecovery(current=>({...current,code:event.target.value.replace(/\D/g,'').slice(0,6)}))} placeholder="000000"/></label>
@@ -704,9 +704,9 @@ function Auth(){
         </form>
       </> : <>
         <div className="auth-heading">
-          <span className="eyebrow">{mode==='login'?'Secure workspace access':'Start your T-CARE journey'}</span>
+          <span className="eyebrow">{mode==='login'?'Sign in to T-CARE':'Create a T-CARE account'}</span>
           <h2>{mode==='login'?'Welcome back.':'Create your account.'}</h2>
-          <p>{mode==='login'?'Your workspace is selected from your verified account role.':'Create a Customer account to manage your plants and book care. Gardener accounts are created by T-CARE Admin.'}</p>
+          <p>{mode==='login'?'Sign in to your account.':'Create a Customer account to manage your plants and book care. Gardener accounts are created by the T-CARE team.'}</p>
         </div>
         <form onSubmit={submit}>
           {recoveryNotice&&<p className="auth-success" role="status">{recoveryNotice}</p>}
@@ -727,14 +727,14 @@ function Auth(){
             <label className="legal-consent-item"><input type="checkbox" required checked={legalConsent.privacy} onChange={event=>setLegalConsent(current=>({...current,privacy:event.target.checked}))}/><span>I have read and agree to the <Link to="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</Link>.</span></label>
           </div>}
           {error&&<p className="auth-alert" role="alert">{error}</p>}
-          <button className="btn full" type="submit" disabled={busy||(mode==='register'&&(!legalConsent.terms||!legalConsent.privacy))}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in to workspace':'Create account')} <ArrowUpRight size={16}/></button>
+          <button className="btn full" type="submit" disabled={busy||(mode==='register'&&(!legalConsent.terms||!legalConsent.privacy))}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in':'Create account')} <ArrowUpRight size={16}/></button>
         </form>
         {mode==='login'&&<button className="text-btn auth-forgot" type="button" onClick={()=>{setRecovery(current=>({...current,email:form.email,code:'',newPassword:'',confirmPassword:''}));setStep('forgot-request');setError('');setRecoveryNotice('')}}>Forgot password?</button>}
         <p className="auth-note">{location.state?.from?.startsWith('/garden/book')
-          ? 'A Customer account is required to book. After you sign in or verify your Customer account, we will return you to the booking form.'
+          ? 'Sign in or create a Customer account to book a service. You will return to the booking form afterward.'
           : mode==='register'
-            ? 'Customer email verification is required before sign-in. Gardener accounts are created by T-CARE Admin.'
-            : 'Email verification is required for customer registrations. Admin accounts are provisioned separately.'}</p>
+            ? 'Verify your email to finish setting up your Customer account. Gardener accounts are created by the T-CARE team.'
+            : 'New Customer accounts must verify their email before signing in.'}</p>
       </>}
       <Link className="back-home" to="/">← Back to T-CARE home</Link>
     </div>
@@ -743,7 +743,7 @@ function Auth(){
 }
 
 /* ---------- routes ---------- */
-function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><Leaf size={64} strokeWidth={1}/><h1>Lost in the <em>undergrowth</em></h1><p>This page doesn't exist — let's get you back to greener ground.</p><Btn to="/">Back home</Btn></div>}
+function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><Leaf size={64} strokeWidth={1}/><h1>Page not found</h1><p>That page isn’t available. Return to the T-CARE home page.</p><Btn to="/">Back home</Btn></div>}
 const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/privacy',PrivacyRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
 ['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],['/crew/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
@@ -758,7 +758,7 @@ function ProtectedRole({role,children}){
     if(!authUser)nav('/login',{replace:true,state:{from:`${location.pathname}${location.search}${location.hash}`}});
     else if(authUser.role!==role)nav(workspaceForRole(authUser.role),{replace:true});
   },[authReady,authUser,role,nav,location.pathname]);
-  if(!authReady||!authUser||authUser.role!==role)return <div className="auth-loading" role="status">Checking your secure T-CARE session…</div>;
+  if(!authReady||!authUser||authUser.role!==role)return <div className="auth-loading" role="status">Checking your account…</div>;
   return children;
 }
 function App(){
@@ -782,8 +782,8 @@ class AppErrorBoundary extends React.Component {
   render(){
     if(this.state.hasError){
       return <main role="alert" style={{minHeight:'100vh',display:'grid',placeContent:'center',gap:16,padding:24,textAlign:'center',background:'#f6f8f4',color:'#1d2b22'}}>
-        <h1 style={{margin:0}}>T-CARE encountered a display problem.</h1>
-        <p style={{maxWidth:520,margin:'0 auto'}}>Your saved account and booking data have not been intentionally changed. Reload the page to retry the interface.</p>
+        <h1 style={{margin:0}}>We couldn’t display this page.</h1>
+        <p style={{maxWidth:520,margin:'0 auto'}}>Reload the page to try again. Any changes you had not saved may be lost.</p>
         <button type="button" onClick={()=>window.location.reload()} style={{justifySelf:'center',padding:'12px 20px',border:0,borderRadius:10,background:'#245c3c',color:'#fff',cursor:'pointer'}}>Reload T-CARE</button>
       </main>;
     }
