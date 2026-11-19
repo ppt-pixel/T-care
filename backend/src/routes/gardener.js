@@ -38,7 +38,10 @@ router.get('/public', async (req, res, next) => {
 });
 
 router.use(requireAuth, requireRole('GARDENER'));
-router.use(['/dashboard', '/jobs', '/history'], requireVerifiedGardener);
+// Newly onboarded Gardeners must be able to sign in, see their dashboard and submit KYC.
+// Verification is required only for operational job/history endpoints; assignments are
+// independently restricted to verified Gardeners in the Admin booking workflow.
+router.use(['/jobs', '/history'], requireVerifiedGardener);
 
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const timeSchema = z.string().regex(timePattern, 'Time must use HH:mm format.');

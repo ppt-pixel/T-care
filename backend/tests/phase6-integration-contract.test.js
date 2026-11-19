@@ -35,7 +35,8 @@ test('Gardener assigned work and service reports require current KYC verificatio
   const gardener = read('backend/src/routes/gardener.js');
   const serviceExecution = read('backend/src/routes/serviceExecution.js');
   const media = read('backend/src/routes/media.js');
-  assert.match(gardener, /router\.use\(\['\/dashboard', '\/jobs', '\/history'\], requireVerifiedGardener\)/);
+  assert.match(gardener, /router\.use\(\['\/jobs', '\/history'\], requireVerifiedGardener\)/);
+  assert.doesNotMatch(gardener, /router\.use\(\['\/dashboard',\s*'\/jobs',\s*'\/history'\],\s*requireVerifiedGardener\)/);
   assert.match(serviceExecution, /router\.use\(requireAuth,\s*requireRole\('GARDENER'\),\s*requireVerifiedGardener\)/);
   assert.match(media, /kycStatus !== 'VERIFIED'/);
 });

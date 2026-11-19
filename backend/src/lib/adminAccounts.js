@@ -129,3 +129,63 @@ export async function resetManagedCustomerPassword({ prismaClient, actorUserId, 
 
     return { ...reset, temporaryPassword };
 }
+
+
+// Repairs a legacy Gardener account that exists without its required one-to-one profile.
+// This is an operator-only CLI operation; it never changes the User role, status,
+// email verification, password, assignments, bookings, or other account data.
+export async function repairMissingGardenerProfile({ prismaClient, email, confirmed = false }) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        throw accountError(400, 'VALID_EMAIL_REQUIRED', 'Provide the exact registered Gardener email address.');
+    }
+    if (confirmed !== true) {
+        throw accountError(400, 'EXPLICIT_CONFIRMATION_REQUIRED', 'Set GARDENER_PROFILE_REPAIR_CONFIRM=true only after verifying the account owner and role.');
+    }
+
+    const candidate = await prismaClient.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true }
+    });
+    if (!candidate) {
+        throw accountError(404, 'GARDENER_ACCOUNT_NOT_FOUND', 'No account exists for this email in the configured database.');
+    }
+
+    return prismaClient.$transaction(async tx => {
+        await tx.$queryRaw`SELECT \"id\" FROM \"User\" WHERE \"id\" = ${candidate.id} FOR UPDATE`;
+        const user = await tx.user.findUnique({
+            where: { id: candidate.id },
+            select: { id: true, email: true, role: true, status: true, emailVerifiedAt: true }
+        });
+        if (!user) throw accountError(404, 'GARDENER_ACCOUNT_NOT_FOUND', 'Gardener account no longer exists.');
+        if (user.role !== 'GARDENER') {
+            throw accountError(409, 'GARDENER_ROLE_REQUIRED', `This email belongs to a ${user.role} account. No changes were made.`);
+        }
+        if (user.status === 'BLOCKED') {
+            throw accountError(409, 'ACCOUNT_BLOCKED', 'This account is blocked. Profile repair will not override that decision.');
+        }
+
+        const existingProfile = await tx.gardenerProfile.findUnique({
+            where: { userId: user.id },
+            select: { id: true, kycStatus: true }
+        });
+        if (existingProfile) {
+            return { created: false, user, gardenerProfile: existingProfile };
+        }
+
+        const gardenerProfile = await tx.gardenerProfile.create({
+            data: { userId: user.id, kycStatus: 'NOT_STARTED' },
+            select: { id: true, kycStatus: true }
+        });
+        await tx.auditLog.create({
+            data: {
+                actorUserId: null,
+                action: 'CREATE',
+                entityType: 'GardenerProfile',
+                entityId: gardenerProfile.id,
+                metadata: { event: 'MISSING_GARDENER_PROFILE_REPAIRED_BY_OPERATOR', userId: user.id }
+            }
+        });
+        return { created: true, user, gardenerProfile };
+    });
+}

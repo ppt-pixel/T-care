@@ -101,3 +101,7 @@ npm run auth:revoke-sessions
 ```
 
 This revokes every active refresh session in the current database and requires all users to sign in again. Existing access JWTs expire naturally according to `ACCESS_TOKEN_TTL`.
+
+## Admin and Gardener login diagnostics
+
+Use `npm run auth:diagnose -- admin@example.com gardener@example.com` from `backend/` to inspect account role, status, email verification and required profile presence without exposing password hashes. If an existing GARDENER record is missing its one-to-one profile, verify the account owner and run the guarded `npm run auth:repair-gardener-profile` command with `GARDENER_PROFILE_REPAIR_EMAIL` and `GARDENER_PROFILE_REPAIR_CONFIRM=true`. This creates only the missing profile at KYC status `NOT_STARTED`; it does not activate the account or change its role, password or history. See `docs/T-CARE-ADMIN-GARDENER-LOGIN-DIAGNOSIS-AND-FIX-2026-11-19.md` for diagnosis and safe repair procedures.

@@ -18,7 +18,10 @@
     "admin:reset-password": "node scripts/reset-admin-password.js",
     "email:verify": "node scripts/verify-smtp.js",
     "auth:revoke-sessions": "node scripts/revoke-refresh-sessions.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "auth:diagnose": "node scripts/diagnose-auth-accounts.js",
+    "auth:reset-role-account": "node scripts/reset-role-account-password.js",
+    "auth:repair-gardener-profile": "node scripts/repair-gardener-profile.js"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",

@@ -42,7 +42,7 @@ export function useCart(toast){
     } catch {
       if(!storageWarningShown.current){
         storageWarningShown.current=true;
-        toast?.('Items could not be saved to your cart. Please try again.',{type:'warning'});
+        toast?.('Your cart could not be saved in this browser.',{type:'warning'});
       }
     }
   },[items,toast]);
@@ -59,7 +59,7 @@ export function CartDrawer({cart}){
       <div className="ld-head"><h3>Your cart <small>({cart.count})</small></h3><button className="ib" onClick={()=>cart.setOpen(false)} aria-label="Close cart"><X size={17}/></button></div>
       {cart.items.length?<>
         <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label="Decrease"><Minus size={13}/></button><i>{x.qty}</i><button onClick={()=>cart.setQty(x.id,x.qty+1)} aria-label="Increase"><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
-        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">The store is currently for browsing only. You can add items to your cart, but orders and delivery are not available yet.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
+        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Orders and delivery are not available in the store. Your cart is saved in this browser.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
       </>:<div className="cart-empty"><ShoppingBag size={34}/><p>Your cart is empty.</p><LBtn variant="gold" to="#market" onClick={()=>cart.setOpen(false)}>Browse the market</LBtn></div>}
     </motion.aside></>}</AnimatePresence>;
 }
@@ -187,7 +187,7 @@ export function ServiceBanner({services=[]}){
   const {items:popular,loading,error,retry}=usePublicList('/services/popular?range=30d','services');
   if(!loading&&!error&&!popular.length)return null;
   return <section className="lsec nsure"><Reveal className="nsure-card">
-    <div><h2>Popular with <em>plant parents</em></h2><p>Services customers booked most often in the last 30 days.</p></div>
+    <div><h2>Popular with <em>plant parents</em></h2><p>These are the most-booked services from the past 30 days.</p></div>
     <div className="nsure-side">
       {loading&&!popular.length?<div className="public-state">Loading popular services…</div>:null}
       {error&&!popular.length?<div className="public-state" role="alert"><p>Popular services are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
@@ -203,7 +203,7 @@ export function Plans(){
   return <section className="lsec plans" id="plans"><Head center eyebrow="Plans & pricing">Care plans that <em>grow with you</em></Head>
     {loading&&!plans.length?<div className="public-state" role="status">Loading plans…</div>:null}
     {error&&!plans.length?<div className="public-state" role="alert"><p>Plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!plans.length?<div className="public-state"><p>No subscription plans are available at the moment. Explore individual care services or contact T-CARE for help choosing a plan.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
+    {!loading&&!error&&!plans.length?<div className="public-state"><p>No plans are available right now.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
     {!!plans.length&&<div className="plan-grid">{plans.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(i===1?' dark':'')}>
       <small>Subscription</small><h3>{p.name}</h3>{p.description&&<p>{p.description}</p>}
       <ul><li><Leaf size={13}/>Billed {p.billingCycle}</li>{p.plantLimit==null?<li><Leaf size={13}/>No stated plant limit</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
@@ -231,14 +231,14 @@ export function Transformations(){
       <div className="trans-dots">{C.TRANSFORMS.map((x,k)=><button key={x.id} aria-label={x.tab} className={k===i?'on':''} onClick={()=>setI(k)}/>)}</div>
       <div className="trans-thumbs">{C.TRANSFORMS.map((x,k)=><button key={x.id} className={k===i?'on':''} onClick={()=>setI(k)}><span className="thumb-art"><TransformScene id={x.id}/></span><em>{x.tab}</em></button>)}</div>
     </div>
-    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>See ideas for adding greenery to a balcony, indoor corner or terrace.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative concepts</span><LBtn to="/services" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
+    <div className="trans-copy"><h2>Spaces, <em>reimagined</em></h2><p>Explore plant ideas for a balcony, indoor corner or terrace.</p><i className="trans-rule"/><span className="trans-note"><Check size={13}/>Illustrative concepts</span><LBtn to="/services" variant="light">See makeover options <ArrowRight size={15}/></LBtn></div>
   </div></section>;
 }
 
 /* ---------- brand story ---------- */
 export function Story(){
   return <section className="lsec story"><div className="story-copy"><Head eyebrow="Our story">Plant care that feels <em>personal</em></Head>
-      <h3><Sun size={20}/>Why we exist</h3><p>Plant care takes time and attention. T-CARE helps you find a suitable service, arrange a visit and keep your plant details and care notes together.</p></div>
+      <h3><Sun size={20}/>Why we exist</h3><p>Plant care takes time and attention. T-CARE helps you find services, request visits and keep plant details and service notes together.</p></div>
     <div className="values">{C.STORY_VALUES.map(([ic,t,d],i)=>{const I=ICON[ic];return <Reveal key={t} delay={i*.07} className="value"><I size={20}/><b>{t}</b><p>{d}</p></Reveal>})}</div></section>;
 }
 
@@ -249,10 +249,10 @@ function Row({children,label}){
 }
 export function Market({cart}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
-  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Browse the plants and gardening essentials currently listed in the store.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
+  return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Browse plants and gardening essentials available in the store.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
     {loading&&!products.length?<div className="public-state">Loading products…</div>:null}
     {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!products.length?<div className="public-state"><p>No products are available at the moment. You can still explore our plant-care services.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
+    {!loading&&!error&&!products.length?<div className="public-state"><p>No products are available right now.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
   </section>;
 }
@@ -266,9 +266,9 @@ function ReviewsImpl(){
   return <section className="lsec reviews"><Head center eyebrow="Published customer feedback">Experiences shared by <em>T-Care customers</em></Head>
     {loading&&!reviews.length?<div className="public-state">Loading published reviews…</div>:null}
     {error&&!reviews.length?<div className="public-state" role="alert"><p>Published reviews are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!reviews.length?<div className="public-state"><p>Customer reviews will appear here when feedback is shared and published.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
+    {!loading&&!error&&!reviews.length?<div className="public-state"><p>No customer reviews are available yet.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
     {!!reviews.length&&<Row label="published customer reviews">{reviews.map(r=><figure className="review" key={r.id}><div className="stars" aria-label={`${r.rating} out of 5`}>{[0,1,2,3,4].map(k=><Star key={k} size={13} className={k<r.rating?'on':''}/>)}</div>
-      {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Customer rating for this completed service.</blockquote>}
+      {r.comment?<blockquote>“{r.comment}”</blockquote>:<blockquote>Rated this completed T-Care service.</blockquote>}
       <figcaption><span className="av">T</span><div><b>T-Care customer</b><small>{r.booking?.service?.name||'Completed service'}{r.booking?.assignment?.gardener?.user?.fullName?` · Gardener ${r.booking.assignment.gardener.user.fullName}`:''}</small><small>{new Date(r.createdAt).toLocaleDateString('en-IN')}</small></div></figcaption></figure>)}</Row>}
   </section>;
 }
@@ -292,7 +292,7 @@ const SOCIAL_LINKS=Object.entries({
 function SiteFooterImpl(){
   const phoneHref=C.PUBLIC_PHONE_NUMBER?`tel:${C.PUBLIC_PHONE_NUMBER.replace(/[^+\d]/g,'')}`:null;
   return <footer className="lfoot"><div className="lfoot-top">
-    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Explore plant-care services, arrange visits and keep your plant notes together.</p>
+    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Find plant-care services, book visits and keep plant notes in one place.</p>
       {SOCIAL_LINKS.length>0&&<div className="socials">{SOCIAL_LINKS.map(({name,url})=><a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{Social[name]}</a>)}</div>}</div>
     <div className="lfoot-cols">{C.FOOTER_COLS.map(([heading,links])=><div key={heading}><h5>{heading}</h5>{links.map(([label,to])=><L key={label} to={to}>{label}</L>)}</div>)}</div></div>
     <div className="lfoot-contact"><h5>Contact T-CARE</h5><div className="lfoot-contact-grid">

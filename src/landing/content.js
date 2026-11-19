@@ -9,7 +9,7 @@ export const PUBLIC_OFFICE_ADDRESS=String(import.meta.env.VITE_PUBLIC_OFFICE_ADD
 export const TERMS_POLICY_VERSION='2026-11-18-v1';
 export const PRIVACY_POLICY_VERSION='2026-11-18-v1';
 
-export const NAV_LINKS=[['Services','/services'],['Book visit','/garden/book'],['Plant store','/store'],['My care','/garden/shop'],['About us','/about']];
+export const NAV_LINKS=[['Services','/services'],['Book visit','/garden/book'],['Plant store','/store'],['AI care','/garden/shop'],['About us','/about']];
 
 export const TYPED=['Plant care, made easier','Care for the plants you love','Book a visit with a verified Gardener'];
 export const HERO_TICKS=['Plant-care services and plans','Verified Gardener profiles','Visit reports in your account'];
@@ -24,17 +24,17 @@ export const WHY=[
 export const WHY_PAINS=['Need help keeping up with plant care?','Not sure what is affecting a plant?','Looking for care advice for your plants?'];
 
 export const INCLUDED=[
-  ['health','Plant health','Review visible signs of stress and note any concerns during the visit.'],
-  ['water','Watering guidance','Discuss watering frequency and signs of over- or under-watering.'],
-  ['prune','Pruning & tidy-up','Tidy leaves and discuss pruning needs when included in your service.'],
-  ['pest','Pest observations','Your Gardener can note visible signs of pests or disease during the visit.'],
-  ['soil','Soil & feeding','Discuss soil condition and feeding needs when included in your service.'],
+  ['health','Plant health','A health review may be included in your selected service.'],
+  ['water','Watering guidance','Watering advice may be included in your selected service.'],
+  ['prune','Pruning & tidy-up','Pruning or leaf cleaning may be included in your selected service.'],
+  ['pest','Pest observations','Your Gardener can note pest or disease concerns during the visit.'],
+  ['soil','Soil & feeding','Soil and feeding advice may be included in your selected service.'],
 ];
 
 export const STEPS=[
-  ['pin','Choose your location','Select the visit address and the plants you would like cared for.'],
-  ['calendar','Choose a time','Pick a date and time that suit you.'],
-  ['leaf','Follow your visit','Track the visit and read the service report in your account.']
+  ['pin','Pick your place','Share the booking address and the plants you want included.'],
+  ['calendar','Choose a time','Select an available date and time.'],
+  ['leaf','Follow your visit','Check its status and review the service report in your account.']
 ];
 
 // Plans are loaded from the Admin-managed public subscription catalogue.
@@ -48,8 +48,8 @@ export const TRANSFORMS=[
 
 export const STORY_VALUES=[
   ['shield','Trust','Review Gardener profiles and service details before you book.'],
-  ['leaf','Care','Keep plant details and visit notes together.'],
-  ['star','Attention','Review completed work and care recommendations.'],
+  ['leaf','Care','Keep plant details and visit notes together.']
+  ['star','Attention','Review completed work and care recommendations.']
   ['sprout','Growth','Build a care history for the plants in your collection.'],
 ];
 
@@ -60,5 +60,5 @@ export const REVIEWS=[];
 export const FOOTER_COLS=[
   ['Services',[['Our services','/services'],['Subscription plans','/plans'],['Green Makeover','/makeover'],['Plant store','/store'],['Book a visit','/garden/book']]],
   ['Account',[['Dashboard','/garden'],['My bookings','/garden/visits'],['My plants','/garden/plants'],['Billing','/garden/billing'],['Profile','/garden/me']]],
-  ['Company',[['About us','/about'],['Contact & FAQ','/contact'],['Gardener enquiries','/contact'],['Sign in','/login'],['Terms & Conditions','/terms'],['Privacy Policy','/privacy']]],
+  ['Company',[['About us','/about'],['Contact & FAQ','/contact'],['Join as a gardener','/register'],['Sign in','/login'],['Terms & Conditions','/terms'],['Privacy Policy','/privacy']]],
 ];

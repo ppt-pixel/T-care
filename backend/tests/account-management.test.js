@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createManagedAccount, resetManagedCustomerPassword } from '../src/lib/adminAccounts.js';
+import { createManagedAccount, resetManagedCustomerPassword, repairMissingGardenerProfile } from '../src/lib/adminAccounts.js';
 import { publicRegistrationSchema } from '../src/lib/authValidation.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -225,4 +225,63 @@ test('Admin account routes stay behind authentication and Admin role checks', ()
   assert.match(adminRoute, /router\.get\('\/users\/lookup'/);
   assert.match(adminRoute, /router\.post\('\/users\/:id\/password-reset'/);
   assert.match(adminRoute, /role: z\.enum\(\['CUSTOMER', 'GARDENER'\]\)/);
+});
+
+
+test('legacy Gardener profile repair is role-checked, idempotent and does not alter account access', async t => {
+  const user = { id: 'gardener-legacy', email: 'gardener@example.com', role: 'GARDENER', status: 'ACTIVE', emailVerifiedAt: new Date() };
+  const state = { profile: null, profileCreates: 0, auditEntries: [] };
+  const client = {
+    user: { findUnique: async () => ({ id: user.id }) },
+    $transaction: async operation => operation({
+      $queryRaw: async () => [],
+      user: { findUnique: async () => user },
+      gardenerProfile: {
+        findUnique: async () => state.profile,
+        create: async ({ data }) => {
+          state.profileCreates += 1;
+          state.profile = { id: 'gardener-profile-1', ...data };
+          return state.profile;
+        }
+      },
+      auditLog: { create: async ({ data }) => { state.auditEntries.push(data); return data; } }
+    })
+  };
+
+  await assert.rejects(
+    repairMissingGardenerProfile({ prismaClient: client, email: user.email, confirmed: false }),
+    error => error.code === 'EXPLICIT_CONFIRMATION_REQUIRED'
+  );
+  const repaired = await repairMissingGardenerProfile({ prismaClient: client, email: user.email, confirmed: true });
+  const repeated = await repairMissingGardenerProfile({ prismaClient: client, email: user.email, confirmed: true });
+  assert.equal(repaired.created, true);
+  assert.equal(repaired.gardenerProfile.kycStatus, 'NOT_STARTED');
+  assert.equal(repeated.created, false);
+  assert.equal(state.profileCreates, 1);
+  assert.equal(state.auditEntries.length, 1);
+  assert.equal(user.role, 'GARDENER');
+  assert.equal(user.status, 'ACTIVE');
+});
+
+test('legacy Gardener profile repair refuses non-Gardener and blocked accounts', async t => {
+  for (const user of [
+    { id: 'customer-1', email: 'customer@example.com', role: 'CUSTOMER', status: 'ACTIVE' },
+    { id: 'blocked-1', email: 'blocked@example.com', role: 'GARDENER', status: 'BLOCKED' }
+  ]) {
+    await t.test(user.email, async () => {
+      const client = {
+        user: { findUnique: async () => ({ id: user.id }) },
+        $transaction: async operation => operation({
+          $queryRaw: async () => [],
+          user: { findUnique: async () => user },
+          gardenerProfile: { findUnique: async () => null, create: async () => { throw new Error('must not create'); } },
+          auditLog: { create: async () => { throw new Error('must not audit'); } }
+        })
+      };
+      await assert.rejects(
+        repairMissingGardenerProfile({ prismaClient: client, email: user.email, confirmed: true }),
+        error => error.code === (user.role === 'GARDENER' ? 'ACCOUNT_BLOCKED' : 'GARDENER_ROLE_REQUIRED')
+      );
+    });
+  }
 });

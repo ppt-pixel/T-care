@@ -20,7 +20,7 @@ export function PageHero({eyebrow,title,sub,crumb,children}){
       {children&&<div className="phero-actions">{children}</div>}
     </motion.div>
     <motion.aside className="phero-card" aria-label="Why T-Care" initial={{opacity:0,y:30,rotate:-4}} animate={{opacity:1,y:0,rotate:-2}} transition={{duration:.8,delay:.15,ease:[.22,1,.36,1]}}>
-      <div className="pc-rate"><b>Care, made visible</b><span>Find plant-care services, meet verified Gardeners and read feedback from customers.</span></div>
+      <div className="pc-rate"><b>Care, made visible</b><span>Meet Gardeners, read customer reviews and browse the store.</span></div>
       <ul>{C.HERO_TICKS.map(t=><li key={t}><span><Check size={13}/></span>{t}</li>)}</ul>
       <div className="pc-icons"><i><Droplets size={16}/></i><i><Sun size={16}/></i><i><Bug size={16}/></i><i><Sprout size={16}/></i></div>
     </motion.aside>
@@ -43,10 +43,10 @@ function Faq({items,title='Questions, answered',eyebrow='FAQ'}){
 
 const FAQ_GENERAL=[
   ['How do I book a visit?','Choose a service, date and time, then add the plants you would like included. You can follow your booking and see its assigned Gardener in your account.'],
-  ['Are your gardeners verified?','Gardeners listed here have completed T-CARE’s identity checks.'],
-  ['What areas do you serve?','Available visit times vary by location and Gardener availability. Enter your address in the booking form to see the times you can request.'],
-  ['Do I need to be home during the visit?','Please make sure the Gardener can access the property at the scheduled time. Add any useful entry instructions to your booking.'],
-  ['What if my plant does not improve?','Plant recovery can take time and cannot be guaranteed. If you have concerns after a visit, contact T-CARE and refer to your service report.'],
+  ['Are your gardeners verified?','Gardeners shown in the public directory have completed identity verification and have an active account.'],
+  ['What areas do you serve?','Visit availability depends on the Gardener and the booking address. Check the booking form for available dates and times.'],
+  ['Do I need to be home during the visit?','Please coordinate access arrangements with T-Care before the scheduled visit.'],
+  ['What if my plant does not improve?','Use your booking and service report to share an update with T-Care. Any follow-up depends on the terms agreed for that booking.'],
 ];
 
 /* ============ SERVICES ============ */
@@ -64,7 +64,7 @@ export function ServicesPage({services=[],loading=false,error='',onRetry}){
     <section className="lsec svc-list">
       {loading&&!services.length?<div className="public-state">Loading services…</div>:null}
       {error&&!services.length?<div className="public-state" role="alert"><p>Services are temporarily unavailable.</p><button className="tl" onClick={onRetry}>Try again</button></div>:null}
-      {!loading&&!error&&!services.length?<div className="public-state">There are no services to browse at the moment. Contact T-CARE if you need help arranging plant care.</div>:null}
+      {!loading&&!error&&!services.length?<div className="public-state">No services are available right now.</div>:null}
       {!!services.length&&<>
       <div className="chips" role="tablist" aria-label="Service categories">{cats.map(c=><button key={c} role="tab" aria-selected={cat===c} className={cat===c?'on':''} onClick={()=>setCat(c)}>{c}</button>)}</div>
       <div className="svc-grid">{list.map((s,i)=><Reveal key={s.id||s.name} delay={(i%4)*.05} className="svc-card">
@@ -85,16 +85,16 @@ export function ServicesPage({services=[],loading=false,error='',onRetry}){
 
 /* ============ ABOUT ============ */
 const COMMIT=[
-  [Recycle,'Thoughtful choices','Review service options and product details before you decide.'],
-  [Users,'People at the centre','Keep visit updates and service reports clear for Customers and Gardeners.'],
-  [Award,'Clear care records','See the work completed and notes recorded for each visit.'],
+  [Recycle,'Thoughtful choices','Compare care services and product details.'],
+  [Users,'People at the centre','Customers and Gardeners can review visits and service reports.'],
+  [Award,'Clear care records','Keep plant details and visit reports together.'],
 ];
 function GardenerDirectory(){
   const {items:gardeners,loading,error,retry}=usePublicList('/gardener/public','gardeners');
   return <section className="lsec team"><Head center eyebrow="Verified Gardeners" sub="Meet active Gardeners who have completed identity verification.">Meet the <em>Gardeners</em></Head>
     {loading&&!gardeners.length?<div className="public-state">Loading verified Gardener profiles…</div>:null}
     {error&&!gardeners.length?<div className="public-state" role="alert"><p>Gardener profiles are temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
-    {!loading&&!error&&!gardeners.length?<div className="public-state">No Gardener profiles are available at the moment. Please check back later.</div>:null}
+    {!loading&&!error&&!gardeners.length?<div className="public-state">No Gardener profiles are available right now.</div>:null}
     {!!gardeners.length&&<div className="team-grid">{gardeners.map((g,i)=><Reveal key={g.id} delay={(i%4)*.06} className="team-card"><span className="avatar">{String(g.name||'T-Care').split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()}</span><h3>{g.name}</h3><b>Verified Gardener</b>
       {g.rating!=null&&<span className="team-rating"><Star size={13} fill="currentColor"/> {Number(g.rating).toFixed(1)} / 5</span>}
       {g.serviceArea&&<small className="team-area"><MapPin size={12}/> {g.serviceArea}</small>}
@@ -105,7 +105,7 @@ function GardenerDirectory(){
 
 export function AboutPage(){
   return <>
-    <PageHero eyebrow="About T-Care" title={<>Plant care, built around <em>people</em></>} sub="T-CARE helps you arrange plant-care visits, work with verified Gardeners and keep track of your plants and service history.">
+    <PageHero eyebrow="About T-Care" title={<>Plant care, built around <em>people</em></>} sub="T-Care brings customers, verified gardeners and plant-care records together in one place.">
       <LBtn to="/garden/book" variant="gold">Book a visit <ArrowRight size={15}/></LBtn><LBtn to="/contact" variant="outline">Get in touch</LBtn>
     </PageHero>
     <Story/>
@@ -119,13 +119,13 @@ export function AboutPage(){
 /* ============ PLANS ============ */
 const FAQ_PLANS=[
   ['Can I change my plan later?','Contact T-Care before your next billing date. Available changes depend on your subscription.'],
-  ['Can I pause or cancel?','You can pause an active plan or cancel an eligible subscription from your account. The current status is shown on your subscription page.'],
-  ['When will I be charged?','Your subscription begins after your payment is confirmed.'],
+  ['Can I pause or cancel?','If pause or cancellation is available for your plan, you can manage it from your subscription account.'],
+  ['When will I be charged?','Your plan stays pending until payment is confirmed.'],
   ['Where can I see what my plan includes?','Each plan lists its billing period, price and plant limit.'],
 ];
 export function PlansPage(){
   return <>
-    <PageHero eyebrow="Plans & pricing" title={<>Care plans that <em>grow with you</em></>} sub="Find a plan that suits your plants and compare its price, billing period and plant allowance.">
+    <PageHero eyebrow="Plans & pricing" title={<>Care plans that <em>grow with you</em></>} sub="Compare available plans, prices, billing periods and plant limits.">
       <LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn>
     </PageHero>
     <Plans/>
@@ -148,7 +148,7 @@ export function StorePage({cart}){
   const list=products.filter(p=>cat==='All'||p.category===cat);
   React.useEffect(()=>{if(cat!=='All'&&!cats.includes(cat))setCat('All')},[cat,cats.join('|')]);
   return <>
-    <PageHero eyebrow="T-Care market" title={<>Everything your <em>plants</em> need</>} sub="Explore plants and gardening essentials, with current prices and availability on each listing.">
+    <PageHero eyebrow="T-Care market" title={<>Everything your <em>plants</em> need</>} sub="Browse plants and gardening essentials, with prices and stock shown on each listing.">
       <LBtn onClick={()=>cart.setOpen(true)} variant="gold">View cart{cart.count>0?` (${cart.count})`:''} <ArrowRight size={15}/></LBtn>
     </PageHero>
     <section className="lsec store">
@@ -163,9 +163,9 @@ export function StorePage({cart}){
               <div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div>
                 <button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></Reveal>;
         })}</div>
-        {!list.length&&<div className="public-state">There are no products in this category. Choose another category to keep browsing.</div>}
+        {!list.length&&<div className="public-state">No products are available in this category.</div>}
       </>}
-      {!loading&&!error&&!products.length&&<div className="public-state">No products are available at the moment. You can still explore our plant-care services.</div>}
+      {!loading&&!error&&!products.length&&<div className="public-state">No products are available right now.</div>}
     </section>
     <section className="lsec perks"><Head center eyebrow="Shop with clarity">Product details, <em>clear pricing</em></Head>
       <div className="commit-grid four">{STORE_PERKS.map(([I,t,d],i)=><Reveal key={t} delay={i*.06} className="commit-card"><span className="ic"><I size={22}/></span><h3>{t}</h3><p>{d}</p></Reveal>)}</div></section>
@@ -179,7 +179,7 @@ const MAKE_STEPS=[
   [Camera,'Share your space','Describe the area and your goals in a request.'],
   [Ruler,'Review the requirements','Discuss the space and work involved with T-Care.'],
   [Palette,'Confirm the proposal','Agree the plants, materials, price and timing before work begins.'],
-  [Sparkles,'Schedule the work','Confirm the visit after the service, price and timing have been agreed.'],
+  [Sparkles,'Schedule the work','The booking record will show the agreed service and status.'],
 ];
 const FAQ_MAKE=[
   ['How much does a makeover cost?','The price depends on your space and the work involved. Confirm the scope and price before accepting a quote.'],
@@ -188,7 +188,7 @@ const FAQ_MAKE=[
 ];
 export function MakeoverPage(){
   return <>
-    <PageHero eyebrow="Green Makeover" title={<>Spaces, <em>reimagined</em></>} sub="Explore ideas for balconies, indoor corners and terraces. The images are design references to help you plan your space.">
+    <PageHero eyebrow="Green Makeover" title={<>Spaces, <em>reimagined</em></>} sub="Explore ideas for balconies, indoor corners and terraces. Images show concepts, not completed projects.">
       <LBtn to="/garden/book" variant="gold">Plan my makeover <ArrowRight size={15}/></LBtn>
     </PageHero>
     <Transformations/>
@@ -215,12 +215,12 @@ export function ContactPage(){
     ...(location?[[MapPin,'Service location','Published service location',location]]:[]),
   ];
   return <>
-    <PageHero eyebrow="Contact" title={<>We would love to <em>hear from you</em></>} sub="Get in touch about a booking, a service or any other question."/>
+    <PageHero eyebrow="Contact" title={<>We would love to <em>hear from you</em></>} sub="Choose an available contact option below."/>
     <section className="lsec contact">
       <div className="contact-cards">
         {cards.map(([I,t,sub,value],i)=><Reveal key={t} delay={i*.06} className="ccard"><span className="ic"><I size={20}/></span><div><b>{t}</b><small>{sub==='Published office address'||sub==='Published service location'?'':sub}</small><span>{t==='Email'?<a href={`mailto:${value}`}>{value}</a>:t==='Phone'?<a href={`tel:${String(value).replace(/[^+\d]/g,'')}`}>{value}</a>:value}</span></div></Reveal>)}
         {whatsappConfigured?<WaBtn variant="outline">Chat on WhatsApp</WaBtn>:null}
-        {!cards.length&&<div className="public-state">Contact details have not been published yet. Sign in to review an existing booking or service report.</div>}
+        {!cards.length&&<div className="public-state">Contact options are not available right now.</div>}
       </div>
       <div className="cform"><h3>Need help with an existing booking?</h3><p>Sign in to review your booking, assigned Gardener and service report.</p><LBtn to="/login" variant="dark">Sign in to T-Care <ArrowRight size={15}/></LBtn></div>
     </section>

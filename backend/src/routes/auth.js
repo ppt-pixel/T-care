@@ -13,6 +13,7 @@ import {
 } from '../lib/email.js';
 import { TERMS_POLICY_VERSION, PRIVACY_POLICY_VERSION } from '../config/legalPolicy.js';
 import { publicRegistrationSchema } from '../lib/authValidation.js';
+import { findLoginAccount } from '../lib/loginAccount.js';
 
 const bcryptPasswordSchema = minimum => z.string()
     .min(minimum)
@@ -624,10 +625,7 @@ export default function authRouter(router) {
     router.post('/login', async(req, res, next) => {
         try {
             const input = loginSchema.parse(req.body);
-            const user = await prisma.user.findUnique({
-                where: { email: input.email },
-                include: { customerProfile: true, gardenerProfile: true }
-            });
+            const user = await findLoginAccount(prisma, input.email);
 
             if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
                 return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Email or password is incorrect.' });

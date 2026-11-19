@@ -61,7 +61,7 @@ async function provisionAdmin() {
   } else {
     console.log('The configured initial password was hashed and was not printed.');
   }
-  console.log('Store the initial password securely. Password change is available through the authenticated API; the profile UI does not yet include a password-change form.');
+  console.log('Store the initial password securely. After signing in, the Admin can change it from the Security page.');
 }
 
 try {
