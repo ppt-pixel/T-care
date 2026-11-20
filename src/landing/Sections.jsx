@@ -84,7 +84,7 @@ export function LandingNav({theme,toggleTheme,cart,authUser,logout}){
   const signOut=async()=>{await logout?.();setAccountOpen(false);setMenu(false)};
   return <>
     <header className="lnav2">
-      <Link to="/" className="brand"><Leaf size={20}/><b>T-CARE</b></Link>
+      <Link to="/" className="brand" aria-label="T-CARE home"><img className="brand-mark" src="/brand/t-care-mark.png" width="30" height="38" alt=""/><b>T-CARE</b></Link>
       <nav className="ln-links" aria-label="Main">{C.NAV_LINKS.map(([t,to])=><L key={t} to={to}>{t}</L>)}</nav>
       <div className="ln-right">
         <Link to="/makeover" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
@@ -108,7 +108,7 @@ export function LandingNav({theme,toggleTheme,cart,authUser,logout}){
     <AnimatePresence>{menu&&<>
       <motion.div key="ov" className="ld-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setMenu(false)}/>
       <motion.aside key="mn" className="ld-panel menu" role="dialog" aria-label="Menu" initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'tween',duration:.35,ease:[.22,1,.36,1]}}>
-        <div className="ld-head"><span className="brand"><Leaf size={18}/><b>T-CARE</b></span><button className="ib" onClick={()=>setMenu(false)} aria-label="Close menu"><X size={17}/></button></div>
+        <div className="ld-head"><Link to="/" className="brand" aria-label="T-CARE home"><img className="brand-mark" src="/brand/t-care-mark.png" width="30" height="38" alt=""/><b>T-CARE</b></Link><button className="ib" onClick={()=>setMenu(false)} aria-label="Close menu"><X size={17}/></button></div>
         <nav className="menu-links">{C.NAV_LINKS.map(([t,to],i)=><motion.div key={t} initial={{opacity:0,x:24}} animate={{opacity:1,x:0}} transition={{delay:.08+i*.05}}><L to={to} onClick={()=>setMenu(false)}>{t}<ArrowUpRight size={17}/></L></motion.div>)}</nav>
         <div className="menu-foot">
           <LBtn to="/makeover" variant="gold" onClick={()=>setMenu(false)}><Leaf size={15}/>Green Makeover</LBtn>
@@ -292,14 +292,14 @@ const SOCIAL_LINKS=Object.entries({
 function SiteFooterImpl(){
   const phoneHref=C.PUBLIC_PHONE_NUMBER?`tel:${C.PUBLIC_PHONE_NUMBER.replace(/[^+\d]/g,'')}`:null;
   return <footer className="lfoot"><div className="lfoot-top">
-    <div className="lfoot-brand"><span className="brand"><Leaf size={22}/><b>T-CARE</b></span><p>Find plant-care services, book visits and keep plant notes in one place.</p>
+    <div className="lfoot-brand"><Link to="/" className="lfoot-logo-link" aria-label="T-CARE home"><img src="/brand/t-care-wordmark.png" width="445" height="158" alt="T-CARE — Plant Care Management as a Service. Greener Tomorrow Together."/></Link><p>Plant Care Management as a Service — helping people care for the plants and spaces around them.</p>
       {SOCIAL_LINKS.length>0&&<div className="socials">{SOCIAL_LINKS.map(({name,url})=><a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{Social[name]}</a>)}</div>}</div>
     <div className="lfoot-cols">{C.FOOTER_COLS.map(([heading,links])=><div key={heading}><h5>{heading}</h5>{links.map(([label,to])=><L key={label} to={to}>{label}</L>)}</div>)}</div></div>
-    <div className="lfoot-contact"><h5>Contact T-CARE</h5><div className="lfoot-contact-grid">
+    <div className="lfoot-contact"><h5>Customer care & contact</h5><div className="lfoot-contact-grid">
+      <div><Mail size={16}/><span><small>Customer care</small><a href={`mailto:${C.PUBLIC_CONTACT_EMAIL}`}>{C.PUBLIC_CONTACT_EMAIL}</a></span></div>
       {C.PUBLIC_OFFICE_ADDRESS&&<div><MapPin size={16}/><span><small>Main office</small>{C.PUBLIC_OFFICE_ADDRESS}</span></div>}
       {C.PUBLIC_LOCATION&&<div><MapPin size={16}/><span><small>Service location</small>{C.PUBLIC_LOCATION}</span></div>}
       {C.PUBLIC_PHONE_NUMBER&&<div><Phone size={16}/><span><small>Phone</small><a href={phoneHref}>{C.PUBLIC_PHONE_NUMBER}</a></span></div>}
-      {C.PUBLIC_CONTACT_EMAIL&&<div><Mail size={16}/><span><small>Email</small><a href={`mailto:${C.PUBLIC_CONTACT_EMAIL}`}>{C.PUBLIC_CONTACT_EMAIL}</a></span></div>}
     </div></div>
     <div className="lfoot-bot"><span>© {new Date().getFullYear()} T-Care. All rights reserved.</span><span>Made with care for plants and the people who love them.</span></div></footer>;
 }

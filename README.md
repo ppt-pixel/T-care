@@ -31,10 +31,11 @@ See [`docs/T-CARE-AUTHENTICATION-IMPLEMENTATION.md`](docs/T-CARE-AUTHENTICATION-
 
 ## Public contact configuration
 
-Set these optional Netlify environment variables for the public contact page:
+The official customer-care email is `support@t-care.in` and is maintained in `src/landing/content.js`; it is shown on both the Contact page and global footer without requiring a deployment variable.
 
-- `VITE_WHATSAPP_NUMBER`: T-Care's actual WhatsApp Business number in international digits only (for example, country code plus number; do not include `+`, spaces or punctuation). Leave blank until the verified business number is supplied.
-- `VITE_PUBLIC_CONTACT_EMAIL`: verified public contact email.
+Set these optional Netlify environment variables for any additional public contact channels:
+
+- `VITE_WHATSAPP_NUMBER`: T-CARE's actual WhatsApp Business number in international digits only (for example, country code plus number; do not include `+`, spaces or punctuation). Leave blank until the verified business number is supplied.
 - `VITE_PUBLIC_PHONE_NUMBER`: verified public phone number.
 - `VITE_PUBLIC_LOCATION`: approved public-facing office or service-area text.
 - `VITE_INSTAGRAM_URL`, `VITE_YOUTUBE_URL`, `VITE_FACEBOOK_URL`, `VITE_LINKEDIN_URL`: optional public profile URLs. Only valid HTTPS URLs are displayed; unset accounts are omitted from the footer.

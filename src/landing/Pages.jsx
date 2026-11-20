@@ -203,13 +203,13 @@ export function MakeoverPage(){
 /* ============ CONTACT ============ */
 export function ContactPage(){
   const whatsappConfigured=/^[1-9]\d{7,14}$/.test(C.WHATSAPP_NUMBER);
-  const email=String(import.meta.env.VITE_PUBLIC_CONTACT_EMAIL||'').trim();
+  const email=C.PUBLIC_CONTACT_EMAIL;
   const phone=String(import.meta.env.VITE_PUBLIC_PHONE_NUMBER||'').trim();
   const location=String(import.meta.env.VITE_PUBLIC_LOCATION||'').trim();
   const officeAddress=String(import.meta.env.VITE_PUBLIC_OFFICE_ADDRESS||'').trim();
   const cards=[
     ...(whatsappConfigured?[[MessageCircle,'WhatsApp','Message T-Care on WhatsApp',C.WHATSAPP_NUMBER]]:[]),
-    ...(email?[[Mail,'Email','Email T-Care',email]]:[]),
+    ...(email?[[Mail,'Customer care','Support and account enquiries',email]]:[]),
     ...(phone?[[Phone,'Phone','Call T-Care',phone]]:[]),
     ...(officeAddress?[[MapPin,'Main office','Published office address',officeAddress]]:[]),
     ...(location?[[MapPin,'Service location','Published service location',location]]:[]),
@@ -218,7 +218,7 @@ export function ContactPage(){
     <PageHero eyebrow="Contact" title={<>We would love to <em>hear from you</em></>} sub="Choose an available contact option below."/>
     <section className="lsec contact">
       <div className="contact-cards">
-        {cards.map(([I,t,sub,value],i)=><Reveal key={t} delay={i*.06} className="ccard"><span className="ic"><I size={20}/></span><div><b>{t}</b><small>{sub==='Published office address'||sub==='Published service location'?'':sub}</small><span>{t==='Email'?<a href={`mailto:${value}`}>{value}</a>:t==='Phone'?<a href={`tel:${String(value).replace(/[^+\d]/g,'')}`}>{value}</a>:value}</span></div></Reveal>)}
+        {cards.map(([I,t,sub,value],i)=><Reveal key={t} delay={i*.06} className="ccard"><span className="ic"><I size={20}/></span><div><b>{t}</b><small>{sub==='Published office address'||sub==='Published service location'?'':sub}</small><span>{t==='Customer care'?<a href={`mailto:${value}`}>{value}</a>:t==='Phone'?<a href={`tel:${String(value).replace(/[^+\d]/g,'')}`}>{value}</a>:value}</span></div></Reveal>)}
         {whatsappConfigured?<WaBtn variant="outline">Chat on WhatsApp</WaBtn>:null}
         {!cards.length&&<div className="public-state">Contact options are not available right now.</div>}
       </div>
