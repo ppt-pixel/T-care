@@ -180,30 +180,30 @@ enum AuditAction {
 }
 
 model User {
-  id              String     @id @default(cuid())
-  email           String     @unique
-  passwordHash    String
-  authVersion     Int        @default(0)
-  fullName        String
-  phone           String?
-  emailVerifiedAt DateTime?
-  termsAcceptedAt DateTime?
-  termsPolicyVersion String?
-  privacyAcceptedAt DateTime?
+  id                   String     @id @default(cuid())
+  email                String     @unique
+  passwordHash         String
+  authVersion          Int        @default(0)
+  fullName             String
+  phone                String?
+  emailVerifiedAt      DateTime?
+  termsAcceptedAt      DateTime?
+  termsPolicyVersion   String?
+  privacyAcceptedAt    DateTime?
   privacyPolicyVersion String?
-  role            Role       @default(CUSTOMER)
-  status          UserStatus @default(ACTIVE)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  lastLoginAt     DateTime?
+  role                 Role       @default(CUSTOMER)
+  status               UserStatus @default(ACTIVE)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  lastLoginAt          DateTime?
 
-  customerProfile CustomerProfile?
-  gardenerProfile GardenerProfile?
-  refreshSessions RefreshSession[]
-  notifications   Notification[]
-  auditLogs       AuditLog[]       @relation("AuditActor")
-  mediaAssets     MediaAsset[]
-  emailOtps       EmailOtp[]
+  customerProfile     CustomerProfile?
+  gardenerProfile     GardenerProfile?
+  refreshSessions     RefreshSession[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]           @relation("AuditActor")
+  mediaAssets         MediaAsset[]
+  emailOtps           EmailOtp[]
   passwordResetTokens PasswordResetToken[]
 
   @@index([role, status])
@@ -347,21 +347,21 @@ model Plant {
 }
 
 model MediaAsset {
-  id          String      @id @default(cuid())
+  id          String               @id @default(cuid())
   ownerUserId String
-  owner       User        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  owner       User                 @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   bucket      String
-  objectKey   String      @unique
+  objectKey   String               @unique
   kind        String
   contentType String
   sizeBytes   Int?
-  status      MediaStatus @default(PENDING)
+  status      MediaStatus          @default(PENDING)
   targetType  String?
   targetId    String?
   metadata    Json?
   kycDocument GardenerKycDocument?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 
   @@index([ownerUserId, createdAt])
   @@index([targetType, targetId])
@@ -396,15 +396,15 @@ model PlantCareRecord {
 }
 
 model Service {
-  id              String         @id @default(cuid())
-  name            String         @unique
+  id              String                    @id @default(cuid())
+  name            String                    @unique
   description     String
   category        String
   durationLabel   String
   durationMinutes Int?
-  status          ServiceStatus  @default(ACTIVE)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  status          ServiceStatus             @default(ACTIVE)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
   prices          ServicePrice[]
   bookings        Booking[]
   planLinks       SubscriptionPlanService[]
@@ -425,45 +425,47 @@ model ServicePrice {
 }
 
 model Booking {
-  id                  String                 @id @default(cuid())
-  reference           String                 @unique
-  customerId          String
-  customer            CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  serviceId           String
-  service             Service                @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  addressId           String
-  address             Address                @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  scheduledStart      DateTime
-  scheduledEnd        DateTime
-  specialInstructions String?
-  idempotencyKey      String?                @unique
-  idempotencyFingerprint String?
-  status              BookingStatus          @default(CONFIRMED)
-  subtotal            Decimal                @db.Decimal(10, 2)
-  convenienceFee      Decimal                @default(0) @db.Decimal(10, 2)
-  total               Decimal                @db.Decimal(10, 2)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  plants              BookingPlant[]
-  statusHistory       BookingStatusHistory[]
-  assignment          GardenerAssignment?
-  report              ServiceReport?
-  payment             Payment?
-  review              Review?
-  subscriptionId String?
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  subscriptionPlanId String?
-  subscriptionPlan SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id], onDelete: SetNull)
+  id                        String                   @id @default(cuid())
+  reference                 String                   @unique
+  customerId                String
+  customer                  CustomerProfile          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  serviceId                 String
+  service                   Service                  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  addressId                 String
+  address                   Address                  @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  scheduledStart            DateTime
+  scheduledEnd              DateTime
+  specialInstructions       String?
+  idempotencyKey            String?                  @unique
+  idempotencyFingerprint    String?
+  status                    BookingStatus            @default(CONFIRMED)
+  subtotal                  Decimal                  @db.Decimal(10, 2)
+  convenienceFee            Decimal                  @default(0) @db.Decimal(10, 2)
+  total                     Decimal                  @db.Decimal(10, 2)
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+  plants                    BookingPlant[]
+  statusHistory             BookingStatusHistory[]
+  assignment                GardenerAssignment?
+  report                    ServiceReport?
+  payment                   Payment?
+  review                    Review?
+  subscriptionId            String?
+  subscription              Subscription?            @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionPlanId        String?
+  subscriptionPlan          SubscriptionPlan?        @relation(fields: [subscriptionPlanId], references: [id], onDelete: SetNull)
   subscriptionVisitCreditId String?
-  subscriptionVisitCredit SubscriptionVisitCredit? @relation(fields: [subscriptionVisitCreditId], references: [id], onDelete: SetNull)
-  creditRestoredAt DateTime?
-  issues              IssueReport[]
-  careRecords         PlantCareRecord[]
+  subscriptionVisitCredit   SubscriptionVisitCredit? @relation(fields: [subscriptionVisitCreditId], references: [id], onDelete: SetNull)
+  creditRestoredAt          DateTime?
+  issues                    IssueReport[]
+  careRecords               PlantCareRecord[]
 
   @@index([customerId, status, scheduledStart])
   @@index([subscriptionId, scheduledStart])
   @@index([serviceId, scheduledStart])
   @@index([status, scheduledStart])
+  @@index([subscriptionPlanId])
+  @@index([subscriptionVisitCreditId])
 }
 
 model BookingPlant {
@@ -567,27 +569,27 @@ model ServiceReportPhoto {
 }
 
 model Payment {
-  id                String         @id @default(cuid())
-  bookingId         String?        @unique
-  booking           Booking?       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  id                String             @id @default(cuid())
+  bookingId         String?            @unique
+  booking           Booking?           @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   subscriptionId    String?
-  subscription      Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
-  amount            Decimal        @db.Decimal(10, 2)
-  currency          String         @default("INR")
+  subscription      Subscription?      @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  amount            Decimal            @db.Decimal(10, 2)
+  currency          String             @default("INR")
   method            PaymentMethod
-  status            PaymentStatus  @default(PENDING)
+  status            PaymentStatus      @default(PENDING)
   provider          String?
-  providerOrderId   String?        @unique
-  providerPaymentId String?        @unique
-  idempotencyKey    String         @unique
+  providerOrderId   String?            @unique
+  providerPaymentId String?            @unique
+  idempotencyKey    String             @unique
   paidAt            DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
   refunds           Refund[]
   events            PaymentEvent[]
   receipt           PaymentReceipt?
-  shopOrderId       String?        @unique
-  shopOrder         ShopOrder?     @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+  shopOrderId       String?            @unique
+  shopOrder         ShopOrder?         @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
   qrSessions        PaymentQrSession[]
 
   @@index([status, createdAt])
@@ -597,41 +599,41 @@ model Payment {
 }
 
 model PaymentQrSession {
-  id                String                 @id @default(cuid())
-  paymentId         String
-  payment           Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  providerQrCodeId  String                 @unique
-  imageUrl          String
-  shortUrl          String
-  status            QrPaymentSessionStatus @default(ACTIVE)
-  expiresAt         DateTime
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  id               String                 @id @default(cuid())
+  paymentId        String
+  payment          Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  providerQrCodeId String                 @unique
+  imageUrl         String
+  shortUrl         String
+  status           QrPaymentSessionStatus @default(ACTIVE)
+  expiresAt        DateTime
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@index([paymentId, status, createdAt])
   @@index([status, expiresAt])
 }
 
 model PaymentReceipt {
-  id               String                @id @default(cuid())
-  paymentId        String                @unique
-  payment          Payment               @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  receiptNumber    String                @unique
-  recipientEmail   String
-  recipientName    String
-  purpose          String
-  amount           Decimal               @db.Decimal(10, 2)
-  currency         String                @default("INR")
-  paymentMethod    PaymentMethod
-  transactionId    String
-  paidAt           DateTime
-  deliveryStatus   ReceiptDeliveryStatus @default(PENDING)
-  sentAt           DateTime?
-  sendStartedAt    DateTime?
-  attempts         Int                   @default(0)
-  lastError        String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  id             String                @id @default(cuid())
+  paymentId      String                @unique
+  payment        Payment               @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receiptNumber  String                @unique
+  recipientEmail String
+  recipientName  String
+  purpose        String
+  amount         Decimal               @db.Decimal(10, 2)
+  currency       String                @default("INR")
+  paymentMethod  PaymentMethod
+  transactionId  String
+  paidAt         DateTime
+  deliveryStatus ReceiptDeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  sendStartedAt  DateTime?
+  attempts       Int                   @default(0)
+  lastError      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@index([deliveryStatus, createdAt])
   @@index([recipientEmail, paidAt])
@@ -668,26 +670,26 @@ model Refund {
 }
 
 model SubscriptionPlan {
-  id              String                 @id @default(cuid())
-  name            String                 @unique
-  description     String?
-  planType        SubscriptionPlanType   @default(LEGACY_RECURRING)
-  billingCycle    String
-  serviceFrequency String?
-  plantLimit      Int?
-  price           Decimal                @db.Decimal(10, 2)
-  benefits        String[]               @default([])
-  limitations     String[]               @default([])
-  razorpayPlanId  String?                @unique
-  includedVisitsPerPeriod Int?
+  id                       String                    @id @default(cuid())
+  name                     String                    @unique
+  description              String?
+  planType                 SubscriptionPlanType      @default(LEGACY_RECURRING)
+  billingCycle             String
+  serviceFrequency         String?
+  plantLimit               Int?
+  price                    Decimal                   @db.Decimal(10, 2)
+  benefits                 String[]                  @default([])
+  limitations              String[]                  @default([])
+  razorpayPlanId           String?                   @unique
+  includedVisitsPerPeriod  Int?
   minimumVisitIntervalDays Int?
-  maxRenewalCycles Int?
-  status          ServiceStatus          @default(ACTIVE)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  subscriptions   Subscription[]
-  serviceLinks    SubscriptionPlanService[]
-  bookings        Booking[]
+  maxRenewalCycles         Int?
+  status                   ServiceStatus             @default(ACTIVE)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  subscriptions            Subscription[]
+  serviceLinks             SubscriptionPlanService[]
+  bookings                 Booking[]
 
   @@index([status, planType, price])
 }
@@ -703,27 +705,27 @@ model SubscriptionPlanService {
 }
 
 model Subscription {
-  id                    String             @id @default(cuid())
-  customerId            String
-  customer              CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  planId                String
-  plan                  SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
-  status                SubscriptionStatus @default(PENDING)
-  startedAt             DateTime?
-  renewsAt              DateTime?
-  pausedAt              DateTime?
-  cancelledAt           DateTime?
-  cancelAtPeriodEnd     Boolean            @default(false)
-  providerSubscriptionId String?            @unique
-  providerSubscriptionStatus String?
-  providerSubscriptionCreateState String     @default("NOT_STARTED")
-  mandateAuthorizedAt DateTime?
-  idempotencyKey String? @unique
-  visitCredits SubscriptionVisitCredit[]
-  bookings Booking[]
-  payments              Payment[]
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  id                              String                    @id @default(cuid())
+  customerId                      String
+  customer                        CustomerProfile           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  planId                          String
+  plan                            SubscriptionPlan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status                          SubscriptionStatus        @default(PENDING)
+  startedAt                       DateTime?
+  renewsAt                        DateTime?
+  pausedAt                        DateTime?
+  cancelledAt                     DateTime?
+  cancelAtPeriodEnd               Boolean                   @default(false)
+  providerSubscriptionId          String?                   @unique
+  providerSubscriptionStatus      String?
+  providerSubscriptionCreateState String                    @default("NOT_STARTED")
+  mandateAuthorizedAt             DateTime?
+  idempotencyKey                  String?                   @unique
+  visitCredits                    SubscriptionVisitCredit[]
+  bookings                        Booking[]
+  payments                        Payment[]
+  createdAt                       DateTime                  @default(now())
+  updatedAt                       DateTime                  @updatedAt
 
   @@index([customerId, status])
 }
@@ -808,39 +810,38 @@ model PlantKnowledge {
 }
 
 model Product {
-  id              String                  @id @default(cuid())
-  sku             String                  @unique
-  name            String
-  description     String                  @default("")
-  category        String
-  kind            String?
-  imageUrl        String?
-  potColor        String?
-  price           Decimal                 @db.Decimal(10, 2)
-  compareAtPrice  Decimal?                @db.Decimal(10, 2)
-  stockQuantity   Int                     @default(0)
-  status          ServiceStatus           @default(ACTIVE)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  stockMovements  ProductStockMovement[]
-  orderItems      ShopOrderItem[]
-  careInstructions String?
+  id                String                 @id @default(cuid())
+  sku               String                 @unique
+  name              String
+  description       String                 @default("")
+  category          String
+  kind              String?
+  imageUrl          String?
+  potColor          String?
+  price             Decimal                @db.Decimal(10, 2)
+  compareAtPrice    Decimal?               @db.Decimal(10, 2)
+  stockQuantity     Int                    @default(0)
+  status            ServiceStatus          @default(ACTIVE)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  stockMovements    ProductStockMovement[]
+  orderItems        ShopOrderItem[]
+  careInstructions  String?
   lightRequirements String?
   wateringFrequency String?
-  safetyNote       String?
+  safetyNote        String?
 
   @@index([status, category, name])
   @@index([stockQuantity])
 }
 
-
 model StoreSettings {
-  id              String   @id @default("default")
-  shippingFee     Decimal  @default(0) @db.Decimal(10, 2)
-  taxRateBps      Int      @default(0)
-  updatedBy       String?
-  updatedAt       DateTime @updatedAt
-  createdAt       DateTime @default(now())
+  id          String   @id @default("default")
+  shippingFee Decimal  @default(0) @db.Decimal(10, 2)
+  taxRateBps  Int      @default(0)
+  updatedBy   String?
+  updatedAt   DateTime @default(now()) @updatedAt
+  createdAt   DateTime @default(now())
 }
 
 model ShopOrder {
