@@ -6,7 +6,7 @@ import HeroPlant from '../HeroPlant.jsx';
 import {ProductSvg,ShowcaseArt,TransformScene} from './Scenes.jsx';
 import * as C from './content.js';
 import { usePublicList } from './publicData.js';
-import { parseStoredCart } from '../cartStorage.js';
+import { parseCustomerCart } from '../cartStorage.js';
 import './landing.css';
 
 /* ---------- small helpers ---------- */
@@ -29,30 +29,71 @@ const Social={
 };
 
 /* ---------- cart ---------- */
-export function useCart(toast){
-  const [items,setItems]=React.useState(()=> {
-    try { return parseStoredCart(localStorage.getItem('tcare-cart')); }
-    catch { return []; }
-  }),[open,setOpen]=React.useState(false);
+export function useCart(toast,authReady,customerId){
+  const [items,setItems]=React.useState([]),[open,setOpen]=React.useState(false);
+  const [loadedCustomerId,setLoadedCustomerId]=React.useState(null);
   const storageWarningShown=React.useRef(false);
+
   React.useEffect(()=>{
-    try {
-      localStorage.setItem('tcare-cart',JSON.stringify(items));
+    if(!authReady)return;
+    try{localStorage.removeItem('tcare-cart')}catch{}
+    if(typeof customerId!=='string'||!customerId){
+      setItems([]);
+      setOpen(false);
+      setLoadedCustomerId(null);
+      try{localStorage.removeItem('tcare-cart-v2')}catch{}
+      return;
+    }
+    let restored=[];
+    try{restored=parseCustomerCart(localStorage.getItem('tcare-cart-v2'),customerId)}catch{}
+    setItems(restored);
+    setOpen(false);
+    setLoadedCustomerId(customerId);
+  },[authReady,customerId]);
+
+  React.useEffect(()=>{
+    if(!authReady)return;
+    try{localStorage.removeItem('tcare-cart')}catch{}
+    if(typeof customerId!=='string'||!customerId){
+      try{localStorage.removeItem('tcare-cart-v2')}catch{}
+      return;
+    }
+    if(loadedCustomerId!==customerId)return;
+    try{
+      localStorage.setItem('tcare-cart-v2',JSON.stringify({customerId,items}));
       storageWarningShown.current=false;
-    } catch {
+    }catch{
       if(!storageWarningShown.current){
         storageWarningShown.current=true;
         toast?.('Your cart could not be saved in this browser.',{type:'warning'});
       }
     }
-  },[items,toast]);
-  const add=React.useCallback(p=>{setItems(a=>{const existing=a.find(x=>x.id===p.id);if(existing&&existing.qty>=20){toast?.('Maximum quantity per product is 20.',{type:'warning'});return a;}return existing?a.map(x=>x.id===p.id?{...x,qty:Math.min(20,x.qty+1),name:p.name,price:p.price}:x):[...a,{id:p.id,name:p.name,price:p.price,kind:p.kind,pot:p.pot,qty:1}]});toast?.('Added to cart')},[toast]);
-  const setQty=React.useCallback((id,q)=>setItems(a=>q<=0?a.filter(x=>x.id!==id):a.map(x=>x.id===id?{...x,qty:Math.min(20,q)}:x)),[]);
-  // stable identity until the cart really changes, so unrelated context updates don't re-render every cart consumer
+  },[items,toast,authReady,customerId,loadedCustomerId]);
+
+  const isCustomerReady=authReady&&typeof customerId==='string'&&Boolean(customerId)&&loadedCustomerId===customerId;
+  const add=React.useCallback(p=>{
+    if(!isCustomerReady){toast?.('Sign in with a Customer account before adding products to your cart.',{type:'warning'});return;}
+    setItems(a=>{
+      const existing=a.find(x=>x.id===p.id);
+      if(existing&&existing.qty>=20){toast?.('Maximum quantity per product is 20.',{type:'warning'});return a;}
+      return existing?a.map(x=>x.id===p.id?{...x,qty:Math.min(20,x.qty+1),name:p.name,price:p.price}:x):[...a,{id:p.id,name:p.name,price:p.price,kind:p.kind,pot:p.pot,qty:1}];
+    });
+    toast?.('Added to cart');
+  },[isCustomerReady,toast]);
+  const setQty=React.useCallback((id,q)=>{
+    if(!isCustomerReady)return;
+    setItems(a=>q<=0?a.filter(x=>x.id!==id):a.map(x=>x.id===id?{...x,qty:Math.min(20,q)}:x));
+  },[isCustomerReady]);
   const clear=React.useCallback(()=>setItems([]),[]);
-  return React.useMemo(()=>({items,add,setQty,clear,open,setOpen,count:items.reduce((n,x)=>n+x.qty,0),total:items.reduce((n,x)=>n+x.qty*x.price,0)}),[items,add,setQty,clear,open]);
+  const setCartOpen=React.useCallback(value=>{
+    const next=typeof value==='function'?Boolean(value(open)):Boolean(value);
+    if(next&&!isCustomerReady){toast?.('Sign in with a Customer account to open your cart.',{type:'warning'});return;}
+    setOpen(next);
+  },[open,isCustomerReady,toast]);
+  return React.useMemo(()=>({items,add,setQty,clear,open,setOpen:setCartOpen,customerReady:isCustomerReady,count:items.reduce((n,x)=>n+x.qty,0),total:items.reduce((n,x)=>n+x.qty*x.price,0)}),[items,add,setQty,clear,open,setCartOpen,isCustomerReady]);
 }
-export function CartDrawer({cart}){
+export function CartDrawer({cart,authUser}){
+  React.useEffect(()=>{if(cart.open&&authUser?.role!=='CUSTOMER')cart.setOpen(false)},[cart.open,authUser?.id,authUser?.role,cart.setOpen]);
   React.useEffect(()=>{if(!cart.open)return;const k=e=>e.key==='Escape'&&cart.setOpen(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[cart.open]);
   return <AnimatePresence>{cart.open&&<>
     <motion.div key="ov" className="ld-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>cart.setOpen(false)}/>
@@ -66,7 +107,7 @@ export function CartDrawer({cart}){
 }
 
 /* ---------- navigation ---------- */
-export function LandingNav({theme,toggleTheme,cart,authUser,logout}){
+export function LandingNav({theme,toggleTheme,cart,authUser,logout,onCartClick}){
   const [menu,setMenu]=React.useState(false);
   const [accountOpen,setAccountOpen]=React.useState(false);
   const accountRef=React.useRef(null);
@@ -90,7 +131,7 @@ export function LandingNav({theme,toggleTheme,cart,authUser,logout}){
       <div className="ln-right">
         <Link to="/makeover" className="ln-pill ln-green"><Leaf size={13}/>Green Makeover</Link>
         <button className="ib" onClick={toggleTheme} aria-label="Toggle theme">{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</button>
-        <button className="ib ln-cart" onClick={()=>cart.setOpen(true)} aria-label={`Open cart, ${cart.count} items`}><ShoppingBag size={17}/>{cart.count>0&&<i>{cart.count}</i>}</button>
+        <button className="ib ln-cart" onClick={onCartClick||(()=>cart.setOpen(true))} aria-label={authUser?.role==='CUSTOMER'?`Open cart, ${cart.count} items`:'Sign in with a Customer account to use the cart'} title={authUser?.role==='CUSTOMER'?'Open cart':'Customer sign-in required'}><ShoppingBag size={17}/>{authUser?.role==='CUSTOMER'&&cart.count>0&&<i>{cart.count}</i>}</button>
         {authUser
           ? <div className="ln-account" ref={accountRef}>
               <button className="ln-profile" type="button" aria-label={`Account options for ${authUser.fullName||'your account'}`} aria-expanded={accountOpen} onClick={()=>setAccountOpen(value=>!value)}>{initials||<UserRound size={17}/>}</button>
@@ -275,13 +316,14 @@ function Row({children,label}){
   const ref=React.useRef(null);const go=d=>ref.current?.scrollBy({left:d*ref.current.clientWidth*.8,behavior:'smooth'});
   return <div className="row-wrap"><button className="row-arrow l" onClick={()=>go(-1)} aria-label={`Previous ${label}`}><ChevronLeft size={17}/></button><div className="row-track" ref={ref} tabIndex={0} aria-label={label}>{children}</div><button className="row-arrow r" onClick={()=>go(1)} aria-label={`Next ${label}`}><ChevronRight size={17}/></button></div>;
 }
-export function Market({cart}){
+export function Market({cart,authUser,authReady=true,onRequireCustomer}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
+  const requireCustomer=returnTo=>typeof onRequireCustomer==='function'&&onRequireCustomer(returnTo);
   return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Browse plants and gardening essentials available in the store.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
     {loading&&!products.length?<div className="public-state public-loading" role="status" aria-live="polite" aria-busy="true"><span>Loading products…</span><div className="public-product-skeletons" aria-hidden="true">{Array.from({length:4},(_,i)=><i key={i}/>)}</div></div>:null}
     {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
     {!loading&&!error&&!products.length?<div className="public-state"><p>No products are available right now.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
-    {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
+    {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0||(authUser?.role==='CUSTOMER'&&!cart.customerReady)} onClick={()=>{if(requireCustomer('/store'))cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'});}}>{p.stockQuantity>0?(authUser?.role==='CUSTOMER'?(cart.customerReady?'Add to Cart':'Preparing cart…'):(authReady?'Sign in to add':'Checking…')):'Out of stock'}</button></div></div></article>)}</Row>}
   </section>;
 }
 

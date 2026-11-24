@@ -22,3 +22,16 @@ export function parseStoredCart(value) {
     return [];
   }
 }
+
+
+export function parseCustomerCart(value, customerId) {
+  if (typeof customerId !== 'string' || !customerId.trim()) return [];
+  try {
+    const stored = JSON.parse(value || 'null');
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return [];
+    if (stored.customerId !== customerId || !Array.isArray(stored.items)) return [];
+    return parseStoredCart(JSON.stringify(stored.items));
+  } catch {
+    return [];
+  }
+}

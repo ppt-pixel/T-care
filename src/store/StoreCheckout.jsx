@@ -20,7 +20,7 @@ function loadCheckout() {
   return checkoutScriptPromise;
 }
 
-export function StoreCheckoutPage({ cart, authUser }) {
+export function StoreCheckoutPage({ cart, authUser, authReady = true }) {
   const navigate = useNavigate();
   const [form, setForm] = React.useState({ recipientName: authUser?.fullName || '', recipientPhone: '', addressLine1: '', addressLine2: '', city: '', state: '', postalCode: '', customerNote: '' });
   const [busy, setBusy] = React.useState(false);
@@ -33,7 +33,12 @@ export function StoreCheckoutPage({ cart, authUser }) {
   const [qrPayment, setQrPayment] = React.useState(null);
   const idempotency = React.useRef({ fingerprint: '', key: '' });
   React.useEffect(() => { if (authUser?.fullName) setForm(current => ({ ...current, recipientName: current.recipientName || authUser.fullName })); }, [authUser?.fullName]);
-  React.useEffect(() => { let active = true; request('/orders/status').then(result => { if (active) setStoreAvailability(result); }).catch(err => { if (active) setAvailabilityError(err?.message || 'Store checkout availability could not be checked.'); }); return () => { active = false; }; }, []);
+  React.useEffect(() => {
+    if (!authReady || authUser?.role !== 'CUSTOMER') return undefined;
+    let active = true;
+    request('/orders/status').then(result => { if (active) setStoreAvailability(result); }).catch(err => { if (active) setAvailabilityError(err?.message || 'Store checkout availability could not be checked.'); });
+    return () => { active = false; };
+  }, [authReady, authUser?.id, authUser?.role]);
   const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }));
 
   const submit = async event => {
@@ -130,13 +135,25 @@ export function StoreCheckoutPage({ cart, authUser }) {
     finally { setBusy(false); }
   };
 
+  if (!authReady) return <section className="store-checkout-page store-checkout-access-page">
+    <div className="store-access-gate" role="status" aria-live="polite"><span className="store-access-mark"><ShoppingBag size={24}/></span><small>T-CARE MARKET</small><h1>Checking your account</h1><p>We are checking your T-CARE sign-in before opening your cart and checkout.</p></div>
+  </section>;
+  if (!authUser) return <section className="store-checkout-page store-checkout-access-page">
+    <div className="store-access-gate"><span className="store-access-mark"><ShoppingBag size={24}/></span><small>T-CARE MARKET</small><h1>Sign in to continue</h1><p>You can browse the Plant Store without an account. To add products to your cart or check out, sign in with a Customer account.</p><div className="store-access-actions"><Link className="store-pay-button" to="/login" state={{ from: '/store/checkout' }}>Sign in to your account</Link><Link className="store-secondary-button" to="/register" state={{ from: '/store/checkout' }}>Create a Customer account</Link></div><Link className="store-access-back" to="/store">Continue browsing the Plant Store</Link></div>
+  </section>;
+  if (authUser.role !== 'CUSTOMER') return <section className="store-checkout-page store-checkout-access-page">
+    <div className="store-access-gate"><span className="store-access-mark"><ShoppingBag size={24}/></span><small>T-CARE MARKET</small><h1>Customer account required</h1><p>Only signed-in Customer accounts can use a Plant Store cart or checkout. Sign out and sign in with a Customer account to continue.</p><Link className="store-access-back" to="/">Return to T-CARE</Link></div>
+  </section>;
+  if (!cart?.customerReady) return <section className="store-checkout-page store-checkout-access-page">
+    <div className="store-access-gate" role="status" aria-live="polite"><span className="store-access-mark"><ShoppingBag size={24}/></span><small>T-CARE MARKET</small><h1>Preparing your cart</h1><p>Your Customer cart is being restored securely. The checkout details will appear when your saved cart is ready.</p><Link className="store-access-back" to="/store">Continue browsing the Plant Store</Link></div>
+  </section>;
+
   const subtotal = cart.items.reduce((sum, item) => sum + Number(item.price || 0) * item.qty, 0);
   return <section className="store-checkout-page">
     <div className="store-checkout-top"><Link to="/store"><ArrowLeft size={16}/> Back to Plant Store</Link><span>{storeAvailability?.checkoutEnabled === true ? 'Secure payment · Razorpay' : 'Your cart'}</span></div>
     <div className="store-checkout-grid">
       <div className="store-checkout-main">
         <header><small>T-CARE MARKET</small><h1>Delivery details</h1><p>Enter where you want your plants and gardening products delivered.</p></header>
-        {!authUser ? <div className="store-checkout-message"><b>Sign in required</b><p>Please sign in with your Customer account before placing an order.</p><Link to="/login">Sign in to continue</Link></div> : authUser.role !== 'CUSTOMER' ? <div className="store-checkout-message"><b>Customer account required</b><p>Store checkout is available to Customer accounts.</p><Link to="/">Return to T-CARE</Link></div> : null}
         {error && <div className="store-checkout-error" role="alert">{error}</div>}
         {availabilityError && <div className="store-checkout-error" role="alert">{availabilityError}</div>}
         {storeAvailability && !storeAvailability.checkoutEnabled && <div className="store-checkout-notice store-checkout-unavailable" role="status"><b>Online store orders are not available yet</b><p>You can still browse the Plant Store and keep items in your cart. T-CARE has not opened online ordering, so no payment will be requested or taken.</p><Link to="/store">Continue browsing the Plant Store</Link></div>}

@@ -42,7 +42,7 @@ function Faq({items,title='Questions, answered',eyebrow='FAQ'}){
 }
 
 const FAQ_GENERAL=[
-  ['How do I book a visit?','Choose a service, date and time, then add the plants you would like included. You can follow your booking and see its assigned Gardener in your account.'],
+  ['How do I book a visit?','Choose a plan and included service, then select a preferred visit date, time and address. All plants registered in your T-CARE account are included automatically, subject to the plant allowance of your selected plan. You can follow your booking and see its assigned Gardener in your account.'],
   ['Are your gardeners verified?','Gardeners shown in the public directory have completed identity verification and have an active account.'],
   ['What areas do you serve?','Visit availability depends on the Gardener and the booking address. Check the booking form for available dates and times.'],
   ['Do I need to be home during the visit?','Please coordinate access arrangements with T-Care before the scheduled visit.'],
@@ -141,16 +141,18 @@ const STORE_PERKS=[
   [Sprout,'Plant and garden essentials','Browse plants and gardening products.'],
   [Package,'Your cart','Save items while you browse.'],
 ];
-export function StorePage({cart}){
+export function StorePage({cart,authUser,authReady=true,onRequireCustomer}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
   const cats=['All',...Array.from(new Set(products.map(p=>p.category).filter(Boolean)))];
   const [cat,setCat]=React.useState('All');
   const [selected,setSelected]=React.useState(null);
   const list=products.filter(p=>cat==='All'||p.category===cat);
+  const requireCustomer=returnTo=>typeof onRequireCustomer==='function'&&onRequireCustomer(returnTo);
+  const addProduct=product=>{if(!requireCustomer('/store'))return false;cart.add({...product,kind:product.kind||'snake',pot:product.potColor||'#e8e1d2'});return true;};
   React.useEffect(()=>{if(cat!=='All'&&!cats.includes(cat))setCat('All')},[cat,cats.join('|')]);
   return <>
     <PageHero eyebrow="T-Care market" title={<>Everything your <em>plants</em> need</>} sub="Browse plants and gardening essentials, with current prices and stock shown on each listing.">
-      <LBtn onClick={()=>cart.setOpen(true)} variant="gold">View cart{cart.count>0?` (${cart.count})`:''} <ArrowRight size={15}/></LBtn>
+      <LBtn onClick={()=>{if(requireCustomer('/store'))cart.setOpen(true)}} variant="gold">{!authReady?'Checking account…':authUser?.role==='CUSTOMER'?`View cart${cart.count>0?` (${cart.count})`:''}`:'Sign in to use cart'} <ArrowRight size={15}/></LBtn>
     </PageHero>
     <section className="lsec store">
       {loading&&!products.length?<div className="public-state public-loading" role="status" aria-live="polite" aria-busy="true"><span>Loading products…</span><div className="public-product-skeletons" aria-hidden="true">{Array.from({length:6},(_,i)=><i key={i}/>)}</div></div>:null}
@@ -161,7 +163,7 @@ export function StorePage({cart}){
           const discount=p.compareAtPrice>p.price?Math.round((p.compareAtPrice-p.price)/p.compareAtPrice*100):0;
           return <Reveal key={p.id} delay={(i%4)*.05} className="pcard">{discount>0&&<span className="off">{discount}% OFF</span>}<ProductArt product={p}/>
             <div className="pbody"><small>{p.category} · {p.stockQuantity>0?`${p.stockQuantity} in stock`:'Out of stock'}</small><h4>{p.name}</h4>{p.description&&<p className="product-desc">{p.description}</p>}
-              <div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div>
+              <div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0||(authUser?.role==='CUSTOMER'&&!cart.customerReady)} onClick={()=>addProduct(p)}>{p.stockQuantity>0?(!authReady?'Checking…':authUser?.role==='CUSTOMER'?(cart.customerReady?'Add to Cart':'Preparing cart…'):'Sign in to add'):'Out of stock'}</button></div>
               <button className="store-detail-link" type="button" onClick={()=>setSelected(p)}>View product details</button>
             </div></Reveal>;
         })}</div>
@@ -172,7 +174,7 @@ export function StorePage({cart}){
     <section className="lsec perks"><Head center eyebrow="Shop with clarity">Product details, <em>clear pricing</em></Head>
       <div className="commit-grid four">{STORE_PERKS.map(([I,t,d],i)=><Reveal key={t} delay={i*.06} className="commit-card"><span className="ic"><I size={22}/></span><h3>{t}</h3><p>{d}</p></Reveal>)}</div></section>
     <section className="lsec guide"><Reveal className="guide-card"><div><span className="eyebrow">Need help with plant care?</span><h2>Find care that <em>suits your space</em></h2><p>Explore care services and book a visit for your plants.</p></div><div className="cta-btns"><LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="outline">Book a care visit</LBtn></div></Reveal></section>
-    {selected&&<div className="store-detail-overlay" role="presentation" onClick={()=>setSelected(null)}><section className="store-detail-modal" role="dialog" aria-modal="true" aria-label={`${selected.name} product details`} onClick={event=>event.stopPropagation()}><button className="store-detail-close" type="button" onClick={()=>setSelected(null)} aria-label="Close product details">×</button><ProductArt product={selected}/><div className="store-detail-content"><small>{selected.category}</small><h2>{selected.name}</h2><strong>{money(selected.price)}</strong>{selected.description&&<p>{selected.description}</p>}{selected.careInstructions&&<div><b>Care instructions</b><p>{selected.careInstructions}</p></div>}{selected.lightRequirements&&<div><b>Light</b><p>{selected.lightRequirements}</p></div>}{selected.wateringFrequency&&<div><b>Watering</b><p>{selected.wateringFrequency}</p></div>}{selected.safetyNote&&<div><b>Safety</b><p>{selected.safetyNote}</p></div>}<small>{selected.stockQuantity>0?`${selected.stockQuantity} available`:'Currently out of stock'}</small><button className="add" type="button" disabled={selected.stockQuantity<=0} onClick={()=>{cart.add({...selected,kind:selected.kind||'snake',pot:selected.potColor||'#e8e1d2'});setSelected(null);}}>{selected.stockQuantity>0?'Add to cart':'Out of stock'}</button></div></section></div>}
+    {selected&&<div className="store-detail-overlay" role="presentation" onClick={()=>setSelected(null)}><section className="store-detail-modal" role="dialog" aria-modal="true" aria-label={`${selected.name} product details`} onClick={event=>event.stopPropagation()}><button className="store-detail-close" type="button" onClick={()=>setSelected(null)} aria-label="Close product details">×</button><ProductArt product={selected}/><div className="store-detail-content"><small>{selected.category}</small><h2>{selected.name}</h2><strong>{money(selected.price)}</strong>{selected.description&&<p>{selected.description}</p>}{selected.careInstructions&&<div><b>Care instructions</b><p>{selected.careInstructions}</p></div>}{selected.lightRequirements&&<div><b>Light</b><p>{selected.lightRequirements}</p></div>}{selected.wateringFrequency&&<div><b>Watering</b><p>{selected.wateringFrequency}</p></div>}{selected.safetyNote&&<div><b>Safety</b><p>{selected.safetyNote}</p></div>}<small>{selected.stockQuantity>0?`${selected.stockQuantity} available`:'Currently out of stock'}</small><button className="add" type="button" disabled={selected.stockQuantity<=0||(authUser?.role==='CUSTOMER'&&!cart.customerReady)} onClick={()=>{if(addProduct(selected))setSelected(null);}}>{selected.stockQuantity>0?(!authReady?'Checking…':authUser?.role==='CUSTOMER'?(cart.customerReady?'Add to cart':'Preparing cart…'):'Sign in to add'):'Out of stock'}</button></div></section></div>}
   </>;
 }
 

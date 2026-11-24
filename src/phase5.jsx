@@ -5,6 +5,7 @@ import { API_V1 } from './phase5Api.js';
 import { createApiRequest } from './apiRequest.js';
 import { useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
 import './phase5.css';
+import { getPreferredVisitDates } from './bookingSchedule.js';
 
 const request = createApiRequest({
   apiV1: API_V1,
@@ -422,13 +423,16 @@ export function CustomerBookingCreatePage({ Shell }) {
   const [plans, setPlans] = React.useState([]), [subscriptions, setSubscriptions] = React.useState([]);
   const [loading, setLoading] = React.useState(true), [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false), [success, setSuccess] = React.useState('');
   const [selectedPlanId, setSelectedPlanId] = React.useState(searchParams.get('planId') || '');
-  const [serviceId, setServiceId] = React.useState(''), [plantIds, setPlantIds] = React.useState([]), [addressId, setAddressId] = React.useState(''), [scheduledStart, setScheduledStart] = React.useState(''), [specialInstructions, setSpecialInstructions] = React.useState('');
+  const [serviceId, setServiceId] = React.useState(''), [addressId, setAddressId] = React.useState(''), [scheduledStart, setScheduledStart] = React.useState(''), [specialInstructions, setSpecialInstructions] = React.useState('');
   const [showAddress, setShowAddress] = React.useState(false), [address, setAddress] = React.useState({ label: 'Home', type: 'HOME', line1: '', line2: '', city: '', state: '', postalCode: '', isDefault: true });
   const [bookingStep, setBookingStep] = React.useState(0), [stepError, setStepError] = React.useState('');
+  const [bookingClock, setBookingClock] = React.useState(() => new Date());
   const bookingIdempotencyKey = React.useRef(null);
   const loadVersion = React.useRef(0);
   const loadController = React.useRef(null);
   const stepHeadingRef = React.useRef(null);
+  const dateScrollerRef = React.useRef(null);
+  const timeScrollerRef = React.useRef(null);
   const load = React.useCallback(async () => {
     loadController.current?.abort();
     const controller = new AbortController();
@@ -460,6 +464,10 @@ export function CustomerBookingCreatePage({ Shell }) {
     return () => { loadVersion.current += 1; loadController.current?.abort(); loadController.current = null; };
   }, [load]);
   React.useEffect(() => { if (!addressId && addresses.length) setAddressId(addresses.find(a => a.isDefault)?.id || addresses[0].id); }, [addresses, addressId]);
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setBookingClock(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || null;
   const availablePlans = plans.filter(plan => plan.planType !== 'LEGACY_RECURRING');
@@ -470,7 +478,8 @@ export function CustomerBookingCreatePage({ Shell }) {
   }, [serviceOptions, serviceId]);
   const selectedService = serviceOptions.find(service => service.id === serviceId);
   const selectedAddress = addresses.find(item => item.id === addressId);
-  const selectedPlants = plants.filter(item => plantIds.includes(item.id));
+  const includedPlants = plants;
+  const plantIds = plants.map(plant => plant.id);
   const selectedPlanSubscription = selectedPlan?.autoRenew
     ? subscriptions.find(item => item.planId === selectedPlan.id && item.visitsAvailable > 0 && ['ACTIVE', 'PAUSED', 'PENDING', 'CANCELLED', 'EXPIRED'].includes(item.status))
     : null;
@@ -480,17 +489,62 @@ export function CustomerBookingCreatePage({ Shell }) {
     : selectedPlan?.autoRenew
       ? { amount: 0 }
       : (selectedService?.prices || [])
-        .filter(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants))
+        .filter(p => (p.minPlants == null || plants.length >= p.minPlants) && (p.maxPlants == null || plants.length <= p.maxPlants))
         .sort((a, b) => {
           const minA = a.minPlants == null ? Number.NEGATIVE_INFINITY : a.minPlants;
           const minB = b.minPlants == null ? Number.NEGATIVE_INFINITY : b.minPlants;
           return minB - minA || new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime();
         })[0];
-  const planPlantLimitExceeded = Boolean(selectedPlan?.plantLimit && plantIds.length > selectedPlan.plantLimit);
+  const planPlantLimitExceeded = Boolean(selectedPlan?.plantLimit != null && plants.length > Number(selectedPlan.plantLimit));
   const noRecurringCredit = Boolean(selectedPlan?.autoRenew && !currentVisitCredit);
   const isPlanReady = !selectedPlan || (selectedPlan.bookingReady && (selectedPlan.planType === 'ONE_TIME_SERVICE' || Boolean(currentVisitCredit)));
-  const minDateTime = new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  const stepNames = ['Plan & service', 'Your plants', 'Visit details', 'Review'];
+  const stepNames = ['Plan & service', 'Visit details', 'Review'];
+  const stepDescriptions = ['Choose your plan and included service', 'Select a preferred day, time and address', 'Check everything before sending'];
+  const serviceDurationMinutes = Number.isFinite(Number(selectedService?.durationMinutes)) && Number(selectedService?.durationMinutes) > 0
+    ? Number(selectedService.durationMinutes)
+    : 60;
+  const visitDateOptions = React.useMemo(() => getPreferredVisitDates({
+    now: bookingClock,
+    days: 30,
+    durationMinutes: serviceDurationMinutes
+  }), [bookingClock, serviceDurationMinutes]);
+  const selectedVisitDateValue = scheduledStart ? scheduledStart.slice(0, 10) : (visitDateOptions[0]?.value || '');
+  const selectedVisitDate = visitDateOptions.find(item => item.value === selectedVisitDateValue) || visitDateOptions[0] || null;
+  const selectedVisitTimeValue = scheduledStart ? scheduledStart.slice(11, 16) : (selectedVisitDate?.slots[0]?.value || '');
+  const visitTimeSlots = selectedVisitDate?.slots || [];
+  const selectedVisitDateIndex = Math.max(0, visitDateOptions.findIndex(item => item.value === selectedVisitDate?.value));
+  const selectedVisitTimeIndex = Math.max(0, visitTimeSlots.findIndex(slot => slot.value === selectedVisitTimeValue));
+  const cylinderStyle = (index, selectedIndex) => {
+    const offset = index - selectedIndex;
+    if (offset === 0) return { transform: 'perspective(780px) rotateY(0deg) translateZ(14px) scale(1.04)', opacity: 1, zIndex: 2 };
+    const angle = Math.max(-24, Math.min(24, offset * 8));
+    const scale = Math.max(.88, 1 - Math.abs(offset) * .035);
+    const opacity = Math.max(.58, 1 - Math.abs(offset) * .11);
+    return { transform: `perspective(780px) rotateY(${angle}deg) translateZ(-8px) scale(${scale})`, opacity, zIndex: 1 };
+  };
+
+  React.useEffect(() => {
+    if (!visitDateOptions.length) {
+      if (scheduledStart) setScheduledStart('');
+      return;
+    }
+    const matchingDate = visitDateOptions.find(item => item.value === scheduledStart.slice(0, 10));
+    if (!matchingDate) {
+      setScheduledStart(`${visitDateOptions[0].value}T${visitDateOptions[0].slots[0].value}`);
+      return;
+    }
+    const matchingTime = matchingDate.slots.find(slot => slot.value === scheduledStart.slice(11, 16));
+    if (!matchingTime) setScheduledStart(`${matchingDate.value}T${matchingDate.slots[0].value}`);
+  }, [visitDateOptions, scheduledStart]);
+
+  React.useEffect(() => {
+    const selected = dateScrollerRef.current?.querySelector('.p5-visit-date-card.is-selected');
+    selected?.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
+  }, [selectedVisitDateValue]);
+  React.useEffect(() => {
+    const selected = timeScrollerRef.current?.querySelector('.p5-visit-time-card.is-selected');
+    selected?.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
+  }, [selectedVisitDateValue, selectedVisitTimeValue]);
 
   React.useEffect(() => {
     if (bookingStep > 0) {
@@ -500,6 +554,21 @@ export function CustomerBookingCreatePage({ Shell }) {
       heading.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     }
   }, [bookingStep]);
+
+  const scrollPicker = (ref, direction) => {
+    ref.current?.scrollBy({ left: direction * Math.max(220, ref.current.clientWidth * 0.72), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  };
+  const chooseVisitDate = dateOption => {
+    const preferredSlot = dateOption.slots.find(slot => slot.value === selectedVisitTimeValue) || dateOption.slots[0];
+    if (!preferredSlot) return;
+    setScheduledStart(`${dateOption.value}T${preferredSlot.value}`);
+    setStepError('');
+  };
+  const chooseVisitTime = slot => {
+    if (!selectedVisitDate) return;
+    setScheduledStart(`${selectedVisitDate.value}T${slot.value}`);
+    setStepError('');
+  };
 
   const createAddress = async e => {
     e.preventDefault(); if (busy) return; setBusy(true); setError(''); setStepError('');
@@ -514,32 +583,34 @@ export function CustomerBookingCreatePage({ Shell }) {
   const continueStep = () => {
     setStepError('');
     if (bookingStep === 0) {
+      if (!plants.length) { setStepError('Add at least one plant to your T-CARE account first. All registered plants are included automatically; there is no plant-selection step.'); return; }
       if (selectedPlan && !selectedPlan.bookingReady) { setStepError('This plan is not ready for new bookings. Choose another option or contact T-CARE support.'); return; }
       if (selectedPlan?.autoRenew && !currentVisitCredit) { setStepError('This subscription has no available visit credit yet. Activate UPI AutoPay and complete the first-period payment before continuing.'); return; }
+      if (planPlantLimitExceeded) { setStepError(`Your account has ${plants.length} plants, but this plan covers up to ${selectedPlan.plantLimit}. Choose a plan that covers all registered plants or contact T-CARE support.`); return; }
       if (!serviceOptions.length) { setStepError('No service is currently available for this option. Choose another plan or contact T-CARE support.'); return; }
       if (!serviceId || !serviceOptions.some(service => service.id === serviceId)) { setStepError('Choose the service you would like the Gardener to provide.'); return; }
     }
     if (bookingStep === 1) {
-      if (!plants.length) { setStepError('Add at least one plant to your account before booking a visit.'); return; }
-      if (!plantIds.length) { setStepError('Select at least one plant that needs care.'); return; }
-      if (planPlantLimitExceeded) { setStepError(`This plan covers up to ${selectedPlan.plantLimit} plants per visit. Remove a plant to continue.`); return; }
-    }
-    if (bookingStep === 2) {
-      if (!scheduledStart) { setStepError('Choose a date and time for your visit.'); return; }
-      if (scheduledStart < minDateTime) { setStepError('Choose a visit time at least one hour from now.'); return; }
+      if (!scheduledStart) { setStepError('Choose a preferred visit date and time.'); return; }
+      if (new Date(scheduledStart).getTime() < Date.now() + 3600000) { setStepError('That time has passed the one-hour booking cutoff. Choose another available time.'); return; }
       if (!addressId || !selectedAddress) { setStepError('Choose a saved service address or add a new one.'); return; }
     }
-    setBookingStep(current => Math.min(3, current + 1));
+    setBookingStep(current => Math.min(2, current + 1));
   };
   const goBackStep = () => { setStepError(''); setBookingStep(current => Math.max(0, current - 1)); };
-  const choosePlan = value => { setSelectedPlanId(value); setPlantIds([]); setStepError(''); };
+  const choosePlan = value => { setSelectedPlanId(value); setStepError(''); };
 
   const submit = async e => {
     e.preventDefault(); if (busy) return;
-    if (bookingStep < 3) { continueStep(); return; }
-    if (!serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit) {
+    if (bookingStep < 2) { continueStep(); return; }
+    if (!serviceId || !plants.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit) {
       setStepError('A required booking detail is missing. Review the highlighted step before submitting.');
-      setBookingStep(!serviceId ? 0 : !plantIds.length || planPlantLimitExceeded ? 1 : !scheduledStart || !addressId ? 2 : 0);
+      setBookingStep(!serviceId || !isPlanReady || planPlantLimitExceeded || noRecurringCredit ? 0 : !plants.length || !scheduledStart || !addressId ? (plants.length ? 1 : 0) : 0);
+      return;
+    }
+    if (new Date(scheduledStart).getTime() < Date.now() + 3600000) {
+      setStepError('That preferred time is no longer available for a new request. Choose another date and time.');
+      setBookingStep(1);
       return;
     }
     setBusy(true); setError(''); setSuccess(''); setStepError('');
@@ -577,17 +648,17 @@ export function CustomerBookingCreatePage({ Shell }) {
     } finally { setBusy(false); }
   };
 
-  return <Shell title="Book a service" sub="Arrange a visit for your plants in four simple steps.">
+  return <Shell title="Book a service" sub="Arrange a visit for your plants in three simple steps.">
     <Notice error={error} success={success}/><State loading={loading} error={error} onRetry={load}/>
     {!loading && <form className="p5-panel" onSubmit={submit} aria-busy={busy}>
       <fieldset className="p5-form-lock" disabled={busy}>
       <div className="p5-booking-wizard">
-        <PageTitle eyebrow="YOUR VISIT" title="Let's plan your plant-care visit" sub="Choose what your plants need, then tell us when and where to visit."/>
+        <PageTitle eyebrow="YOUR VISIT" title="Let's plan your plant-care visit" sub="Choose your plan and included service, then select a preferred visit time and address."/>
 
         <nav className="p5-booking-steps" aria-label="Booking progress">
           {stepNames.map((name, index) => <button key={name} type="button" className={`p5-booking-step ${bookingStep === index ? 'is-current' : ''} ${bookingStep > index ? 'is-complete' : ''}`} aria-current={bookingStep === index ? 'step' : undefined} disabled={index > bookingStep} onClick={() => { setStepError(''); setBookingStep(index); }}>
             <span className="p5-booking-step-number">{bookingStep > index ? '✓' : index + 1}</span>
-            <span className="p5-booking-step-copy"><b>{name}</b><small>{['Select how to pay', 'Choose what needs care', 'Set the time and location', 'Check everything'][index]}</small></span>
+            <span className="p5-booking-step-copy"><b>{name}</b><small>{stepDescriptions[index]}</small></span>
           </button>)}
         </nav>
 
@@ -595,7 +666,7 @@ export function CustomerBookingCreatePage({ Shell }) {
 
         <section className="p5-booking-step-content" aria-labelledby="booking-step-heading">
           {bookingStep === 0 && <>
-            <div className="p5-booking-step-heading"><span>STEP 1 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Choose your service option</h3><p>Start with a one-time visit or choose a plan that suits your ongoing plant care.</p></div>
+            <div className="p5-booking-step-heading"><span>STEP 1 OF 3</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Choose your service option</h3><p>Start with a one-time visit or choose a plan that suits your ongoing plant care.</p></div>
             <div className="p5-booking-choice-grid" role="radiogroup" aria-label="Plan or payment option">
               <label className={`p5-booking-option-card ${selectedPlanId === '' ? 'is-selected' : ''}`}>
                 <input type="radio" name="bookingPlan" value="" checked={selectedPlanId === ''} onChange={() => choosePlan('')}/>
@@ -624,29 +695,49 @@ export function CustomerBookingCreatePage({ Shell }) {
                 <span className="p5-booking-service-duration">{service.durationLabel}</span>
               </label>)}
             </div> : <div className="p5-booking-empty"><b>No matching services are available</b><p>Choose another plan or contact T-CARE support. Your selection will not be submitted until a service is available.</p></div>}
+
+            <div className="p5-booking-included-plants">
+              <span className="p5-booking-included-icon" aria-hidden="true">✓</span>
+              <div className="p5-booking-included-copy">
+                <b>{plants.length ? `${plants.length} ${plants.length === 1 ? 'plant' : 'plants'} included automatically` : 'Add plants to your account to continue'}</b>
+                <p>{plants.length ? 'All plants registered in your T-CARE account are included in the visit automatically. There is no separate plant-selection step.' : 'Your registered plants are included automatically in every booking. Add your plants first, then return here to schedule their care.'}</p>
+                {!!plants.length && <div className="p5-booking-plant-chips">{plants.slice(0, 6).map(plant => <span key={plant.id}>{plant.name}</span>)}{plants.length > 6 && <span>+{plants.length - 6} more</span>}</div>}
+                {!plants.length && <Link to="/garden/plants">Open My Plants →</Link>}
+              </div>
+            </div>
+            {planPlantLimitExceeded && <div className="p5-booking-callout is-warning" role="alert"><b>This plan does not cover all plants in your account.</b><span>Your account has {plants.length} plants; this plan covers up to {selectedPlan.plantLimit}. Choose a plan with a higher plant allowance or contact T-CARE. Plants are included automatically and cannot be removed from this booking.</span><Link to="/garden/plan">Review available plans →</Link></div>}
           </>}
 
           {bookingStep === 1 && <>
-            <div className="p5-booking-step-heading"><span>STEP 2 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Which plants need care?</h3><p>Select every plant you would like the Gardener to look after during this visit.</p></div>
-            <div className="p5-booking-selection-count"><div><strong>{plantIds.length}</strong><span>{plantIds.length === 1 ? 'plant selected' : 'plants selected'}</span></div>{selectedPlan?.plantLimit ? <small>Plan allowance: up to {selectedPlan.plantLimit} {selectedPlan.plantLimit === 1 ? 'plant' : 'plants'} per visit</small> : <small>Select one or more plants for this visit.</small>}</div>
-            {plants.length ? <div className="p5-booking-plant-grid">{plants.map(plant => {
-              const checked = plantIds.includes(plant.id);
-              const lockedByLimit = Boolean(selectedPlan?.plantLimit && plantIds.length >= selectedPlan.plantLimit && !checked);
-              return <label key={plant.id} className={`p5-booking-plant-card ${checked ? 'is-selected' : ''} ${lockedByLimit ? 'is-disabled' : ''}`}>
-                <input type="checkbox" checked={checked} disabled={lockedByLimit} onChange={event => { setPlantIds(current => event.target.checked ? [...current, plant.id] : current.filter(id => id !== plant.id)); setStepError(''); }}/>
-                <span className="p5-booking-checkbox-mark" aria-hidden="true">{checked ? '✓' : ''}</span>
-                <span className="p5-booking-plant-copy"><b>{plant.name}</b><small>{plant.type || 'Plant'}</small><em>{statusLabel(plant.healthStatus || 'HEALTHY')}</em></span>
-                <span className="p5-booking-plant-action">{checked ? 'Selected' : lockedByLimit ? 'Plan limit reached' : 'Add plant'}</span>
-              </label>;
-            })}</div> : <div className="p5-booking-empty"><b>Your plant list is empty</b><p>Add a plant in a new tab, then refresh this list. Your booking selections will stay open here.</p><div className="p5-actions"><Link className="p5-button primary" to="/garden/plants" target="_blank" rel="noreferrer">Open Plants in a new tab</Link><Button variant="ghost" onClick={load}>Refresh plant list</Button></div></div>}
-            {planPlantLimitExceeded && <div className="p5-booking-callout is-warning">This plan covers up to {selectedPlan.plantLimit} plants per visit. Remove a selection to continue.</div>}
-          </>}
-
-          {bookingStep === 2 && <>
-            <div className="p5-booking-step-heading"><span>STEP 3 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">When and where should we visit?</h3><p>Choose a convenient time and the address where your plants are located.</p></div>
+            <div className="p5-booking-step-heading"><span>STEP 2 OF 3</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">When and where should we visit?</h3><p>Choose a preferred day and time, then select the address where your plants are located.</p></div>
             <div className="p5-booking-visit-layout">
-              <Field label="Visit date and time" hint="Choose a time at least one hour from now. Times are shown in your local time zone."><input className="p5-booking-large-input" required type="datetime-local" value={scheduledStart} onChange={e => { setScheduledStart(e.target.value); setStepError(''); }} min={minDateTime}/></Field>
-              {selectedPlan?.autoRenew && selectedPlan.minimumVisitIntervalDays && <div className="p5-booking-callout">Subscription visits must be at least {selectedPlan.minimumVisitIntervalDays} days apart and completed before the current paid period ends.</div>}
+              <section className="p5-visit-picker" aria-labelledby="visit-date-title">
+                <div className="p5-visit-picker-heading"><div><h4 id="visit-date-title">Choose your visit date</h4><p>Swipe through the next 30 days.</p></div><span className="p5-visit-picker-zone">Your local time</span></div>
+                {visitDateOptions.length ? <div className="p5-horizontal-picker">
+                  <button type="button" className="p5-picker-arrow" onClick={() => scrollPicker(dateScrollerRef, -1)} aria-label="Scroll to earlier dates">‹</button>
+                  <div className="p5-visit-date-scroller" ref={dateScrollerRef} role="group" aria-label="Available visit dates">
+                    {visitDateOptions.map((option, index) => <button key={option.value} type="button" className={`p5-visit-date-card ${selectedVisitDateValue === option.value ? 'is-selected' : ''}`} style={cylinderStyle(index, selectedVisitDateIndex)} aria-pressed={selectedVisitDateValue === option.value} aria-label={`Choose ${option.dayLabel}, ${option.dayNumber} ${option.month}`} onClick={() => chooseVisitDate(option)}>
+                      <small>{option.dayLabel}</small><strong>{option.dayNumber}</strong><span>{option.month}</span>
+                    </button>)}
+                  </div>
+                  <button type="button" className="p5-picker-arrow" onClick={() => scrollPicker(dateScrollerRef, 1)} aria-label="Scroll to later dates">›</button>
+                </div> : <div className="p5-booking-empty"><b>No preferred visit windows are available in the next 30 days.</b><p>Please contact T-CARE so the team can discuss a suitable visit time.</p></div>}
+              </section>
+
+              <section className="p5-visit-picker" aria-labelledby="visit-time-title">
+                <div className="p5-visit-picker-heading"><div><h4 id="visit-time-title">Choose a preferred time</h4><p>Available request windows are shown in 30-minute steps.</p></div>{selectedVisitDate && <span className="p5-visit-picker-zone">{selectedVisitDate.dayLabel}, {selectedVisitDate.dayNumber} {selectedVisitDate.month}</span>}</div>
+                {visitTimeSlots.length ? <div className="p5-horizontal-picker">
+                  <button type="button" className="p5-picker-arrow" onClick={() => scrollPicker(timeScrollerRef, -1)} aria-label="Scroll to earlier times">‹</button>
+                  <div className="p5-visit-time-scroller" ref={timeScrollerRef} role="group" aria-label="Preferred visit times">
+                    {visitTimeSlots.map((slot, index) => <button key={slot.value} type="button" className={`p5-visit-time-card ${selectedVisitTimeValue === slot.value ? 'is-selected' : ''}`} style={cylinderStyle(index, selectedVisitTimeIndex)} aria-pressed={selectedVisitTimeValue === slot.value} onClick={() => chooseVisitTime(slot)}>{slot.label}</button>)}
+                  </div>
+                  <button type="button" className="p5-picker-arrow" onClick={() => scrollPicker(timeScrollerRef, 1)} aria-label="Scroll to later times">›</button>
+                </div> : <div className="p5-booking-empty"><b>No times remain on this date.</b><p>Choose another date to see the next preferred visit windows.</p></div>}
+                {scheduledStart && <div className="p5-visit-selection-summary"><span>Selected preference</span><strong>{new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })}</strong></div>}
+                <p className="p5-visit-picker-note">These are preferred visit windows, not confirmed appointments. T-CARE will confirm the time after checking service-area and Gardener availability. Choose a time at least one hour from now.</p>
+              </section>
+
+              {selectedPlan?.autoRenew && selectedPlan.minimumVisitIntervalDays && <div className="p5-booking-callout">Subscription visits must be at least {selectedPlan.minimumVisitIntervalDays} days apart and completed before the current paid period ends. Your selected date will be checked against your subscription booking history.</div>}
               <div className="p5-booking-subheading"><div><h4>Service address</h4><p>Where should your Gardener arrive?</p></div><Button variant="ghost" onClick={() => setShowAddress(value => !value)}>{showAddress ? 'Close address form' : '+ Add new address'}</Button></div>
               {addresses.length ? <div className="p5-booking-address-grid" role="radiogroup" aria-label="Saved service addresses">{addresses.map(item => <label className={`p5-booking-address-card ${addressId === item.id ? 'is-selected' : ''}`} key={item.id}>
                 <input type="radio" name="address" checked={addressId === item.id} onChange={() => { setAddressId(item.id); setStepError(''); }}/>
@@ -658,33 +749,34 @@ export function CustomerBookingCreatePage({ Shell }) {
             </div>
           </>}
 
-          {bookingStep === 3 && <>
-            <div className="p5-booking-step-heading"><span>STEP 4 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Review your visit details</h3><p>Make sure everything is correct. You can go back to change any selection.</p></div>
+          {bookingStep === 2 && <>
+            <div className="p5-booking-step-heading"><span>STEP 3 OF 3</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Review your visit details</h3><p>Make sure everything is correct. You can go back to change any selection.</p></div>
             <section className="p5-booking-review p5-booking-review-large" aria-labelledby="booking-review-title">
               <div className="p5-booking-review-intro"><div><span>YOUR BOOKING SUMMARY</span><h4 id="booking-review-title">Your plant-care visit</h4></div><strong>{selectedPlan?.autoRenew ? 'Subscription visit' : selectedPlan?.planType === 'ONE_TIME_SERVICE' ? 'One-time service' : 'Pay per service'}</strong></div>
               <dl>
                 <div><dt>Plan or payment option</dt><dd>{selectedPlan?.name || 'Pay per service'}</dd></div>
                 <div><dt>Service</dt><dd>{selectedService?.name || 'Choose a service'}</dd></div>
-                <div><dt>Plants ({selectedPlants.length})</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'No plants selected'}</dd></div>
-                <div><dt>Visit date and time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
+                <div><dt>Plants included automatically ({includedPlants.length})</dt><dd>{includedPlants.length ? includedPlants.map(plant => plant.name).join(', ') : 'No plants registered'}</dd></div>
+                <div><dt>Preferred visit date and time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
                 <div><dt>Service address</dt><dd>{selectedAddress ? <>{selectedAddress.label} · {[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}</> : 'Choose or add an address'}</dd></div>
                 <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
               </dl>
               <div className="p5-booking-total"><span>{selectedPlan?.autoRenew ? 'Visit payment' : 'Estimated amount for this visit'}</span><strong>{selectedPlan?.autoRenew ? 'Covered by your paid subscription' : selectedPrice ? money(selectedPrice.amount) : 'Price to be confirmed'}</strong></div>
-              {!selectedPlan?.autoRenew && !selectedPrice && <p className="p5-booking-price-note">The final service price depends on the plant count and applicable service pricing. T-CARE will show the payable amount before payment.</p>}
+              {!selectedPlan?.autoRenew && !selectedPrice && <p className="p5-booking-price-note">The final service price depends on the number of plants in your account and applicable service pricing. T-CARE will show the payable amount before payment.</p>}
             </section>
+            {planPlantLimitExceeded && <div className="p5-booking-callout is-warning"><b>Your selected plan does not cover all registered plants.</b><span>Choose a plan with a higher plant allowance before submitting.</span><Link to="/garden/plan">Review subscription plans →</Link></div>}
             {noRecurringCredit && <div className="p5-booking-callout is-warning"><b>Your subscription does not have a usable visit credit yet.</b><span>Activate UPI AutoPay and complete the first-period payment before booking with this plan.</span><Link to="/garden/plan">Review subscription →</Link></div>}
-            <p className="p5-booking-policy">Submitting creates your booking request. It does not charge a recurring subscription again. Subscription visits use one credit from your current paid period; unused visits expire at period end. One-Time Service plans are paid through the existing Razorpay booking checkout.</p>
+            <p className="p5-booking-policy">Submitting creates your booking request. It does not charge a recurring subscription again. Subscription visits use one credit from your current paid period; unused visits expire at period end. The selected date and time are preferences until T-CARE confirms availability. One-Time Service plans are paid through the existing Razorpay booking checkout.</p>
           </>}
         </section>
 
         <div className="p5-booking-controls">
-          <div className="p5-booking-controls-summary"><b>{selectedService?.name || 'Choose a service'}</b><span>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'} selected</span>{selectedPrice && !selectedPlan?.autoRenew && <strong>{money(selectedPrice.amount)}</strong>}</div>
+          <div className="p5-booking-controls-summary"><b>{selectedService?.name || 'Choose a service'}</b><span>{plants.length} {plants.length === 1 ? 'plant' : 'plants'} included automatically</span>{selectedPrice && !selectedPlan?.autoRenew && <strong>{money(selectedPrice.amount)}</strong>}</div>
           <div className="p5-booking-controls-actions">
             {bookingStep > 0 && <Button variant="ghost" onClick={goBackStep}>← Back</Button>}
-            {bookingStep < 3
+            {bookingStep < 2
               ? <Button onClick={continueStep}>Continue <span aria-hidden="true">→</span></Button>
-              : <Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit}>{busy ? 'Submitting your request…' : 'Confirm booking request'}</Button>}
+              : <Button type="submit" disabled={busy || !serviceId || !plants.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit}>{busy ? 'Submitting your request…' : 'Confirm booking request'}</Button>}
           </div>
         </div>
       </div>

@@ -45,6 +45,30 @@ const roleOf=p=>p.startsWith('/crew')?'crew':p.startsWith('/hq')?'hq':'garden';
 
 /* ---------- app state ---------- */
 const Ctx=React.createContext(null);const useApp=()=>React.useContext(Ctx);
+
+function useRequireCustomerForStore(){
+  const {authUser,authReady,toast,cart}=useApp();
+  const navigate=useNavigate();
+  return React.useCallback((returnTo='/store')=>{
+    if(!authReady){
+      toast('Checking your Customer account. Please try again in a moment.',{type:'warning'});
+      return false;
+    }
+    if(!authUser){
+      navigate('/login',{state:{from:returnTo}});
+      return false;
+    }
+    if(authUser.role!=='CUSTOMER'){
+      toast('A Customer account is required to add products to a cart or continue to checkout.',{type:'warning'});
+      return false;
+    }
+    if(!cart.customerReady){
+      toast('Preparing your saved Customer cart. Please try again in a moment.',{type:'warning'});
+      return false;
+    }
+    return true;
+  },[authReady,authUser?.id,authUser?.role,cart.customerReady,navigate,toast]);
+}
 function getPerformanceTier(){
   if(typeof window==='undefined')return'balanced';
   const reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -120,7 +144,8 @@ function Provider({children}){
     if(timeout>0)toastTimers.current.set(id,setTimeout(()=>dismissToast(id),timeout));
   },[dismissToast]);
   React.useEffect(()=>()=>{for(const timer of toastTimers.current.values())clearTimeout(timer);toastTimers.current.clear()},[]);
-  const cart=useCart(toast);
+  const cartOwnerId=authUser?.role==='CUSTOMER'?authUser.id:null;
+  const cart=useCart(toast,authReady,cartOwnerId);
   const toggleTheme=React.useCallback(()=>setTheme(current=>current==='dark'?'light':'dark'),[]);
   const openPalette=React.useCallback(()=>setPaletteOpen(true),[]);
   const logout=React.useCallback(async()=>{
@@ -342,13 +367,15 @@ function GardenBackground({theme}){
 }
 function PublicPage({children}){
   const {theme,toggleTheme,cart,authUser,logout}=useApp();
+  const requireCustomer=useRequireCustomerForStore();
+  const openCart=()=>{if(requireCustomer('/store'))cart.setOpen(true)};
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout} onCartClick={openCart}/>
     <main>{children}</main>
     <FinalCta/>
     <SiteFooter/>
     <WhatsAppFab/>
-    <CartDrawer cart={cart}/>
+    <CartDrawer cart={cart} authUser={authUser}/>
   </div>}
 const PUBLIC_SERVICE_ICONS={'Plant Care':Leaf,'Plant Setup':Flower2,'Plant Rescue':Stethoscope,'Maintenance':Scissors,'Events':Sprout,'Green Makeover':Wand2,'Plant Store':ShoppingBag,'AI Care':Bot};
 function ServicesRoute(){
@@ -362,8 +389,12 @@ function ServicesRoute(){
 }
 const AboutRoute=()=><PublicPage><AboutPage/></PublicPage>;
 const PlansRoute=()=><PublicPage><PlansPage/></PublicPage>;
-const StoreRoute=()=>{const {cart}=useApp();return <PublicPage><StorePage cart={cart}/></PublicPage>};
-const StoreCheckoutRoute=()=>{const {cart,authUser}=useApp();return <PublicPage><StoreCheckoutPage cart={cart} authUser={authUser}/></PublicPage>};
+const StoreRoute=()=>{
+  const {cart,authUser,authReady}=useApp();
+  const requireCustomer=useRequireCustomerForStore();
+  return <PublicPage><StorePage cart={cart} authUser={authUser} authReady={authReady} onRequireCustomer={requireCustomer}/></PublicPage>;
+};
+const StoreCheckoutRoute=()=>{const {cart,authUser,authReady}=useApp();return <PublicPage><StoreCheckoutPage cart={cart} authUser={authUser} authReady={authReady}/></PublicPage>};
 const StoreOrderRoute=()=>{const {authUser}=useApp();return <PublicPage><StoreOrderPage authUser={authUser}/></PublicPage>};
 const MakeoverRoute=()=><PublicPage><MakeoverPage/></PublicPage>;
 const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
@@ -371,18 +402,20 @@ const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
 const PrivacyRoute=()=><PublicPage><PrivacyPage/></PublicPage>;
 function Home(){
   const {theme,toggleTheme,cart,authUser,logout}=useApp();
+  const requireCustomer=useRequireCustomerForStore();
+  const openCart=()=>{if(requireCustomer('/store'))cart.setOpen(true)};
   return <div className="landing"><GardenBackground theme={theme}/>
-    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout}/>
+    <LandingNav theme={theme} toggleTheme={toggleTheme} cart={cart} authUser={authUser} logout={logout} onCartClick={openCart}/>
     <Hero theme={theme}/>
     <WhyChoose/>
     <Included/>
     <Steps/>
-    <Market cart={cart}/>
+    <Market cart={cart} authUser={authUser} authReady={authReady} onRequireCustomer={requireCustomer}/>
     <Reviews/>
     <FinalCta/>
     <SiteFooter/>
     <WhatsAppFab/>
-    <CartDrawer cart={cart}/>
+    <CartDrawer cart={cart} authUser={authUser}/>
   </div>}
 
 /* ---------- reusable loading and error states ---------- */
@@ -549,10 +582,10 @@ function Auth(){
     toast(`Signed in as ${user.role.toLowerCase()}.`);
     const rolePrefix=workspaceForRole(user.role);
     const requestedPath=location.state?.from;
-    const destination=typeof requestedPath==='string'
-      && (requestedPath===rolePrefix||requestedPath.startsWith(`${rolePrefix}/`))
-      ? requestedPath
-      : workspaceForRole(user.role);
+    const storeReturnPath=user.role==='CUSTOMER' && ['/store','/store/checkout'].includes(requestedPath);
+    const workspaceReturnPath=typeof requestedPath==='string'
+      && (requestedPath===rolePrefix||requestedPath.startsWith(`${rolePrefix}/`));
+    const destination=storeReturnPath?requestedPath:workspaceReturnPath?requestedPath:workspaceForRole(user.role);
     nav(destination,{replace:true});
   };
 

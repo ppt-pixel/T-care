@@ -250,3 +250,44 @@ a.p5-list-row:hover{background:var(--p5-tint)}
 }
 @media(max-width:380px){.p5-booking-steps{grid-template-columns:1fr}.p5-booking-step{min-height:56px}.p5-booking-step-copy small{font-size:.76rem}}
 @media(prefers-reduced-motion:reduce){.p5-booking-step,.p5-booking-option-card,.p5-booking-service-card,.p5-booking-plant-card,.p5-booking-address-card{transition:none}.p5-booking-step:not(:disabled):hover,.p5-booking-option-card:hover,.p5-booking-service-card:hover,.p5-booking-plant-card:hover,.p5-booking-address-card:hover{transform:none}}
+
+/* Booking date/time selection: touch-friendly horizontal cylinder-style pickers. */
+.p5-booking-steps{grid-template-columns:repeat(3,minmax(0,1fr))}
+.p5-booking-visit-layout{gap:20px}
+.p5-visit-picker{min-width:0;padding:clamp(16px,2vw,22px);border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--card) 78%,transparent);overflow:hidden}
+.p5-visit-picker-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:15px}
+.p5-visit-picker-heading h4{margin:0 0 5px;color:var(--text);font-size:1.12rem;font-weight:800}
+.p5-visit-picker-heading p{margin:0;color:var(--muted);font-size:.91rem;line-height:1.5}
+.p5-visit-picker-zone{flex:none;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--p5-tint);color:var(--muted);font-size:.78rem;font-weight:750}
+.p5-horizontal-picker{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;align-items:center;gap:9px;min-width:0;padding:10px 0 14px;perspective:1000px}
+.p5-picker-arrow{display:grid;place-items:center;width:38px;height:46px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font-size:1.55rem;line-height:1;cursor:pointer;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.p5-picker-arrow:hover{border-color:var(--accent);background:var(--p5-tint);transform:scale(1.04)}
+.p5-visit-date-scroller,.p5-visit-time-scroller{display:flex;align-items:center;gap:10px;min-width:0;overflow-x:auto;overflow-y:hidden;padding:13px max(12px,calc((100% - 96px)/2));scroll-snap-type:x mandatory;scroll-padding-inline:calc(50% - 48px);overscroll-behavior-inline:contain;perspective:780px;transform-style:preserve-3d;scrollbar-width:none;mask-image:linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%)}
+.p5-visit-date-scroller::-webkit-scrollbar,.p5-visit-time-scroller::-webkit-scrollbar{display:none}
+.p5-visit-date-card,.p5-visit-time-card{position:relative;display:grid;place-items:center;align-content:center;gap:4px;flex:0 0 90px;min-height:104px;padding:12px 9px;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--text);scroll-snap-align:center;scroll-snap-stop:always;cursor:pointer;transform-style:preserve-3d;backface-visibility:hidden;transition:border-color .2s ease,background .2s ease,box-shadow .2s ease,transform .22s ease,opacity .22s ease}
+.p5-visit-date-card small{color:var(--muted);font-size:.78rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.p5-visit-date-card strong{color:var(--text);font-size:1.7rem;line-height:1.05;font-weight:850}
+.p5-visit-date-card span{color:var(--muted);font-size:.82rem;font-weight:700}
+.p5-visit-date-card.is-selected,.p5-visit-time-card.is-selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--card));box-shadow:0 11px 26px -18px var(--accent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 20%,transparent)}
+.p5-visit-date-card.is-selected small,.p5-visit-date-card.is-selected strong,.p5-visit-date-card.is-selected span{color:var(--text)}
+.p5-visit-time-card{flex-basis:124px;min-height:76px;font-size:1.02rem;font-weight:850;letter-spacing:.01em;white-space:nowrap}
+.p5-visit-time-card.is-selected{color:var(--text)}
+.p5-visit-date-card:focus-visible,.p5-visit-time-card:focus-visible,.p5-picker-arrow:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:3px}
+.p5-visit-selection-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px;padding:13px 15px;border:1px solid color-mix(in srgb,var(--accent) 42%,var(--line));border-radius:13px;background:var(--p5-tint);color:var(--text)}
+.p5-visit-selection-summary span{color:var(--muted);font-size:.88rem;font-weight:700}
+.p5-visit-selection-summary strong{font-size:.98rem;text-align:right}
+.p5-visit-picker-note{margin:13px 0 0;padding:12px 14px;border-left:3px solid var(--accent);border-radius:0 10px 10px 0;background:var(--p5-tint);color:var(--muted);font-size:.86rem;line-height:1.6}
+@media(max-width:620px){
+  .p5-visit-picker{padding:14px 12px;border-radius:15px}
+  .p5-visit-picker-heading{flex-direction:column;gap:8px}
+  .p5-visit-picker-zone{align-self:flex-start}
+  .p5-horizontal-picker{grid-template-columns:30px minmax(0,1fr) 30px;gap:5px}
+  .p5-picker-arrow{width:30px;height:42px;border-radius:10px;font-size:1.25rem}
+  .p5-visit-date-card{flex-basis:78px;min-height:94px}
+  .p5-visit-time-card{flex-basis:110px;min-height:68px;font-size:.95rem}
+  .p5-visit-selection-summary{align-items:flex-start;flex-direction:column;gap:5px}
+  .p5-visit-selection-summary strong{text-align:left}
+}
+@media(prefers-reduced-motion:reduce){.p5-visit-date-card,.p5-visit-time-card,.p5-picker-arrow{transition:none}.p5-picker-arrow:hover{transform:none}}
+@media(max-width:900px){.p5-booking-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.p5-booking-steps{grid-template-columns:1fr}}
