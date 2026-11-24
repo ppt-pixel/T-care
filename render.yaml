@@ -32,11 +32,25 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: T-CARE
-      # Keep disabled until the owner explicitly approves the live-payment rollout.
+      # Preserve existing owner-managed production booking payment setting.
+      # Backend config defaults to false if no value is supplied.
       - key: PAYMENTS_ENABLED
+        sync: false
+      # The new Plant Store remains fail-closed until migration and provider checks pass.
+      - key: STORE_CHECKOUT_ENABLED
         value: "false"
+      # QR Codes are an on-demand Razorpay capability. The backend default is false;
+      # keep this owner-managed so future Blueprint syncs cannot overwrite a deliberate activation.
+      - key: RAZORPAY_QR_ENABLED
+        sync: false
+      # Preserve any owner-managed UPI AutoPay activation; backend config defaults to false.
+      - key: RAZORPAY_SUBSCRIPTIONS_ENABLED
+        sync: false
       - key: PAYMENT_PROVIDER
         value: razorpay
+      # Owner-managed: set test on isolated staging, live only on production.
+      - key: RAZORPAY_MODE
+        sync: false
       - key: BOOKING_CONVENIENCE_FEE
         value: "0"
       - key: RAZORPAY_KEY_ID

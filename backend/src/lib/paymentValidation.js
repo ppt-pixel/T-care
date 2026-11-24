@@ -19,9 +19,15 @@ export function hasValidClientPaymentSignature(secret, orderId, paymentId, signa
   return timingSafeHexEqual(hmacHex(secret, `${orderId}|${paymentId}`), signature);
 }
 
+export function hasValidClientSubscriptionSignature(secret, paymentId, subscriptionId, signature) {
+  if (!secret || typeof paymentId !== 'string' || typeof subscriptionId !== 'string' || typeof signature !== 'string') return false;
+  return timingSafeHexEqual(hmacHex(secret, `${paymentId}|${subscriptionId}`), signature);
+}
+
 export function paymentBelongsToCustomer(payment, customerProfileId) {
   return payment?.booking?.customerId === customerProfileId
-    || payment?.subscription?.customerId === customerProfileId;
+    || payment?.subscription?.customerId === customerProfileId
+    || payment?.shopOrder?.customerId === customerProfileId;
 }
 
 export function providerAmountMatches(expectedAmountPaise, actualAmountPaise) {

@@ -11,6 +11,7 @@ function receiptPurpose(payment) {
     const plan = payment.subscription.plan?.name || 'Subscription';
     return `T-CARE ${plan} subscription`;
   }
+  if (payment.shopOrder) return `T-CARE Plant Store order ${payment.shopOrder.orderNumber}`;
   return 'T-CARE payment';
 }
 
@@ -29,11 +30,12 @@ export async function ensurePaymentReceipt(paymentId) {
           plan: true,
           customer: { include: { user: { select: { id: true, fullName: true, email: true } } } }
         }
-      }
+      },
+      shopOrder: { include: { customer: { include: { user: { select: { id: true, fullName: true, email: true } } } } } }
     }
   });
   if (!payment || !['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(payment.status)) return null;
-  const customerUser = payment.booking?.customer?.user || payment.subscription?.customer?.user;
+  const customerUser = payment.booking?.customer?.user || payment.subscription?.customer?.user || payment.shopOrder?.customer?.user;
   if (!customerUser?.email) return null;
 
   const paidAt = payment.paidAt || payment.updatedAt || payment.createdAt;

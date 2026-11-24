@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Copy, KeyRound, UserPlus } from 'lucide-react';
 import { API_V1 } from './phase5Api.js';
 import { createApiRequest } from './apiRequest.js';
@@ -56,7 +56,10 @@ function Notice({ error, success }) {
   return <div className={`p5-notice ${error ? 'is-error' : 'is-success'}`} role={error ? 'alert' : 'status'} aria-live={error ? 'assertive' : 'polite'} aria-atomic="true">{error || success}</div>;
 }
 function State({ loading, error, empty, onRetry }) {
-  if (loading) return <div className="p5-state" role="status" aria-live="polite"><span className="p5-spinner"/>Loading…</div>;
+  if (loading) return <div className="p5-state p5-loading-state" role="status" aria-live="polite" aria-busy="true">
+    <span className="p5-loading-heading"><span className="p5-spinner" aria-hidden="true"/>Loading…</span>
+    <span className="p5-loading-skeletons" aria-hidden="true"><i/><i/><i/></span>
+  </div>;
   if (error) return <div className="p5-state p5-error" role="alert"><b>Could not load this information</b><p>{error}</p><button className="p5-button" onClick={onRetry}>Try again</button></div>;
   if (empty) return <div className="p5-state" role="status"><b>No records found</b></div>;
   return null;
@@ -139,13 +142,15 @@ export function AccountSecurityPage({ Shell }) {
   return <Shell title="Security & password" sub="Update your account password.">
     <Notice error={error} success={success}/>
     <Panel title="Change password" sub="Use at least 12 characters. Changing your password signs out other active sessions.">
-      <form onSubmit={submit}>
+      <form onSubmit={submit} aria-busy={busy}>
+        <fieldset className="p5-form-lock" disabled={busy}>
         <Field label="Current password"><input required type="password" autoComplete="current-password" maxLength={72} value={form.currentPassword} onChange={event=>update('currentPassword',event.target.value)}/></Field>
         <FormGrid>
           <Field label="New password"><input required type="password" autoComplete="new-password" minLength={12} maxLength={72} value={form.newPassword} onChange={event=>update('newPassword',event.target.value)}/></Field>
           <Field label="Confirm new password"><input required type="password" autoComplete="new-password" minLength={12} maxLength={72} value={form.confirmPassword} onChange={event=>update('confirmPassword',event.target.value)}/></Field>
         </FormGrid>
         <div className="p5-actions"><Button type="submit" disabled={busy}>{busy?'Changing password…':'Change password'}</Button></div>
+        </fieldset>
       </form>
     </Panel>
   </Shell>;
@@ -342,7 +347,13 @@ export function CustomerPlantsPage({ Shell }) {
   const plants = data?.plants || [];
   const open = plant => { setEditing(plant || null); setForm(plant ? { name: plant.name, type: plant.type || '', locationInHome: plant.locationInHome || '', notes: plant.notes || '', nextCareAt: plant.nextCareAt ? new Date(plant.nextCareAt).toISOString().slice(0, 10) : '', healthStatus: plant.healthStatus || 'HEALTHY' } : { name: '', type: '', locationInHome: '', notes: '', nextCareAt: '', healthStatus: 'HEALTHY' }); setShowForm(true); setFormError(''); };
   const save = async e => { e.preventDefault(); setBusy(true); setFormError(''); setMessage(''); try { const body = { ...form, nextCareAt: form.nextCareAt ? new Date(`${form.nextCareAt}T12:00:00`).toISOString() : undefined }; await request(editing ? `/customer/plants/${editing.id}` : '/customer/plants', { method: editing ? 'PATCH' : 'POST', body: json(body) }); setShowForm(false); setMessage(editing ? 'Plant updated.' : 'Plant added to your collection.'); await load(); } catch (e2) { setFormError(errorText(e2)); } finally { setBusy(false); } };
-  const remove = async plant => { if (!window.confirm(`Delete ${plant.name} from your collection?`)) return; try { await request(`/customer/plants/${plant.id}`, { method: 'DELETE' }); setMessage('Plant removed.'); await load(); } catch (e) { setFormError(errorText(e)); } };
+  const remove = async plant => {
+    if (busy || !window.confirm(`Delete ${plant.name} from your collection?`)) return;
+    setBusy(true); setFormError('');
+    try { await request(`/customer/plants/${plant.id}`, { method: 'DELETE' }); setMessage('Plant removed.'); await load(); }
+    catch (e) { setFormError(errorText(e)); }
+    finally { setBusy(false); }
+  };
   return <Shell title="My plants" sub="Keep plant details, care dates and notes together." action={<Button onClick={() => open(null)}>＋ Add plant</Button>}>
     <Notice error={formError || error} success={message}/><State loading={loading} error={error} onRetry={load}/>
     {showForm && <Panel title={editing ? 'Edit plant' : 'Add a plant'}><form onSubmit={save}><FormGrid>
@@ -385,18 +396,18 @@ export function CustomerPlantDetailPage({ Shell }) {
       setMessage('Photo uploaded and linked to this plant.'); await load();
     } catch (e2) { setMessage(errorText(e2)); } finally { setUploading(false); e.target.value = ''; }
   };
-  const removePhoto = async photo => { if (!window.confirm('Delete this plant photo?')) return; setUploading(true); try { await request(`/customer/plants/${plant.id}/photos/${photo.id}`, { method: 'DELETE' }); setMessage('Plant photo deleted.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setUploading(false); } };
+  const removePhoto = async photo => { if (uploading || !window.confirm('Delete this plant photo?')) return; setUploading(true); try { await request(`/customer/plants/${plant.id}/photos/${photo.id}`, { method: 'DELETE' }); setMessage('Plant photo deleted.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setUploading(false); } };
   return <Shell title={plant?.name || 'Plant record'} sub="Details, photos and care history for this plant." action={<Link className="p5-button ghost" to="/garden/plants">Back to plants</Link>}>
     <Notice error={error || (message && /failed|error|invalid|cannot|not found|denied|required/i.test(message) ? message : '')} success={message && !/failed|error|invalid|cannot|not found|denied|required/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {plant && <><div className="p5-metrics"><div><small>Health</small><b>{statusLabel(plant.healthStatus)}</b></div><div><small>Next care</small><b>{dateOnly(plant.nextCareAt)}</b></div><div><small>Photos</small><b>{plant.photos?.length || 0}</b></div></div>
       <Panel title="Plant details" sub={`${plant.type || 'Type not specified'} · ${plant.locationInHome || 'Location not specified'}`} action={<label className="p5-button primary">{uploading ? 'Uploading…' : 'Upload photo'}<input hidden type="file" accept="image/jpeg,image/png,image/webp,image/heic" onChange={addPhoto} disabled={uploading}/></label>}><p>{plant.notes || 'No notes have been added.'}</p></Panel>
       <Panel title="Update plant health" sub="The assigned Gardener can see this update if the plant is part of an active visit.">
-        <form onSubmit={saveHealth}><FormGrid>
+        <form onSubmit={saveHealth} aria-busy={savingHealth}><fieldset className="p5-form-lock" disabled={savingHealth}><FormGrid>
           <Field label="Plant health"><select value={healthForm.healthStatus} onChange={e => setHealthForm({ ...healthForm, healthStatus: e.target.value })}>{['EXCELLENT','HEALTHY','NEEDS_ATTENTION','CRITICAL'].map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></Field>
           <Field label="Next care date"><input type="date" value={healthForm.nextCareAt} onChange={e => setHealthForm({ ...healthForm, nextCareAt: e.target.value })}/></Field>
         </FormGrid>
         <Field label="Current observations / notes"><textarea maxLength="2000" value={healthForm.notes} onChange={e => setHealthForm({ ...healthForm, notes: e.target.value })} placeholder="Describe yellow leaves, watering concerns, pests or recent changes."/></Field>
-        <Button type="submit" disabled={savingHealth}>{savingHealth ? 'Saving report…' : 'Save health update'}</Button></form>
+        <Button type="submit" disabled={savingHealth}>{savingHealth ? 'Saving report…' : 'Save health update'}</Button></fieldset></form>
       </Panel>
       <Panel title="Photos" sub="">{plant.photos?.length ? <div className="p5-photo-grid">{plant.photos.map(photo => <div key={photo.id}><img src={photo.url || ''} alt={photo.altText || plant.name} onError={e => { e.currentTarget.style.display = 'none'; }}/><small>{photo.altText || 'Plant photo'} · {dateOnly(photo.createdAt)}</small>{photo.mediaAssetId && <Button variant="danger" disabled={uploading} onClick={() => removePhoto(photo)}>Delete photo</Button>}</div>)}</div> : <Empty title="No plant photos" text="Upload a JPG, PNG or WebP image up to 10 MB."/>}</Panel>
       <Panel title="Care history" sub="">{plant.careRecords?.length ? <div className="p5-record-list">{plant.careRecords.map(r => <div key={r.id}><b>{r.title}</b><p>{r.notes || 'No notes recorded.'}</p><small>{dateTime(r.recordedAt)}{r.nextCareAt ? ` · Next care ${dateOnly(r.nextCareAt)}` : ''}</small></div>)}</div> : <Empty title="No care history yet"/>}</Panel>
@@ -406,118 +417,321 @@ export function CustomerPlantDetailPage({ Shell }) {
 
 export function CustomerBookingCreatePage({ Shell }) {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const [services, setServices] = React.useState([]), [plants, setPlants] = React.useState([]), [addresses, setAddresses] = React.useState([]);
+  const [plans, setPlans] = React.useState([]), [subscriptions, setSubscriptions] = React.useState([]);
   const [loading, setLoading] = React.useState(true), [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false), [success, setSuccess] = React.useState('');
+  const [selectedPlanId, setSelectedPlanId] = React.useState(searchParams.get('planId') || '');
   const [serviceId, setServiceId] = React.useState(''), [plantIds, setPlantIds] = React.useState([]), [addressId, setAddressId] = React.useState(''), [scheduledStart, setScheduledStart] = React.useState(''), [specialInstructions, setSpecialInstructions] = React.useState('');
   const [showAddress, setShowAddress] = React.useState(false), [address, setAddress] = React.useState({ label: 'Home', type: 'HOME', line1: '', line2: '', city: '', state: '', postalCode: '', isDefault: true });
-  const load = React.useCallback(async () => { setLoading(true); setError(''); try { const [s, p, a] = await Promise.all([request('/services'), request('/customer/plants'), request('/customer/addresses')]); setServices(s.services || []); setPlants(p.plants || []); setAddresses(a.addresses || []); } catch (e) { setError(errorText(e)); } finally { setLoading(false); } }, []);
-  React.useEffect(() => { load(); }, [load]);
+  const bookingIdempotencyKey = React.useRef(null);
+  const loadVersion = React.useRef(0);
+  const loadController = React.useRef(null);
+  const load = React.useCallback(async () => {
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    const version = ++loadVersion.current;
+    setLoading(true); setError('');
+    try {
+      const options = { signal: controller.signal };
+      const [serviceResult, plantResult, addressResult, planResult, subscriptionResult] = await Promise.all([
+        request('/services', options), request('/customer/plants', options), request('/customer/addresses', options), request('/subscriptions/plans', options), request('/subscriptions/customer', options)
+      ]);
+      if (version !== loadVersion.current) return;
+      setServices(serviceResult.services || []);
+      setPlants(plantResult.plants || []);
+      setAddresses(addressResult.addresses || []);
+      setPlans(planResult.plans || []);
+      setSubscriptions(subscriptionResult.subscriptions || []);
+    } catch (loadError) {
+      if (version === loadVersion.current && loadError?.name !== 'AbortError') setError(errorText(loadError));
+    } finally {
+      if (version === loadVersion.current) {
+        setLoading(false);
+        loadController.current = null;
+      }
+    }
+  }, []);
+  React.useEffect(() => {
+    void load();
+    return () => { loadVersion.current += 1; loadController.current?.abort(); loadController.current = null; };
+  }, [load]);
   React.useEffect(() => { if (!addressId && addresses.length) setAddressId(addresses.find(a => a.isDefault)?.id || addresses[0].id); }, [addresses, addressId]);
-  React.useEffect(() => { if (!serviceId && services.length) setServiceId(services[0].id); }, [services, serviceId]);
-  const selectedService = services.find(s => s.id === serviceId);
+
+  const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || null;
+  const includedServiceIds = selectedPlan?.includedServiceIds || [];
+  const serviceOptions = selectedPlan ? services.filter(service => includedServiceIds.includes(service.id)) : services;
+  React.useEffect(() => {
+    if (!serviceOptions.some(service => service.id === serviceId)) setServiceId(serviceOptions[0]?.id || '');
+  }, [serviceOptions, serviceId]);
+  const selectedService = serviceOptions.find(service => service.id === serviceId);
   const selectedAddress = addresses.find(item => item.id === addressId);
   const selectedPlants = plants.filter(item => plantIds.includes(item.id));
-  const selectedPrice = (selectedService?.prices || [])
-    .filter(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants))
-    .sort((a, b) => {
-      const minA = a.minPlants == null ? Number.NEGATIVE_INFINITY : a.minPlants;
-      const minB = b.minPlants == null ? Number.NEGATIVE_INFINITY : b.minPlants;
-      return minB - minA || new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime();
-    })[0];
-  const createAddress = async e => { e.preventDefault(); setBusy(true); setError(''); try { const result = await request('/customer/addresses', { method: 'POST', body: json(address) }); setAddresses(current => [result.address, ...current]); setAddressId(result.address.id); setShowAddress(false); setSuccess('Address saved.'); } catch (e2) { setError(errorText(e2)); } finally { setBusy(false); } };
-  const submit = async e => { e.preventDefault(); setBusy(true); setError(''); setSuccess(''); try {
-    const result = await request('/bookings', { method: 'POST', body: json({ serviceId, plantIds, addressId, scheduledStart: new Date(scheduledStart).toISOString(), specialInstructions }) });
-    nav(`/garden/visits/${result.booking.id}`, { replace: true });
-  } catch (e2) { setError(errorText(e2)); } finally { setBusy(false); } };
-  return <Shell title="Book a service" sub="Send a visit request with the plants, address and time that work for you.">
+  const selectedPlanSubscription = selectedPlan?.autoRenew
+    ? subscriptions.find(item => item.planId === selectedPlan.id && item.visitsAvailable > 0 && ['ACTIVE', 'PAUSED', 'PENDING', 'CANCELLED', 'EXPIRED'].includes(item.status))
+    : null;
+  const currentVisitCredit = selectedPlanSubscription?.visitCredits?.find(credit => credit.current && credit.visitsAvailable > 0) || null;
+  const selectedPrice = selectedPlan?.planType === 'ONE_TIME_SERVICE'
+    ? { amount: selectedPlan.price }
+    : selectedPlan?.autoRenew
+      ? { amount: 0 }
+      : (selectedService?.prices || [])
+        .filter(p => (p.minPlants == null || plantIds.length >= p.minPlants) && (p.maxPlants == null || plantIds.length <= p.maxPlants))
+        .sort((a, b) => {
+          const minA = a.minPlants == null ? Number.NEGATIVE_INFINITY : a.minPlants;
+          const minB = b.minPlants == null ? Number.NEGATIVE_INFINITY : b.minPlants;
+          return minB - minA || new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime();
+        })[0];
+  const planPlantLimitExceeded = Boolean(selectedPlan?.plantLimit && plantIds.length > selectedPlan.plantLimit);
+  const createAddress = async e => {
+    e.preventDefault(); if (busy) return; setBusy(true); setError('');
+    try {
+      const result = await request('/customer/addresses', { method: 'POST', body: json(address) });
+      setAddresses(current => [result.address, ...current]); setAddressId(result.address.id); setShowAddress(false); setSuccess('Address saved.');
+    } catch (e2) { setError(errorText(e2)); }
+    finally { setBusy(false); }
+  };
+  const submit = async e => {
+    e.preventDefault(); if (busy) return;
+    setBusy(true); setError(''); setSuccess('');
+    const body = {
+      serviceId,
+      plantIds,
+      addressId,
+      scheduledStart: new Date(scheduledStart).toISOString(),
+      specialInstructions,
+      ...(selectedPlan && selectedPlan.planType === 'ONE_TIME_SERVICE' ? { subscriptionPlanId: selectedPlan.id } : {}),
+      ...(selectedPlan?.autoRenew && selectedPlanSubscription ? { subscriptionPlanId: selectedPlan.id, subscriptionId: selectedPlanSubscription.id } : {})
+    };
+    try {
+      const storageKey = 'tcare:booking:create-idempotency:v2';
+      const fingerprint = JSON.stringify(body);
+      let saved = null;
+      try { saved = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null'); } catch { saved = null; }
+      if (!bookingIdempotencyKey.current || bookingIdempotencyKey.current.fingerprint !== fingerprint) {
+        const key = saved?.fingerprint === fingerprint ? saved.key : window.crypto?.randomUUID?.();
+        if (!key) throw new Error('Secure booking submission is unavailable in this browser.');
+        bookingIdempotencyKey.current = { key, fingerprint };
+        try { window.sessionStorage.setItem(storageKey, JSON.stringify(bookingIdempotencyKey.current)); } catch { /* In-memory idempotency remains active for this form. */ }
+      }
+      const result = await request('/bookings', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': bookingIdempotencyKey.current.key },
+        body: json(body)
+      });
+      try { window.sessionStorage.removeItem(storageKey); } catch { /* Ignore unavailable session storage. */ }
+      bookingIdempotencyKey.current = null;
+      nav(`/garden/visits/${result.booking.id}`, { replace: true });
+    } catch (submitError) {
+      setError(errorText(submitError));
+      if (submitError?.code === 'IDEMPOTENCY_KEY_REUSED') setSuccess('A previous booking request may already have been submitted. Check your visits before creating another.');
+    } finally { setBusy(false); }
+  };
+  const noRecurringCredit = selectedPlan?.autoRenew && !currentVisitCredit;
+  const isPlanReady = !selectedPlan || (selectedPlan.bookingReady && (selectedPlan.planType === 'ONE_TIME_SERVICE' || Boolean(currentVisitCredit)));
+  const minDateTime = new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  return <Shell title="Book a service" sub="Choose a plan, included service, plants, address and a visit time.">
     <Notice error={error} success={success}/><State loading={loading} error={error} onRetry={load}/>
-    {!loading && <form className="p5-panel" onSubmit={submit}>
-      <PageTitle eyebrow="Booking details" title="Tell us what you need" sub="Choose a service, plants, address and preferred visit time." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
-      <div className="p5-booking-intent" aria-live="polite"><span>I need</span><strong>{selectedService?.name || 'a service'}</strong><span>for</span><strong>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'}</strong></div>
-      <FormGrid>
-        <Field label="Choose a service"><select required value={serviceId} onChange={e => setServiceId(e.target.value)}><option value="">Select service</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.durationLabel}</option>)}</select></Field>
-        <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}/></Field>
-      </FormGrid>
-      <Panel title="Plants for this visit">
-        {plants.length ? <div className="p5-check-grid">{plants.map(p => <label key={p.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(p.id)} onChange={e => setPlantIds(current => e.target.checked ? [...current, p.id] : current.filter(id => id !== p.id))}/><span><b>{p.name}</b><small>{p.type || statusLabel(p.healthStatus)}</small></span></label>)}</div> : <Empty title="Add a plant before booking" text="Add a plant to your collection to request a visit."/>}
+    {!loading && <form className="p5-panel" onSubmit={submit} aria-busy={busy}>
+      <fieldset className="p5-form-lock" disabled={busy}>
+      <PageTitle eyebrow="Booking details" title="Plan your plant-care visit" sub="Review the plan terms and booking details before submitting." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
+      <Panel title="Choose a plan" sub="Plan prices, eligible services and visit allowances are maintained by T-CARE Admin.">
+        <Field label="Plan or payment option">
+          <select value={selectedPlanId} onChange={e => { setSelectedPlanId(e.target.value); setPlantIds([]); }}>
+            <option value="">Pay per service (no subscription plan)</option>
+            {plans.filter(plan => plan.planType !== 'LEGACY_RECURRING').map(plan => <option key={plan.id} value={plan.id}>{plan.name} · {money(plan.price)} / {plan.billingCycle}</option>)}
+          </select>
+        </Field>
+        {selectedPlan && <>
+          <PlanDetails plan={selectedPlan}/>
+          {selectedPlan.autoRenew && <div className="p5-plan-renewal-note">
+            {currentVisitCredit
+              ? `${currentVisitCredit.visitsAvailable} visit credits available in your paid period. Unused visits expire ${dateOnly(currentVisitCredit.periodEnd)}.`
+              : 'This plan needs an authorised UPI AutoPay mandate and a captured first-period payment before booking credits become available.'}
+          </div>}
+          {noRecurringCredit && <div className="p5-actions"><Link className="p5-button primary" to="/garden/plan">View plans and start UPI AutoPay</Link></div>}
+        </>}
       </Panel>
-      <Panel title="Service address" action={<Button variant="ghost" onClick={() => setShowAddress(v => !v)}>{showAddress ? 'Close' : '+ Add address'}</Button>}>
-        {addresses.length ? <div className="p5-check-grid">{addresses.map(a => <label className="p5-check" key={a.id}><input type="radio" name="address" checked={addressId === a.id} onChange={() => setAddressId(a.id)}/><span><b>{a.label} {a.isDefault ? '· Default' : ''}</b><small>{[a.line1, a.line2, a.city, a.state, a.postalCode].filter(Boolean).join(', ')}</small></span></label>)}</div> : <Empty title="No saved addresses" text="Add the address where you’d like the Gardener to visit."/>}
+      <div className="p5-booking-intent" aria-live="polite"><span>I need</span><strong>{selectedService?.name || 'an included service'}</strong><span>for</span><strong>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'}</strong>{selectedPlan?.autoRenew && <Pill tone="success">Subscription visit</Pill>}</div>
+      <FormGrid>
+        <Field label="Choose an included service">
+          <select required value={serviceId} onChange={e => setServiceId(e.target.value)}>
+            <option value="">Select service</option>
+            {serviceOptions.map(service => <option key={service.id} value={service.id}>{service.name} · {service.durationLabel}</option>)}
+          </select>
+          {selectedPlan && !serviceOptions.length && <small>No active service is currently available in this plan. Contact T-CARE support.</small>}
+        </Field>
+        <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={minDateTime}/></Field>
+      </FormGrid>
+      {selectedPlan?.autoRenew && selectedPlan.minimumVisitIntervalDays && <p className="p5-muted">Visits must be at least {selectedPlan.minimumVisitIntervalDays} days apart. The visit must occur before the current paid period ends.</p>}
+      <Panel title="Plants for this visit" sub={selectedPlan?.plantLimit ? `This plan covers up to ${selectedPlan.plantLimit} plants per visit.` : 'Choose the plants that need care.'}>
+        {plants.length ? <div className="p5-check-grid">{plants.map(plant => {
+          const lockedByLimit = Boolean(selectedPlan?.plantLimit && plantIds.length >= selectedPlan.plantLimit && !plantIds.includes(plant.id));
+          return <label key={plant.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(plant.id)} disabled={lockedByLimit} onChange={event => setPlantIds(current => event.target.checked ? [...current, plant.id] : current.filter(id => id !== plant.id))}/><span><b>{plant.name}</b><small>{plant.type || statusLabel(plant.healthStatus)}</small></span></label>;
+        })}</div> : <Empty title="Add a plant before booking" text="Add a plant to your collection to request a visit."/>}
+      </Panel>
+      <Panel title="Service address" action={<Button variant="ghost" onClick={() => setShowAddress(value => !value)}>{showAddress ? 'Close' : '+ Add address'}</Button>}>
+        {addresses.length ? <div className="p5-check-grid">{addresses.map(item => <label className="p5-check" key={item.id}><input type="radio" name="address" checked={addressId === item.id} onChange={() => setAddressId(item.id)}/><span><b>{item.label} {item.isDefault ? '· Default' : ''}</b><small>{[item.line1, item.line2, item.city, item.state, item.postalCode].filter(Boolean).join(', ')}</small></span></label>)}</div> : <Empty title="No saved addresses" text="Add the address where you’d like the Gardener to visit."/>}
         {showAddress && <div className="p5-address-editor"><FormGrid><Field label="Label"><input required value={address.label} onChange={e => setAddress({ ...address, label: e.target.value })}/></Field><Field label="Address type"><select value={address.type} onChange={e => setAddress({ ...address, type: e.target.value })}><option>HOME</option><option>OFFICE</option><option>OTHER</option></select></Field><Field label="Address line 1"><input required value={address.line1} onChange={e => setAddress({ ...address, line1: e.target.value })}/></Field><Field label="Address line 2"><input value={address.line2} onChange={e => setAddress({ ...address, line2: e.target.value })}/></Field><Field label="City"><input required value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })}/></Field><Field label="State"><input required value={address.state} onChange={e => setAddress({ ...address, state: e.target.value })}/></Field><Field label="Postal code"><input required value={address.postalCode} onChange={e => setAddress({ ...address, postalCode: e.target.value })}/></Field></FormGrid><Button onClick={createAddress} disabled={busy}>Save address</Button></div>}
       </Panel>
       <Field label="Special instructions"><textarea maxLength="2000" value={specialInstructions} onChange={e => setSpecialInstructions(e.target.value)} placeholder="Access notes, plant-care priorities or other details"/></Field>
       <section className="p5-booking-review" aria-labelledby="booking-review-title">
         <h3 id="booking-review-title">Review your booking request</h3>
         <dl>
-          <div><dt>Service</dt><dd>{selectedService?.name || 'Choose a service'}</dd></div>
-          <div><dt>Service details</dt><dd>{selectedService ? `${selectedService.description || 'No description provided.'}${selectedService.durationLabel ? ` · ${selectedService.durationLabel}` : ''}` : 'Choose a service to see its details.'}</dd></div>
+          <div><dt>Plan</dt><dd>{selectedPlan?.name || 'Pay per service'}</dd></div>
+          <div><dt>Service</dt><dd>{selectedService?.name || 'Choose an included service'}</dd></div>
           <div><dt>Plants</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'Select at least one plant'}</dd></div>
           <div><dt>Visit time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
           <div><dt>Service address</dt><dd>{selectedAddress ? `${selectedAddress.label} · ${[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}` : 'Choose or add an address'}</dd></div>
           <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
-          <div><dt>Estimated price</dt><dd>{selectedPrice ? money(selectedPrice.amount) : 'Price unavailable for this plant count'}</dd></div>
+          <div><dt>Amount due for this booking</dt><dd>{selectedPlan?.autoRenew ? 'Included in your paid subscription' : selectedPrice ? money(selectedPrice.amount) : 'Price will be confirmed by T-CARE'}</dd></div>
         </dl>
       </section>
-      <p className="p5-booking-policy">Submitting sends a booking request and does not charge you. The displayed price is an estimate; the final total is calculated when you submit. Contact T-CARE to confirm cancellation or rescheduling terms.</p>
-      <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !selectedPrice}>{busy ? 'Submitting request…' : 'Submit booking request'}</Button></div>
+      <p className="p5-booking-policy">Submitting sends a booking request and does not charge a recurring plan again. Subscription visits use one credit from the current paid period; unused visits expire at period end. A One-Time Service plan is charged through the existing Razorpay booking checkout.</p>
+      <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || (selectedPlan?.autoRenew && !currentVisitCredit)}>{busy ? 'Submitting booking…' : 'Submit booking request'}</Button></div>
+      </fieldset>
     </form>}
   </Shell>;
 }
 
+function PlanDetails({ plan }) {
+  const services = plan?.includedServices || [];
+  const benefits = plan?.benefits || [];
+  const limitations = plan?.limitations || [];
+  return <div className="p5-plan-details">
+    <div className="p5-plan-detail-line"><b>Plan type</b><span>{plan.planTypeLabel || statusLabel(plan.planType)}</span></div>
+    <div className="p5-plan-detail-line"><b>Service frequency</b><span>{plan.serviceFrequency || 'Not specified yet'}</span></div>
+    <div className="p5-plan-detail-line"><b>Included visits</b><span>{plan.includedVisitsPerPeriod ?? 'Not configured'} {plan.includedVisitsPerPeriod === 1 ? 'visit' : 'visits'} per {plan.billingCycle}</span></div>
+    {plan.autoRenew && <div className="p5-plan-detail-line"><b>Minimum gap between visits</b><span>{plan.minimumVisitIntervalDays ? `${plan.minimumVisitIntervalDays} days` : 'Not configured'}</span></div>}
+    {plan.autoRenew && <div className="p5-plan-detail-line"><b>Maximum renewals</b><span>{Number(plan.maxRenewalCycles ?? 0)} after the first paid period ({Number(plan.maxRenewalCycles ?? 0) + 1} total billing cycles)</span></div>}
+    <div className="p5-plan-detail-line"><b>Plant limit</b><span>{plan.plantLimit ? `Up to ${plan.plantLimit} plants` : 'No stated plant limit'}</span></div>
+    <div className="p5-plan-detail-group"><b>Included services</b>
+      {services.length ? <ul>{services.map(service => <li key={service.id}><b>{service.name}{service.status === 'INACTIVE' ? ' (currently unavailable)' : ''}</b><small>{[service.durationLabel, service.description].filter(Boolean).join(' · ')}</small></li>)}</ul> : <small>No included services have been configured.</small>}
+    </div>
+    {benefits.length > 0 && <div className="p5-plan-detail-group"><b>Benefits</b><ul>{benefits.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
+    {limitations.length > 0 && <div className="p5-plan-detail-group"><b>Limitations</b><ul>{limitations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
+    {plan.autoRenew && <p className="p5-plan-renewal-note">Automatic renewal is intended through UPI AutoPay after you approve the mandate. You can cancel the mandate in your UPI app to stop future renewals. Services already paid for remain available until the paid-through date.</p>}
+    {plan.planType === 'ONE_TIME_SERVICE' && <p className="p5-plan-renewal-note">One-time service. It does not renew automatically.</p>}
+    {plan.planType === 'LEGACY_RECURRING' && <p className="p5-plan-renewal-note">This is an existing legacy plan. Its recurring payment method must be reviewed before it is offered for new automatic-renewal purchases.</p>}
+    {plan.autoRenew && !plan.upiAutopayEligible && <p className="p5-plan-warning">This plan exceeds the current UPI AutoPay per-charge limit and cannot be offered through UPI AutoPay at this price.</p>}
+  </div>;
+}
+
 export function CustomerSubscriptionsPage({ Shell }) {
+  const nav = useNavigate();
   const plansState = useLoad('/subscriptions/plans', null, 60000);
   const subscriptionsState = useLoad('/subscriptions/customer', null, 30000);
-  const [busyId, setBusyId] = React.useState('');
-  const [message, setMessage] = React.useState('');
   const plans = plansState.data?.plans || [];
   const subscriptions = subscriptionsState.data?.subscriptions || [];
-  const occupied = subscriptions.some(item => ['PENDING', 'ACTIVE', 'PAUSED'].includes(item.status));
   const error = plansState.error || subscriptionsState.error;
+  const [checkoutBusy, setCheckoutBusy] = React.useState('');
+  const [notice, setNotice] = React.useState('');
+  const [actionError, setActionError] = React.useState('');
   const load = () => Promise.all([plansState.load(), subscriptionsState.load()]);
-  const subscribe = async plan => {
-    if (occupied) return;
-    setBusyId(plan.id); setMessage('');
+  const choosePlan = async plan => {
+    setNotice('');
+    setActionError('');
+    if (!plan.bookingReady) {
+      setActionError('This plan is not ready for purchase. Please contact T-CARE support.');
+      return;
+    }
+    if (plan.planType === 'ONE_TIME_SERVICE') {
+      nav(`/garden/book?planId=${encodeURIComponent(plan.id)}`);
+      return;
+    }
+    if (!plan.autoRenew || !plan.autoPayCheckoutEnabled) {
+      setActionError('UPI AutoPay checkout is not enabled for this T-CARE deployment yet. You can review the plan details, but cannot start a mandate right now.');
+      return;
+    }
+    if (!window.crypto?.randomUUID) {
+      setActionError('Secure mandate setup is unavailable in this browser. Update your browser and try again.');
+      return;
+    }
+    setCheckoutBusy(plan.id);
     try {
-      const result = await request('/subscriptions/customer', { method: 'POST', body: json({ planId: plan.id }) });
-      setMessage(result.message || `${plan.name} request created. Payment verification is pending.`);
-      await subscriptionsState.load();
-    } catch (e) { setMessage(errorText(e)); }
-    finally { setBusyId(''); }
+      const idempotencyKey = `sub-${window.crypto.randomUUID()}`;
+      const setup = await request('/subscriptions/customer', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: json({ planId: plan.id })
+      });
+      await loadRazorpayCheckout();
+      let completed = false;
+      const finish = async (message, isError = false) => {
+        if (completed) return;
+        completed = true;
+        setCheckoutBusy('');
+        if (isError) setActionError(message); else setNotice(message);
+        await load();
+      };
+      const instance = new window.Razorpay({
+        key: setup.checkout.keyId,
+        subscription_id: setup.checkout.subscriptionId,
+        name: 'T-CARE',
+        description: `${plan.name} · UPI AutoPay`,
+        handler: async response => {
+          try {
+            const verified = await request(`/subscriptions/customer/${encodeURIComponent(setup.subscription.id)}/verify`, {
+              method: 'POST',
+              body: json({
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySubscriptionId: response.razorpay_subscription_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+            await finish(verified.message || 'Your UPI AutoPay mandate response was verified. Visit credits will appear after the first plan payment is captured.');
+          } catch (verifyError) {
+            await finish(`${errorText(verifyError)} Do not create another mandate. Refresh your subscription history and contact support if the status remains uncertain.`, true);
+          }
+        },
+        modal: { ondismiss: () => { void finish('Checkout was closed. If you approved the mandate in your UPI app, refresh your subscription history before trying again.'); } },
+        theme: { color: '#91b75d' }
+      });
+      instance.on('payment.failed', event => {
+        void finish(event?.error?.description || 'UPI AutoPay authorisation was not completed. Check your UPI app before trying again.', true);
+      });
+      instance.open();
+      setNotice('Approve the UPI AutoPay mandate in your payment app. The plan becomes usable only after T-CARE receives a verified first-period payment.');
+    } catch (checkoutError) {
+      setActionError(errorText(checkoutError));
+      setCheckoutBusy('');
+    }
   };
-  const changeStatus = async (subscription, action) => {
-    if (action === 'cancel' && !window.confirm(`Cancel ${subscription.plan?.name || 'this subscription'}?`)) return;
-    setBusyId(subscription.id); setMessage('');
-    try {
-      await request(`/subscriptions/customer/${subscription.id}/${action}`, { method: 'POST', body: '{}' });
-      setMessage(`Subscription ${action === 'cancel' ? 'cancelled' : action === 'pause' ? 'paused' : 'resumed'}.`);
-      await subscriptionsState.load();
-    } catch (e) { setMessage(errorText(e)); }
-    finally { setBusyId(''); }
-  };
-  return <Shell title="Subscription plans" sub="Choose a plan. It becomes active after payment is confirmed.">
-    <Notice error={error || (message && /failed|cannot|invalid|not found|already|denied/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|already|denied/i.test(message) ? message : ''}/>
-    <Panel title="Your subscription history">
+  return <Shell title="Subscription plans" sub="Compare included visits, eligible services, price and renewal terms before choosing a plan.">
+    <Notice error={error || actionError} success={notice}/>
+    <Panel title="Your subscription history" sub="Paid visit credits are shown for their billing period only. Unused visits expire at period end. Cancel UPI AutoPay in your payment app to stop future renewals.">
       <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!subscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} onRetry={subscriptionsState.load}/>
       {subscriptions.map(item => <div className="p5-subscription-row" key={item.id}>
-        <div><b>{item.plan?.name || 'T-CARE plan'}</b><small>{item.plan?.billingCycle} · {item.plan?.plantLimit ? `${item.plan.plantLimit} plant limit` : 'No stated plant limit'}</small><small>Requested {dateOnly(item.createdAt)} · {item.startedAt ? `Started ${dateOnly(item.startedAt)}` : 'Not started'}</small>{item.renewsAt && <small>Renews / ends {dateOnly(item.renewsAt)}</small>}</div>
+        <div>
+          <b>{item.plan?.name || 'T-CARE plan'}</b>
+          <small>{item.plan?.planTypeLabel || statusLabel(item.plan?.planType)} · {item.plan?.billingCycle} · {item.plan?.plantLimit ? `${item.plan.plantLimit} plant limit` : 'No stated plant limit'}</small>
+          <small>Requested {dateOnly(item.createdAt)} · {item.startedAt ? `Started ${dateOnly(item.startedAt)}` : 'Not started'}</small>
+          {item.paidThroughAt && <small>{item.status === 'CANCELLED' || item.cancelAtPeriodEnd ? 'Paid benefits available until' : 'Paid through'} {dateOnly(item.paidThroughAt)}</small>}
+          {item.visitsAvailable > 0 && <small>{item.visitsAvailable} visit{item.visitsAvailable === 1 ? '' : 's'} remaining in the current paid period · Expires {dateOnly(item.visitCredits?.find(credit => credit.current)?.periodEnd)}</small>}
+          {item.plan?.autoRenew && <small>{item.providerSubscriptionStatus ? `Razorpay mandate: ${statusLabel(item.providerSubscriptionStatus)}` : 'UPI AutoPay mandate status pending'}</small>}
+          {item.status === 'CANCELLED' && <small>Future renewals have stopped. Any remaining paid-period visits expire on the paid-through date.</small>}
+        </div>
         <div className="p5-subscription-actions"><Pill tone={item.status === 'ACTIVE' ? 'success' : item.status === 'PENDING' ? 'warning' : ''}>{statusLabel(item.status)}</Pill>
-          {item.status === 'PENDING' && <small>Awaiting payment confirmation</small>}
-          {item.status === 'ACTIVE' && <Button variant="ghost" disabled={busyId === item.id} onClick={() => changeStatus(item, 'pause')}>Pause</Button>}
-          {item.status === 'PAUSED' && <Button variant="ghost" disabled={busyId === item.id} onClick={() => changeStatus(item, 'resume')}>Resume</Button>}
-          {['PENDING', 'ACTIVE', 'PAUSED'].includes(item.status) && <Button variant="danger" disabled={busyId === item.id} onClick={() => changeStatus(item, 'cancel')}>Cancel</Button>}
+          {item.status === 'PENDING' && <small>{item.mandateAuthorizedAt ? 'Mandate authorised; waiting for the first captured plan payment.' : 'Awaiting UPI AutoPay mandate authorisation.'}</small>}
+          {item.status === 'ACTIVE' && item.plan?.autoRenew && <small>Manage mandate in your UPI app.</small>}
+          {item.status === 'PAUSED' && <small>Future billing is paused. Existing paid-period credits expire normally.</small>}
         </div>
       </div>)}
     </Panel>
-    <Panel title="Available plans">
+    <Panel title="Available plans" sub="All plan details and prices come from the same Admin-managed catalogue used on the public Plans page.">
       <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} onRetry={plansState.load}/>
-      <div className="p5-subscription-grid">{plans.map(plan => <article className="p5-subscription-card" key={plan.id}>
+      <div className="p5-subscription-grid">{plans.filter(plan => plan.planType !== 'LEGACY_RECURRING').map(plan => <article className="p5-subscription-card" key={plan.id}>
+        <div className="p5-plan-card-top"><Pill tone={plan.autoRenew ? 'success' : ''}>{plan.planTypeLabel || statusLabel(plan.planType)}</Pill>{plan.autoRenew && <small>Auto-renewal</small>}</div>
         <h3>{plan.name}</h3><div className="p5-plan-price">{money(plan.price)} <small>/ {plan.billingCycle}</small></div>
         {plan.description && <p>{plan.description}</p>}
-        <div className="p5-plan-includes"><span>{plan.plantLimit ? `Up to ${plan.plantLimit} plants` : 'No stated plant limit'}</span></div>
-        <Button disabled={occupied || Boolean(busyId)} onClick={() => subscribe(plan)}>{busyId === plan.id ? 'Submitting…' : occupied ? 'Cancel your current plan first' : 'Request this plan'}</Button>
+        <PlanDetails plan={plan}/>
+        <Button onClick={() => choosePlan(plan)} disabled={checkoutBusy !== '' || !plan.bookingReady || (plan.autoRenew && !plan.autoPayCheckoutEnabled)}>{checkoutBusy === plan.id ? 'Opening secure checkout…' : plan.planType === 'ONE_TIME_SERVICE' ? 'Book this one-time plan' : plan.autoPayCheckoutEnabled ? 'Start UPI AutoPay' : 'AutoPay not enabled'}</Button>
+        {!plan.bookingReady && <small className="p5-plan-warning">This plan is not fully configured by Admin yet.</small>}
       </article>)}</div>
-      {occupied && <small className="p5-muted">Cancel your current plan before requesting another.</small>}
     </Panel>
+    <div className="p5-actions"><Button variant="ghost" onClick={load}>Refresh plans and subscriptions</Button></div>
   </Shell>;
 }
 
@@ -535,13 +749,16 @@ export function CustomerBookingsPage({ Shell }) {
 
 export function CustomerBookingDetailPage({ Shell }) {
   const { id } = useParams();
+  const nav = useNavigate();
   const { data, loading, error, load } = useLoad(`/bookings/${id}`, null, 30000);
   const { data: paymentAvailability, error: paymentAvailabilityError } = useLoad('/payments/customer/availability', null);
   const [busy, setBusy] = React.useState(false), [message, setMessage] = React.useState(''), [review, setReview] = React.useState({ rating: 5, comment: '' }), [issue, setIssue] = React.useState({ subject: '', description: '' });
   const booking = data?.booking;
-  const canPay = booking?.status !== 'CANCELLED' && !['AUTHORIZED', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking?.payment?.status);
-  const cancel = async () => { if (!window.confirm('Cancel this booking?')) return; setBusy(true); setMessage(''); try { await request(`/bookings/${id}/cancel`, { method: 'POST', body: '{}' }); setMessage('Booking cancelled.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
+  const isPlanCovered = Boolean(booking?.subscriptionVisitCreditId || booking?.subscriptionPlanId && booking?.total === 0);
+  const canPay = !isPlanCovered && Number(booking?.total || 0) > 0 && booking?.status !== 'CANCELLED' && !['AUTHORIZED', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(booking?.payment?.status);
+  const cancel = async () => { if (busy || !window.confirm('Cancel this booking?')) return; setBusy(true); setMessage(''); try { await request(`/bookings/${id}/cancel`, { method: 'POST', body: '{}' }); setMessage('Booking cancelled.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   const startBookingPayment = async () => {
+    if (busy) return;
     setBusy(true);
     setMessage('');
     try {
@@ -553,6 +770,12 @@ export function CustomerBookingDetailPage({ Shell }) {
         body: '{}'
       });
       await loadRazorpayCheckout();
+      let returnHandled = false;
+      const openPaymentReturn = outcome => {
+        if (returnHandled) return;
+        returnHandled = true;
+        nav(`/garden/payments/return/${encodeURIComponent(payment.id)}?outcome=${encodeURIComponent(outcome)}`, { replace: true });
+      };
       const instance = new window.Razorpay({
         key: checkout.keyId,
         amount: checkout.amount,
@@ -570,22 +793,18 @@ export function CustomerBookingDetailPage({ Shell }) {
                 razorpaySignature: result.razorpay_signature
               })
             });
-            if (!verification.verified) throw new Error('Payment has not been confirmed yet. Refresh the booking before retrying.');
-            setMessage('Payment confirmed.');
-            await load();
+            openPaymentReturn(verification.verified ? 'success' : 'pending');
           } catch (e) {
             setMessage(errorText(e));
-            await load();
-          } finally {
-            setBusy(false);
+            openPaymentReturn('pending');
           }
         },
-        modal: { ondismiss: () => setBusy(false) },
+        modal: { ondismiss: () => openPaymentReturn('cancelled') },
         theme: { color: '#91b75d' }
       });
       instance.on('payment.failed', event => {
         setMessage(event?.error?.description || 'Payment was not completed. You can try again.');
-        setBusy(false);
+        openPaymentReturn('failed');
       });
       instance.open();
     } catch (e) {
@@ -593,27 +812,146 @@ export function CustomerBookingDetailPage({ Shell }) {
       setBusy(false);
     }
   };
-  const submitReview = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/reviews', { method: 'POST', body: json({ bookingId: id, rating: Number(review.rating), comment: review.comment || null }) }); setMessage('Review submitted for moderation.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
-  const submitIssue = async e => { e.preventDefault(); setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/issues', { method: 'POST', body: json({ bookingId: id, ...issue }) }); setIssue({ subject: '', description: '' }); setMessage('Issue report submitted.'); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
+  const startBookingQr = async () => {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const idempotencyKey = window.crypto?.randomUUID?.();
+      if (!idempotencyKey) throw new Error('Secure payment setup is not available in this browser.');
+      await request(`/payments/customer/booking/${encodeURIComponent(id)}/qr`, {
+        method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: '{}'
+      });
+      setMessage('A single-use UPI QR has been generated. Scan it and check the payment status below.');
+      await load();
+    } catch (e) { setMessage(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const checkBookingQr = async () => {
+    if (!booking?.payment?.id || busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const result = await request(`/payments/customer/${encodeURIComponent(booking.payment.id)}/reconcile`, { method: 'POST', body: '{}' });
+      await load();
+      setMessage(result.payment?.status === 'PAID' ? 'Payment confirmed by Razorpay.' : result.payment?.qr?.status === 'EXPIRED' ? 'QR expired. The payment is not marked as paid.' : 'Razorpay has not confirmed payment yet. Do not pay again while this QR remains active.');
+    } catch (e) { setMessage(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const cancelBookingQr = async () => {
+    if (!booking?.payment?.id || busy) return;
+    setBusy(true); setMessage('');
+    try {
+      await request(`/payments/customer/${encodeURIComponent(booking.payment.id)}/qr/cancel`, { method: 'POST', body: '{}' });
+      await load();
+      setMessage('The QR code has been closed. You can choose another payment method.');
+    } catch (e) { setMessage(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const submitReview = async e => { e.preventDefault(); if (busy) return; setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/reviews', { method: 'POST', body: json({ bookingId: id, rating: Number(review.rating), comment: review.comment || null }) }); setMessage('Review submitted for moderation.'); await load(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
+  const submitIssue = async e => { e.preventDefault(); if (busy) return; setBusy(true); setMessage(''); try { await request('/reviews-issues/customer/issues', { method: 'POST', body: json({ bookingId: id, ...issue }) }); setIssue({ subject: '', description: '' }); setMessage('Issue report submitted.'); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
   return <Shell title={booking?.reference || 'Booking detail'} sub="Visit details, progress and service report.">
     <Notice error={error || paymentAvailabilityError || (message && /failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|invalid|requires|must|not completed|not confirmed|could not/i.test(message) ? message : ''}/><State loading={loading} error={error} onRetry={load}/>
     {booking && <><div className="p5-booking-head"><div><Pill>{statusLabel(booking.status)}</Pill><h2>{booking.service?.name}</h2><p>{dateTime(booking.scheduledStart)} · {booking.address?.label} · {booking.address?.line1}, {booking.address?.city}</p></div><strong>{money(booking.total)}</strong></div>
       <div className="p5-metrics"><div><small>Subtotal</small><b>{money(booking.subtotal)}</b></div><div><small>Convenience fee</small><b>{money(booking.convenienceFee)}</b></div><div><small>Total</small><b>{money(booking.total)}</b></div></div>
-      {paymentAvailability?.enabled && <Panel title="Booking payment" sub="Payments are processed securely by Razorpay.">
+      {isPlanCovered && <Panel title="Subscription visit" sub="This booking uses one visit credit from your current paid subscription period."><Pill tone="success">Included in {booking.subscriptionPlan?.name || 'your subscription'}</Pill><p>Visit credits do not carry forward. If you cancel before service starts, this credit is restored once to the same billing period. The credit still expires at the end of that period.</p></Panel>}
+      {canPay && paymentAvailability?.enabled && <Panel title="Booking payment" sub="Payments are processed securely by Razorpay.">
         <div className="p5-list-row"><span>Payment status</span><Pill tone={booking.payment?.status === 'PAID' ? 'success' : 'warning'}>{statusLabel(booking.payment?.status || 'UNPAID')}</Pill></div>
         {booking.payment?.status === 'AUTHORIZED' && <p>Payment is authorized and awaiting confirmation. Do not retry while this status is shown.</p>}
         {booking.payment?.refunds?.length > 0 && booking.payment.refunds.map(refund => <div className="p5-list-row" key={refund.id}><span>Refund · {refund.reason || statusLabel(refund.status)}</span><b>{money(refund.amount)}</b></div>)}
-        {canPay && <div className="p5-actions"><Button onClick={startBookingPayment} disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${money(booking.total)}`}</Button></div>}
+        {booking.payment?.qr?.status === 'ACTIVE' && <div className="p5-qr-block"><img src={booking.payment.qr.imageUrl} alt="Razorpay UPI payment QR code"/><p>Single-use QR · expires {dateTime(booking.payment.qr.expiresAt)}</p><a href={booking.payment.qr.shortUrl} target="_blank" rel="noreferrer">Open QR code link</a><div className="p5-actions"><Button onClick={checkBookingQr} disabled={busy}>{busy ? 'Checking…' : 'I have paid · Check status'}</Button><button className="p5-button ghost" type="button" onClick={cancelBookingQr} disabled={busy}>Close QR code</button></div></div>}
+        {canPay && booking.payment?.qr?.status !== 'ACTIVE' && <div className="p5-actions"><Button onClick={startBookingPayment} disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${money(booking.total)}`}</Button>{paymentAvailability?.qrEnabled === true && booking.payment?.checkoutStarted !== true && <button className="p5-button ghost" type="button" onClick={startBookingQr} disabled={busy}>Pay with UPI QR</button>}</div>}
       </Panel>}
       <Panel title="Plants in this booking">{booking.plants?.map(x => <div className="p5-list-row" key={x.plantId}><b>{x.plant?.name}</b><small>{statusLabel(x.plant?.healthStatus)}</small></div>)}</Panel>
       <Panel title="Gardener assignment">{booking.assignment ? <div className="p5-list-row"><div><b>{booking.assignment.gardener?.user?.fullName}</b><small>{booking.assignment.gardener?.user?.phone || 'Contact details not shared'}</small></div><Pill>{statusLabel(booking.assignment.status)}</Pill></div> : <Empty title="Awaiting assignment" text="T-CARE will assign a verified Gardener to your visit."/>}</Panel>
       <Panel title="Booking timeline">{booking.statusHistory?.length ? <div className="p5-timeline">{booking.statusHistory.map(h => <div key={h.id}><i/><div><b>{statusLabel(h.toStatus)}</b><small>{dateTime(h.createdAt)}{h.note ? ` · ${h.note}` : ''}</small></div></div>)}</div> : <Empty/>}</Panel>
       {booking.report && <Panel title="Service report" sub={dateTime(booking.report.createdAt)}><h4>{booking.report.summary}</h4><p>{booking.report.observations}</p><p>{booking.report.recommendation}</p>{booking.report.checklistItems?.map(c => <div className="p5-list-row" key={c.id}><span>{c.label}</span><Pill tone={c.completed ? 'success' : 'warning'}>{c.completed ? 'Completed' : 'Pending'}</Pill></div>)}{booking.report.photos?.length > 0 && <div className="p5-photo-grid">{booking.report.photos.map(photo => <div key={photo.id}>{photo.url && <img src={photo.url} alt={photo.caption || 'Service evidence'} onError={e => { e.currentTarget.style.display = 'none'; }}/>}<small>{photo.caption || 'Service evidence'}</small></div>)}</div>}</Panel>}
-      {booking.status === 'SERVICE_COMPLETED' && !booking.review && <Panel title="Review your service"><form onSubmit={submitReview}><Field label="Rating"><select value={review.rating} onChange={e => setReview({ ...review, rating: e.target.value })}>{[5,4,3,2,1].map(n => <option value={n} key={n}>{n} star{n > 1 ? 's' : ''}</option>)}</select></Field><Field label="Comment"><textarea maxLength="5000" value={review.comment} onChange={e => setReview({ ...review, comment: e.target.value })}/></Field><Button type="submit" disabled={busy}>Submit review</Button></form></Panel>}
+      {booking.status === 'SERVICE_COMPLETED' && !booking.review && <Panel title="Review your service"><form onSubmit={submitReview} aria-busy={busy}><Field label="Rating"><select value={review.rating} onChange={e => setReview({ ...review, rating: e.target.value })}>{[5,4,3,2,1].map(n => <option value={n} key={n}>{n} star{n > 1 ? 's' : ''}</option>)}</select></Field><Field label="Comment"><textarea maxLength="5000" value={review.comment} onChange={e => setReview({ ...review, comment: e.target.value })}/></Field><Button type="submit" disabled={busy}>Submit review</Button></form></Panel>}
       {booking.review && <Panel title="Your review"><Pill>{statusLabel(booking.review.status)}</Pill><p>{booking.review.rating}/5 · {booking.review.comment}</p></Panel>}
-      <Panel title="Report an issue"><form onSubmit={submitIssue}><Field label="Subject"><input required minLength="2" maxLength="200" value={issue.subject} onChange={e => setIssue({ ...issue, subject: e.target.value })}/></Field><Field label="Description"><textarea required minLength="2" maxLength="10000" value={issue.description} onChange={e => setIssue({ ...issue, description: e.target.value })}/></Field><Button type="submit" disabled={busy}>Submit issue</Button></form></Panel>
+      <Panel title="Report an issue"><form onSubmit={submitIssue} aria-busy={busy}><Field label="Subject"><input required minLength="2" maxLength="200" value={issue.subject} onChange={e => setIssue({ ...issue, subject: e.target.value })}/></Field><Field label="Description"><textarea required minLength="2" maxLength="10000" value={issue.description} onChange={e => setIssue({ ...issue, description: e.target.value })}/></Field><Button type="submit" disabled={busy}>Submit issue</Button></form></Panel>
       {!['SERVICE_COMPLETED', 'CANCELLED', 'SERVICE_STARTED'].includes(booking.status) && <div className="p5-actions"><Button variant="danger" onClick={cancel} disabled={busy}>Cancel booking</Button></div>}
     </>}
+  </Shell>;
+}
+
+export function CustomerPaymentReturnPage({ Shell }) {
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const outcomeHint = searchParams.get('outcome') || 'processing';
+  const nav = useNavigate();
+  const [payment, setPayment] = React.useState(null);
+  const [phase, setPhase] = React.useState('checking');
+  const [error, setError] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    let timer = null;
+    let attempts = 0;
+    const maxAttempts = 12;
+    const check = async () => {
+      try {
+        const result = await request(`/payments/customer/${encodeURIComponent(id)}/reconcile`, { method: 'POST', body: '{}' });
+        if (!active) return;
+        setPayment(result.payment || null);
+        setError('');
+        if (result.payment?.status === 'PAID') {
+          setPhase('success');
+          timer = window.setTimeout(() => { if (active) nav(result.destination || (result.payment.bookingId ? `/garden/visits/${result.payment.bookingId}` : '/garden/plan'), { replace: true }); }, 1800);
+          return;
+        }
+        if (['FAILED', 'CANCELLED'].includes(result.payment?.status)) {
+          setPhase('failed');
+          return;
+        }
+        if (attempts >= maxAttempts - 1) {
+          setPhase('pending');
+          return;
+        }
+        attempts += 1;
+        timer = window.setTimeout(check, 5000);
+      } catch (checkError) {
+        if (!active) return;
+        setError(errorText(checkError));
+        if (attempts >= maxAttempts - 1) {
+          setPhase('error');
+          return;
+        }
+        attempts += 1;
+        timer = window.setTimeout(check, 5000);
+      }
+    };
+    check();
+    return () => { active = false; if (timer) window.clearTimeout(timer); };
+  }, [id, nav]);
+
+  const retryCheck = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await request(`/payments/customer/${encodeURIComponent(id)}/reconcile`, { method: 'POST', body: '{}' });
+      setPayment(result.payment || null);
+      if (result.payment?.status === 'PAID') nav(result.destination || (result.payment.bookingId ? `/garden/visits/${result.payment.bookingId}` : '/garden/plan'), { replace: true });
+      else if (['FAILED', 'CANCELLED'].includes(result.payment?.status)) setPhase('failed');
+      else setPhase('pending');
+    } catch (checkError) {
+      setError(errorText(checkError));
+    } finally { setBusy(false); }
+  };
+
+  const backToBooking = payment?.bookingId ? `/garden/visits/${payment.bookingId}` : '/garden/visits';
+  return <Shell title="Payment status" sub="T-CARE checks the payment directly with Razorpay before updating your booking.">
+    <Panel title={phase === 'success' ? 'Payment confirmed' : phase === 'failed' ? 'Payment not completed' : phase === 'pending' ? 'Payment confirmation is pending' : 'Checking your payment'}>
+      {phase === 'checking' && <State loading/>}
+      {phase === 'success' && <><Pill tone="success">PAID</Pill><p>Your payment is confirmed. Opening the related T-CARE record…</p></>}
+      {phase === 'failed' && <><Pill tone="warning">{statusLabel(payment?.status || 'FAILED')}</Pill><p>Razorpay has not confirmed a successful payment. You can return to your booking and try again after checking your bank or UPI app.</p></>}
+      {phase === 'pending' && <><Pill tone="warning">{statusLabel(payment?.status || 'PENDING')}</Pill><p>Razorpay has not confirmed the final result yet. Do not pay again while this payment is pending. Check your bank or UPI app before retrying.</p></>}
+      {phase === 'error' && <Notice error={error || 'We could not check the payment right now.'}/> }
+      {phase !== 'checking' && phase !== 'success' && <div className="p5-actions">
+        <Button onClick={retryCheck} disabled={busy}>{busy ? 'Checking…' : 'Check payment again'}</Button>
+        <Link className="p5-button ghost" to={backToBooking}>Return to booking</Link>
+      </div>}
+      {outcomeHint === 'cancelled' && !payment?.status?.match(/PAID/) && <small className="p5-muted">The checkout window was closed. Closing it does not by itself prove that a payment failed.</small>}
+      {error && phase !== 'error' && <small className="p5-muted">Latest check: {error}</small>}
+    </Panel>
   </Shell>;
 }
 
@@ -868,27 +1206,65 @@ export function AdminDashboardPage({ Shell }) {
 export function AdminSubscriptionsPage({ Shell }) {
   const plansState = useLoad('/subscriptions/admin/plans', null, 30000);
   const subscriptionsState = useLoad('/subscriptions/admin', null, 30000);
+  const servicesState = useLoad('/services', null, 60000);
   const plans = plansState.data?.plans || [];
   const subscriptions = subscriptionsState.data?.subscriptions || [];
-  const initialForm = { name: '', description: '', billingCycle: '6 months', plantLimit: '', price: '', status: 'ACTIVE' };
+  const services = servicesState.data?.services || [];
+  const initialForm = { name: '', description: '', planType: 'ONE_MONTH', billingCycle: '1 month', serviceFrequency: '', includedServiceIds: [], includedVisitsPerPeriod: '1', minimumVisitIntervalDays: '7', maxRenewalCycles: '11', plantLimit: '', price: '', benefitsText: '', limitationsText: '', status: 'ACTIVE' };
   const [form, setForm] = React.useState(initialForm);
   const [editing, setEditing] = React.useState(null);
   const [message, setMessage] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [statusFilter, setStatusFilter] = React.useState('');
   const visibleSubscriptions = subscriptions.filter(item => !statusFilter || item.status === statusFilter);
+  const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
   const savePlan = async e => {
     e.preventDefault(); setBusy(true); setMessage('');
     try {
-      const payload = { ...form, price: Number(form.price), plantLimit: form.plantLimit === '' ? null : Number(form.plantLimit), description: form.description.trim() || null };
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        planType: form.planType,
+        ...(form.planType === 'LEGACY_RECURRING' ? { billingCycle: form.billingCycle } : {}),
+        ...(form.serviceFrequency.trim() ? { serviceFrequency: form.serviceFrequency.trim() } : {}),
+        includedServiceIds: form.includedServiceIds,
+        ...(form.planType !== 'LEGACY_RECURRING' ? {
+          includedVisitsPerPeriod: form.planType === 'ONE_TIME_SERVICE' ? 1 : Number(form.includedVisitsPerPeriod),
+          ...(recurring ? { minimumVisitIntervalDays: Number(form.minimumVisitIntervalDays), maxRenewalCycles: Number(form.maxRenewalCycles) } : { minimumVisitIntervalDays: null, maxRenewalCycles: null })
+        } : {}),
+        plantLimit: form.plantLimit === '' ? null : Number(form.plantLimit),
+        price: Number(form.price),
+        benefits: form.benefitsText.split(/\r?\n/).map(item => item.trim()).filter(Boolean),
+        limitations: form.limitationsText.split(/\r?\n/).map(item => item.trim()).filter(Boolean),
+        status: form.status
+      };
       await request(editing ? `/subscriptions/admin/plans/${editing}` : '/subscriptions/admin/plans', { method: editing ? 'PATCH' : 'POST', body: json(payload) });
       setMessage(editing ? 'Subscription plan updated.' : 'Subscription plan created.'); setEditing(null); setForm(initialForm); await plansState.load();
     } catch (e2) { setMessage(errorText(e2)); }
     finally { setBusy(false); }
   };
+  const startEdit = plan => {
+    setEditing(plan.id);
+    setForm({
+      name: plan.name,
+      description: plan.description || '',
+      planType: plan.planType || 'LEGACY_RECURRING',
+      billingCycle: plan.billingCycle || 'monthly',
+      serviceFrequency: plan.serviceFrequency || '',
+      includedServiceIds: plan.includedServiceIds || [],
+      includedVisitsPerPeriod: String(plan.includedVisitsPerPeriod ?? 1),
+      minimumVisitIntervalDays: String(plan.minimumVisitIntervalDays ?? 1),
+      maxRenewalCycles: String(plan.maxRenewalCycles ?? 0),
+      plantLimit: plan.plantLimit ?? '',
+      price: String(plan.price),
+      benefitsText: (plan.benefits || []).join('\n'),
+      limitationsText: (plan.limitations || []).join('\n'),
+      status: plan.status
+    });
+  };
   const deletePlan = async plan => {
     if (!window.confirm(`Delete or deactivate the ${plan.name} plan? Existing subscription history will be preserved.`)) return;
-    try { const result = await request(`/subscriptions/admin/plans/${plan.id}`, { method: 'DELETE' }); setMessage(result?.deactivated ? 'Plan has existing subscriptions and was deactivated.' : 'Plan deleted.'); await plansState.load(); }
+    try { const result = await request(`/subscriptions/admin/plans/${plan.id}`, { method: 'DELETE' }); setMessage(result?.deactivated ? 'Plan has subscriptions or a Razorpay plan and was deactivated.' : 'Plan deleted.'); await plansState.load(); }
     catch (e) { setMessage(errorText(e)); }
   };
   const updateSubscription = async (subscription, status) => {
@@ -896,26 +1272,48 @@ export function AdminSubscriptionsPage({ Shell }) {
     try { await request(`/subscriptions/admin/${subscription.id}/status`, { method: 'PATCH', body: json({ status }) }); setMessage(`Subscription status updated to ${status}.`); await subscriptionsState.load(); }
     catch (e) { setMessage(errorText(e)); await subscriptionsState.load(); }
   };
-  return <Shell title="Subscription management" sub="Manage plans and customer subscriptions.">
-    <Notice error={plansState.error || subscriptionsState.error || (message && /failed|cannot|not found|unsupported|required|payment/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|unsupported|required|payment/i.test(message) ? message : ''}/>
-    <Panel title={editing ? 'Edit subscription plan' : 'Create subscription plan'} sub="Set the plan details customers will see.">
-      <form onSubmit={savePlan}><FormGrid>
-        <Field label="Plan name"><input required minLength="2" maxLength="120" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></Field>
-        <Field label="Billing duration"><select value={form.billingCycle} onChange={e => setForm({ ...form, billingCycle: e.target.value })}>{['1 month','3 months','6 months','12 months','24 months'].map(c => <option key={c}>{c}</option>)}</select></Field>
-        <Field label="Price (INR)"><input required type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}/></Field>
-        <Field label="Plant limit (blank = unlimited)"><input type="number" min="1" value={form.plantLimit} onChange={e => setForm({ ...form, plantLimit: e.target.value })}/></Field>
-        <Field label="Visibility"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="ACTIVE">Active / customer-visible</option><option value="INACTIVE">Inactive</option></select></Field>
-      </FormGrid><Field label="Description"><textarea maxLength="2000" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}/></Field>
-      <div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save plan changes' : 'Create plan'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm(initialForm); }}>Cancel</Button>}</div></form>
+  const recurring = ['WEEKLY', 'ONE_MONTH', 'ONE_YEAR'].includes(form.planType);
+  const upiPriceEligible = Number.isFinite(Number(form.price)) && Number(form.price) > 0 && Number(form.price) < 5000;
+  return <Shell title="Subscription management" sub="Manage one-time services and recurring UPI AutoPay plan definitions.">
+    <Notice error={plansState.error || subscriptionsState.error || servicesState.error || (message && /failed|cannot|not found|unsupported|required|payment|UPI/i.test(message) ? message : '')} success={message && !/failed|cannot|not found|unsupported|required|payment|UPI/i.test(message) ? message : ''}/>
+    <Panel title={editing ? 'Edit plan' : 'Create plan'} sub="Set the exact services and terms customers will see before they choose a plan.">
+      <form onSubmit={savePlan}>
+        <FormGrid>
+          <Field label="Plan name"><input required minLength="2" maxLength="120" value={form.name} onChange={e => updateForm('name', e.target.value)}/></Field>
+          <Field label="Plan type"><select value={form.planType} onChange={e => updateForm('planType', e.target.value)}><option value="ONE_TIME_SERVICE">One-Time Service</option><option value="WEEKLY">Weekly</option><option value="ONE_MONTH">One-Month</option><option value="ONE_YEAR">One-Year</option>{editing && form.planType === 'LEGACY_RECURRING' && <option value="LEGACY_RECURRING">Legacy recurring (preserve existing)</option>}</select></Field>
+          <Field label="Price (INR)"><input required type="number" min="0.01" step="0.01" value={form.price} onChange={e => updateForm('price', e.target.value)}/></Field>
+          <Field label="Plant limit (blank = no stated limit)"><input type="number" min="1" value={form.plantLimit} onChange={e => updateForm('plantLimit', e.target.value)}/></Field>
+          <Field label="Service frequency" hint="Customer-facing schedule description."><input required={form.planType !== 'LEGACY_RECURRING'} minLength="2" maxLength="160" value={form.serviceFrequency} onChange={e => updateForm('serviceFrequency', e.target.value)} placeholder="e.g. Weekly plant-care visit"/></Field>
+          {form.planType === 'ONE_TIME_SERVICE' ? <Field label="Included visits"><input value="1" readOnly aria-readonly="true"/></Field> : form.planType !== 'LEGACY_RECURRING' && <>
+            <Field label="Included visits per billing period"><input required type="number" min="1" max="100" step="1" value={form.includedVisitsPerPeriod} onChange={e => updateForm('includedVisitsPerPeriod', e.target.value)}/></Field>
+            <Field label="Minimum days between visits"><input required type="number" min="1" max="365" step="1" value={form.minimumVisitIntervalDays} onChange={e => updateForm('minimumVisitIntervalDays', e.target.value)}/></Field>
+            <Field label="Maximum renewals after first period"><input required type="number" min="0" max={form.planType === 'WEEKLY' ? 520 : form.planType === 'ONE_MONTH' ? 119 : 9} step="1" value={form.maxRenewalCycles} onChange={e => updateForm('maxRenewalCycles', e.target.value)}/></Field>
+          </>}
+          <Field label="Visibility"><select value={form.status} onChange={e => updateForm('status', e.target.value)}><option value="ACTIVE">Active / customer-visible</option><option value="INACTIVE">Inactive</option></select></Field>
+          {form.planType === 'LEGACY_RECURRING' && <Field label="Existing billing cycle"><input required value={form.billingCycle} onChange={e => updateForm('billingCycle', e.target.value)}/></Field>}
+        </FormGrid>
+        <Field label="Description"><textarea maxLength="2000" value={form.description} onChange={e => updateForm('description', e.target.value)}/></Field>
+        <Field label="Included services" hint="Select only active services. At least one service is required.">
+          {servicesState.loading ? <div className="p5-state">Loading services…</div> : servicesState.error ? <div className="p5-state p5-error">{servicesState.error} <Button variant="ghost" onClick={servicesState.load}>Retry</Button></div> : <div className="p5-check-grid">{services.map(service => <label className="p5-check" key={service.id}><input type="checkbox" checked={form.includedServiceIds.includes(service.id)} onChange={e => updateForm('includedServiceIds', e.target.checked ? [...form.includedServiceIds, service.id] : form.includedServiceIds.filter(id => id !== service.id))}/><span><b>{service.name}</b><small>{service.category} · {service.durationLabel}</small></span></label>)}</div>}
+          {!services.length && !servicesState.loading && !servicesState.error && <small>No active services exist. Create or activate services before configuring a plan.</small>}
+        </Field>
+        <Field label="Benefits" hint="Enter one benefit per line. Leave blank when no approved benefit has been defined."><textarea value={form.benefitsText} onChange={e => updateForm('benefitsText', e.target.value)} maxLength="6000" placeholder="One benefit per line"/></Field>
+        <Field label="Limitations" hint="Enter one limitation per line. These are displayed before customers choose a plan."><textarea value={form.limitationsText} onChange={e => updateForm('limitationsText', e.target.value)} maxLength="6000" placeholder="One limitation per line"/></Field>
+        <div className="p5-plan-renewal-note">
+          {form.planType === 'ONE_TIME_SERVICE' ? 'This plan is charged once and does not renew.' : recurring ? 'Recurring plans use Razorpay UPI AutoPay after the customer explicitly approves a mandate. Customers cancel the mandate from their UPI payment app to stop future renewals. Already-paid access continues until the paid-through date.' : 'Legacy billing terms are preserved. Review them before offering the plan for new purchases.'}
+        </div>
+        {recurring && !upiPriceEligible && <div className="p5-plan-warning">The configured Razorpay UPI AutoPay settings currently document a per-charge limit below ₹5,000. This plan can be saved only as inactive until its price and payment-method eligibility are confirmed.</div>}
+        <div className="p5-actions"><Button type="submit" disabled={busy || servicesState.loading || (!editing && !form.includedServiceIds.length) || (recurring && !upiPriceEligible && form.status === 'ACTIVE')}>{busy ? 'Saving…' : editing ? 'Save plan changes' : 'Create plan'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm(initialForm); }}>Cancel</Button>}</div>
+      </form>
     </Panel>
     <Panel title="Plans" sub={`${plans.length} plans`}>
       <State loading={plansState.loading} error={plansState.error} empty={!plans.length && !plansState.loading && !plansState.error} onRetry={plansState.load}/>
-      {plans.map(plan => <div className="p5-list-row" key={plan.id}><div><b>{plan.name} · {money(plan.price)}</b><small>{plan.billingCycle} · {plan.plantLimit ? `${plan.plantLimit} plants` : 'No plant limit'} · {statusLabel(plan.status)} · {plan._count?.subscriptions ?? '—'} subscriptions</small><small>{plan.description || 'No description supplied.'}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => { setEditing(plan.id); setForm({ name: plan.name, description: plan.description || '', billingCycle: plan.billingCycle, plantLimit: plan.plantLimit ?? '', price: String(plan.price), status: plan.status }); }}>Edit</Button><Button variant="danger" onClick={() => deletePlan(plan)}>Delete / deactivate</Button></div></div>)}
+      {plans.map(plan => <div className="p5-list-row p5-admin-plan-row" key={plan.id}><div><b>{plan.name} · {money(plan.price)}</b><small>{plan.planTypeLabel || statusLabel(plan.planType)} · {plan.billingCycle} · {plan.includedVisitsPerPeriod ?? '—'} visits/period · {plan.serviceFrequency || 'Frequency not configured'} · {plan.plantLimit ? `${plan.plantLimit} plants` : 'No stated plant limit'} · {statusLabel(plan.status)} · {plan._count?.subscriptions ?? '—'} subscriptions</small><small>Services: {(plan.includedServices || []).map(service => service.name).join(', ') || 'None configured'}</small><small>Benefits: {(plan.benefits || []).join(' · ') || 'Not supplied'} · Limitations: {(plan.limitations || []).join(' · ') || 'Not supplied'}</small><small>{plan.autoRenew ? `UPI AutoPay ${plan.upiAutopayEligible ? 'eligible by amount' : 'not eligible at this amount'} · ${plan.maxRenewalCycles ?? '—'} renewals after first period` : 'No automatic renewal'}</small></div><div className="p5-actions"><Button variant="ghost" onClick={() => startEdit(plan)}>Edit</Button><Button variant="danger" onClick={() => deletePlan(plan)}>Delete / deactivate</Button></div></div>)}
     </Panel>
-    <Panel title="Customer subscriptions" sub="Activate a pending subscription only after confirming payment.">
+    <Panel title="Customer subscriptions" sub="UPI AutoPay status and paid-period visit credits are synchronized from verified Razorpay subscription webhooks. Do not manually mark a recurring subscription paid.">
       <div className="p5-toolbar"><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">All subscription states</option>{['PENDING','ACTIVE','PAUSED','CANCELLED','EXPIRED'].map(s => <option key={s}>{s}</option>)}</select><Button variant="ghost" onClick={subscriptionsState.load}>Refresh</Button></div>
       <State loading={subscriptionsState.loading} error={subscriptionsState.error} empty={!visibleSubscriptions.length && !subscriptionsState.loading && !subscriptionsState.error} onRetry={subscriptionsState.load}/>
-      {visibleSubscriptions.map(item => <div className="p5-list-row" key={item.id}><div><b>{item.customer?.user?.fullName || 'Customer'} · {item.plan?.name}</b><small>{item.customer?.user?.email} · {item.plan?.billingCycle} · {money(item.plan?.price)}</small><small>{statusLabel(item.status)} · Created {dateTime(item.createdAt)} · Renews {dateOnly(item.renewsAt)}</small></div><div className="p5-actions"><select aria-label="New subscription status" value={item.status} onChange={e => updateSubscription(item, e.target.value)}>{['PENDING','ACTIVE','PAUSED','CANCELLED','EXPIRED'].map(s => <option key={s}>{s}</option>)}</select></div></div>)}
+      {visibleSubscriptions.map(item => <div className="p5-list-row" key={item.id}><div><b>{item.customer?.user?.fullName || 'Customer'} · {item.plan?.name}</b><small>{item.customer?.user?.email} · {item.plan?.billingCycle} · {money(item.plan?.price)}</small><small>{statusLabel(item.status)} · Created {dateTime(item.createdAt)} · {item.cancelAtPeriodEnd ? `Paid access ends ${dateOnly(item.renewsAt)}` : `Renews ${dateOnly(item.renewsAt)}`}</small>{item.providerSubscriptionId && <small>Razorpay subscription: {item.providerSubscriptionId}</small>}</div><div className="p5-actions">{item.plan?.autoRenew ? <span className="p5-plan-subscription-managed">Managed by Razorpay UPI AutoPay</span> : <select aria-label="New subscription status" value={item.status} onChange={e => updateSubscription(item, e.target.value)}>{['PENDING','ACTIVE','PAUSED','CANCELLED','EXPIRED'].map(s => <option key={s}>{s}</option>)}</select>}</div></div>)}
     </Panel>
   </Shell>;
 }
@@ -959,13 +1357,13 @@ export function AdminFinancePage({ Shell }) {
       <State loading={paymentsState.loading} error={paymentsState.error} empty={!payments.length && !paymentsState.loading && !paymentsState.error} onRetry={paymentsState.load}/>
       {payments.length > 0 && <RecordTable headers={['Created','Customer','Reference / purpose','Amount','Method','Status','Transaction ID','Receipt','Action']}>
         {payments.map(p=>{
-          const email=p.booking?.customer?.user?.email||p.subscription?.customer?.user?.email||'';
+          const email=p.booking?.customer?.user?.email||p.subscription?.customer?.user?.email||p.shopOrder?.customer?.user?.email||'';
           const canReceipt=['PAID','PARTIALLY_REFUNDED','REFUNDED'].includes(p.status)&&Boolean(email);
           const receiptStatus=p.receipt?.deliveryStatus||'NOT_ISSUED';
           return <tr key={p.id}>
             <td>{dateTime(p.createdAt)}</td>
-            <td>{p.booking?.customer?.user?.fullName||p.subscription?.customer?.user?.fullName||'—'}<small>{email}</small></td>
-            <td>{p.booking?.service?.name||p.booking?.reference||p.subscription?.plan?.name||'—'}<small>{p.booking?.reference||p.providerOrderId||p.subscription?.plan?.billingCycle||''}</small></td>
+            <td>{p.booking?.customer?.user?.fullName||p.subscription?.customer?.user?.fullName||p.shopOrder?.customer?.user?.fullName||'—'}<small>{email}</small></td>
+            <td>{p.booking?.service?.name||p.booking?.reference||p.subscription?.plan?.name||p.shopOrder?.orderNumber||'—'}<small>{p.booking?.reference||p.providerOrderId||p.subscription?.plan?.billingCycle||p.shopOrder?.orderNumber||''}</small></td>
             <td>{money(p.amount)}</td>
             <td>{statusLabel(p.method)}</td>
             <td><Pill tone={p.status==='PAID'?'success':p.status==='FAILED'?'danger':'warning'}>{statusLabel(p.status)}</Pill></td>
@@ -1267,10 +1665,108 @@ export function AdminPlantKnowledgePage({ Shell }) {
 
 
 
+function StoreSettingsAdminPanel() {
+  const { data, loading, error, load } = useLoad('/orders/admin/settings', null);
+  const [shippingFee, setShippingFee] = React.useState('0.00');
+  const [taxRatePercent, setTaxRatePercent] = React.useState('0');
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  React.useEffect(() => {
+    if (data?.settings) {
+      setShippingFee(String(data.settings.shippingFee));
+      setTaxRatePercent(String(data.settings.taxRatePercent));
+    }
+  }, [data?.settings?.shippingFee, data?.settings?.taxRatePercent]);
+  const save = async event => {
+    event.preventDefault();
+    const shipping = shippingFee.trim();
+    const tax = taxRatePercent.trim();
+    if (!/^\d{1,8}(?:\.\d{1,2})?$/.test(shipping) || !/^\d{1,3}(?:\.\d{1,2})?$/.test(tax) || Number(tax) > 100) {
+      setMessage('Enter a valid non-negative shipping fee and a tax rate from 0% to 100%.'); return;
+    }
+    setSaving(true); setMessage('');
+    try {
+      await request('/orders/admin/settings', { method: 'PUT', body: json({ shippingFee: shipping, taxRatePercent: tax }) });
+      setMessage('Store pricing settings saved. New checkouts will use these values.'); await load();
+    } catch (error) { setMessage(errorText(error)); }
+    finally { setSaving(false); }
+  };
+  return <Panel title="Store pricing" sub="Admin controls shipping and tax for new orders. Existing orders retain their original price snapshots.">
+    <State loading={loading} error={error} onRetry={load}/>
+    <Notice error={message && /failed|cannot|invalid|not found|enter/i.test(message) ? message : ''} success={message && !/failed|cannot|invalid|not found|enter/i.test(message) ? message : ''}/>
+    {!loading && !error && <form onSubmit={save}>
+      <FormGrid>
+        <Field label="Shipping fee (INR)"><input type="number" min="0" max="1000000" step="0.01" value={shippingFee} onChange={event => setShippingFee(event.target.value)}/></Field>
+        <Field label="Tax rate (%)"><input type="number" min="0" max="100" step="0.01" value={taxRatePercent} onChange={event => setTaxRatePercent(event.target.value)}/></Field>
+      </FormGrid>
+      <div className="p5-actions"><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save store pricing'}</Button></div>
+      <small className="p5-muted">Default shipping is free and the default tax rate is 0% until configured. Use only rates approved for T-CARE.</small>
+    </form>}
+  </Panel>;
+}
+
+function StoreOrdersAdminPanel() {
+  const { data, loading, error, load } = useLoad('/orders/admin', null, 30000);
+  const orders = data?.orders || [];
+  const [busy, setBusy] = React.useState('');
+  const [message, setMessage] = React.useState('');
+  const update = async (order, status) => {
+    let trackingNumber; let carrier;
+    if (status === 'SHIPPED') {
+      trackingNumber = window.prompt(`Tracking number for ${order.orderNumber}:`);
+      if (!trackingNumber?.trim()) { setMessage('A tracking number is required before shipment.'); return; }
+      carrier = window.prompt('Courier / carrier name (optional):') || '';
+    }
+    if (!window.confirm(`Move ${order.orderNumber} to ${status.replaceAll('_', ' ')}?`)) return;
+    setBusy(order.id); setMessage('');
+    try {
+      await request(`/orders/admin/${encodeURIComponent(order.id)}/fulfillment`, { method: 'PATCH', body: json({ status, ...(trackingNumber ? { trackingNumber: trackingNumber.trim() } : {}), ...(carrier !== undefined ? { carrier: carrier.trim() || null } : {}) }) });
+      setMessage(`${order.orderNumber} updated.`); await load();
+    } catch (error) { setMessage(errorText(error)); }
+    finally { setBusy(''); }
+  };
+  const refund = async order => {
+    if (!order.payment?.id) { setMessage('No payment record is linked to this order.'); return; }
+    if (!window.confirm(`Request a full refund for ${order.orderNumber}? This sends a real refund request to Razorpay.`)) return;
+    setBusy(order.id); setMessage('');
+    try {
+      const result = await request(`/payments/admin/${encodeURIComponent(order.payment.id)}/refund`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: json({ reason: `Plant Store order ${order.orderNumber} refund` })
+      });
+      setMessage(result.refund?.status === 'REFUNDED' ? `${order.orderNumber}: refund processed.` : `${order.orderNumber}: refund request submitted and awaiting provider confirmation.`);
+      await load();
+    } catch (error) { setMessage(errorText(error)); }
+    finally { setBusy(''); }
+  };
+  return <Panel title="Customer orders" sub={`${orders.length} recent orders. Paid orders move through processing, shipment and delivery.`} action={<Button variant="ghost" onClick={load}>Refresh</Button>}>
+    <Notice error={message && /failed|cannot|invalid|not found|must|could not/i.test(message) ? message : ''} success={message && !/failed|cannot|invalid|not found|must|could not/i.test(message) ? message : ''}/>
+    <State loading={loading} error={error} empty={!orders.length && !loading && !error} onRetry={load}/>
+    {!!orders.length && <RecordTable headers={['Order','Customer','Items','Total','Status','Fulfilment']}>
+      {orders.map(order => <tr key={order.id}>
+        <td><b>{order.orderNumber}</b><small>{dateTime(order.createdAt)}</small></td>
+        <td>{order.customer?.name || order.recipientName}<small>{order.customer?.email || order.recipientEmail}</small><small>{order.recipientPhone}</small></td>
+        <td>{order.items.map(item => `${item.name} × ${item.quantity}`).join(', ')}</td>
+        <td><b>{money(order.total)}</b><small>Tax {money(order.taxAmount)} · Shipping {money(order.shippingFee)}</small></td>
+        <td><Pill tone={['PAID','PROCESSING','SHIPPED','DELIVERED'].includes(order.status) ? 'good' : order.status === 'PAYMENT_REVIEW' ? 'bad' : ''}>{statusLabel(order.status)}</Pill><small>Payment: {statusLabel(order.payment?.status)}</small></td>
+        <td><div className="p5-actions">
+          {order.status === 'PAID' && <><Button disabled={busy === order.id} onClick={() => update(order, 'PROCESSING')}>Start processing</Button><Button variant="danger" disabled={busy === order.id || !['PAID','PARTIALLY_REFUNDED'].includes(order.payment?.status)} onClick={() => refund(order)}>Refund</Button></>}
+          {order.status === 'PROCESSING' && <Button disabled={busy === order.id} onClick={() => update(order, 'SHIPPED')}>Mark shipped</Button>}
+          {order.status === 'SHIPPED' && <Button disabled={busy === order.id} onClick={() => update(order, 'DELIVERED')}>Mark delivered</Button>}
+          {order.status === 'PAYMENT_REVIEW' && <><small>Review captured payment; stock reservation had ended. Confirm stock and contact the customer before fulfilment.</small><Button variant="danger" disabled={busy === order.id || !['PAID','PARTIALLY_REFUNDED'].includes(order.payment?.status)} onClick={() => refund(order)}>Request full refund</Button></>}
+          {order.trackingNumber && <small>Tracking: {order.carrier ? `${order.carrier} · ` : ''}{order.trackingNumber}</small>}
+          {!['PAID','PROCESSING','SHIPPED','PAYMENT_REVIEW'].includes(order.status) && <small>No fulfilment action available.</small>}
+        </div></td>
+      </tr>)}
+    </RecordTable>}
+  </Panel>;
+}
+
 export function AdminProductsPage({ Shell }) {
   const { data, loading, error, load } = useLoad('/products/admin', null, 30000);
   const products = data?.products || [];
-  const initialForm = { sku: '', name: '', description: '', category: '', kind: '', imageUrl: '', potColor: '', price: '', compareAtPrice: '', stockQuantity: '0', status: 'ACTIVE' };
+  const initialForm = { sku: '', name: '', description: '', category: '', kind: '', imageUrl: '', careInstructions: '', lightRequirements: '', wateringFrequency: '', safetyNote: '', potColor: '', price: '', compareAtPrice: '', stockQuantity: '0', status: 'ACTIVE' };
   const [form, setForm] = React.useState(initialForm);
   const [editing, setEditing] = React.useState(null);
   const [message, setMessage] = React.useState('');
@@ -1282,7 +1778,7 @@ export function AdminProductsPage({ Shell }) {
     e.preventDefault(); setBusy(true); setMessage('');
     const payload = {
       sku: form.sku.trim(), name: form.name.trim(), description: form.description.trim(), category: form.category.trim(),
-      kind: form.kind.trim() || null, imageUrl: form.imageUrl.trim() || null, potColor: form.potColor.trim() || null,
+      kind: form.kind.trim() || null, imageUrl: form.imageUrl.trim() || null, careInstructions: form.careInstructions.trim() || null, lightRequirements: form.lightRequirements.trim() || null, wateringFrequency: form.wateringFrequency.trim() || null, safetyNote: form.safetyNote.trim() || null, potColor: form.potColor.trim() || null,
       price: Number(form.price), compareAtPrice: form.compareAtPrice === '' ? null : Number(form.compareAtPrice),
       status: form.status
     };
@@ -1295,7 +1791,7 @@ export function AdminProductsPage({ Shell }) {
   };
   const edit = product => {
     setEditing(product.id);
-    setForm({ sku: product.sku, name: product.name, description: product.description || '', category: product.category, kind: product.kind || '', imageUrl: product.imageUrl || '', potColor: product.potColor || '', price: String(product.price), compareAtPrice: product.compareAtPrice == null ? '' : String(product.compareAtPrice), stockQuantity: String(product.stockQuantity), status: product.status });
+    setForm({ sku: product.sku, name: product.name, description: product.description || '', category: product.category, kind: product.kind || '', imageUrl: product.imageUrl || '', careInstructions: product.careInstructions || '', lightRequirements: product.lightRequirements || '', wateringFrequency: product.wateringFrequency || '', safetyNote: product.safetyNote || '', potColor: product.potColor || '', price: String(product.price), compareAtPrice: product.compareAtPrice == null ? '' : String(product.compareAtPrice), stockQuantity: String(product.stockQuantity), status: product.status });
   };
   const adjustStock = async product => {
     const deltaText = window.prompt(`Current stock: ${product.stockQuantity}. Enter a positive number to add or a negative number to remove.`);
@@ -1320,7 +1816,7 @@ export function AdminProductsPage({ Shell }) {
     catch (e) { setMessage(errorText(e)); setMovements([]); }
     finally { setMovementLoading(false); }
   };
-  return <Shell title="Plant store" sub="Manage product details and inventory. The store is currently for browsing; orders are not available.">
+  return <Shell title="Plant store" sub="Manage product information, inventory, store pricing and customer orders.">
     <Notice error={error || (message && /failed|cannot|invalid|not found|insufficient|must/i.test(message) ? message : '')} success={message && !/failed|cannot|invalid|not found|insufficient|must/i.test(message) ? message : ''}/>
     <Panel title={editing ? 'Edit product details' : 'Add a product'} sub="Product details do not change stock. Use Adjust stock to update inventory.">
       <form onSubmit={save}>
@@ -1330,6 +1826,9 @@ export function AdminProductsPage({ Shell }) {
           <Field label="Category"><input required minLength="2" maxLength="80" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}/></Field>
           <Field label="Illustration type (optional)"><input maxLength="40" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} placeholder="e.g. monstera"/></Field>
           <Field label="Image URL (optional)"><input type="url" maxLength="2000" value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })}/></Field>
+          <Field label="Light requirements (optional)"><input maxLength="500" value={form.lightRequirements} onChange={e => setForm({ ...form, lightRequirements: e.target.value })}/></Field>
+          <Field label="Watering frequency (optional)"><input maxLength="500" value={form.wateringFrequency} onChange={e => setForm({ ...form, wateringFrequency: e.target.value })}/></Field>
+          <Field label="Safety note (optional)"><input maxLength="500" value={form.safetyNote} onChange={e => setForm({ ...form, safetyNote: e.target.value })}/></Field>
           <Field label="Pot colour (optional)"><input maxLength="40" value={form.potColor} onChange={e => setForm({ ...form, potColor: e.target.value })}/></Field>
           <Field label="Selling price (INR)"><input required type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}/></Field>
           <Field label="Compare-at price (optional)"><input type="number" min="0" step="0.01" value={form.compareAtPrice} onChange={e => setForm({ ...form, compareAtPrice: e.target.value })}/></Field>
@@ -1337,6 +1836,7 @@ export function AdminProductsPage({ Shell }) {
           <Field label="Publication status"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></Field>
         </FormGrid>
         <Field label="Description"><textarea maxLength="5000" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}/></Field>
+        <Field label="Care instructions (optional)"><textarea maxLength="3000" value={form.careInstructions} onChange={e => setForm({ ...form, careInstructions: e.target.value })}/></Field>
         <div className="p5-actions"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save product details' : 'Create product'}</Button>{editing && <Button variant="ghost" onClick={() => { setEditing(null); setForm(initialForm); }}>Cancel</Button>}</div>
       </form>
     </Panel>
@@ -1355,7 +1855,8 @@ export function AdminProductsPage({ Shell }) {
     {movementProduct && <Panel title={`Stock history · ${movementProduct.name}`} sub={`${movements.length} recent adjustments`} action={<Button variant="ghost" onClick={() => setMovementProduct(null)}>Close</Button>}>
       {movementLoading ? <State loading/> : movements.length ? <RecordTable headers={['Date','Change','Reason','Updated by']}>{movements.map(item => <tr key={item.id}><td>{dateTime(item.createdAt)}</td><td><b>{item.quantityChange > 0 ? '+' : ''}{item.quantityChange}</b></td><td>{item.reason}</td><td>{item.actorUserId || 'System'}</td></tr>)}</RecordTable> : <Empty title="No stock adjustments yet"/>}
     </Panel>}
-    <Panel title="Customer store"><p>Customers can browse products and save them in a cart. Orders, payment and delivery are not available.</p></Panel>
+    <StoreOrdersAdminPanel/>
+    <StoreSettingsAdminPanel/>
   </Shell>;
 }
 

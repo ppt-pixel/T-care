@@ -118,7 +118,7 @@ test('customer payment projection is used by every customer-facing payment respo
 test('booking APIs use the safe customer payment projection', () => {
   const bookings = read('backend/src/routes/bookings.js');
   assert.equal((bookings.match(/serializeCustomerPayment\(/g) || []).length, 2);
-  assert.match(bookings, /payment:\s*\{\s*include:\s*\{\s*refunds:\s*true\s*\}\s*\}/);
+  assert.match(bookings, /refunds:\s*true,\s*qrSessions:/);
   assert.doesNotMatch(bookings, /payment:\s*b\.payment\s*\?\s*\{\s*\.\.\.b\.payment/);
   assert.doesNotMatch(bookings, /payment:\s*hydrated\.payment\s*\?\s*\{\s*\.\.\.hydrated\.payment/);
 });
@@ -226,12 +226,17 @@ test('Gardener availability overlap validation is serialized with slot writes', 
   assert.ok(availability.indexOf('gardenerAvailability.findMany') < availability.indexOf('gardenerAvailability.create'));
 });
 
-test('customer subscription creation rechecks exclusivity while holding the customer lock', () => {
+test('new recurring plans require UPI AutoPay while legacy manual subscription requests remain compatible', () => {
   const subscriptions = read('backend/src/routes/subscriptions.js');
+  const payments = read('backend/src/routes/payments.js');
   const createHandler = subscriptions.slice(subscriptions.indexOf("customer.post('/',"), subscriptions.indexOf("customer.post('/:id/cancel'"));
-  assert.match(createHandler, /SELECT "id" FROM "CustomerProfile" WHERE "id" = \$\{profile\.id\} FOR UPDATE/);
-  assert.ok(createHandler.indexOf('FOR UPDATE') < createHandler.indexOf('subscription.findFirst'));
-  assert.ok(createHandler.indexOf('subscription.findFirst') < createHandler.indexOf('subscription.create'));
+  const orderHandler = payments.slice(payments.indexOf("customer.post('/subscription/:subscriptionId/order'"), payments.indexOf("customer.post('/:id/verify"));
+  assert.match(subscriptions, /UPI_AUTOPAY_NOT_ENABLED/);
+  assert.match(createHandler, /isUpiAutopayPlanType\(plan\.planType\)/);
+  assert.match(createHandler, /renewalMode: 'LEGACY_MANUAL_REVIEW'/);
+  assert.match(createHandler, /ONE_TIME_PLAN_USES_BOOKING_FLOW/);
+  assert.match(orderHandler, /UPI_AUTOPAY_REQUIRED/);
+  assert.match(orderHandler, /one-time Razorpay Order cannot be used/);
 });
 
 test('report photo URLs are generated from owned Storage assets, not caller-provided URLs', () => {
@@ -322,13 +327,19 @@ test('payment mutations and webhooks are fail-closed behind PAYMENTS_ENABLED', (
   const render = read('render.yaml');
   const sample = read('backend/.env.example');
   assert.match(env, /PAYMENTS_ENABLED:[\s\S]{0,180}default\(false\)/);
+  assert.match(env, /RAZORPAY_MODE:\s*z\.enum\(\['test', 'live'\]\)/);
+  assert.match(sample, /RAZORPAY_MODE=test/);
   assert.match(sample, /PAYMENTS_ENABLED=false/);
-  assert.match(render, /key:\s*PAYMENTS_ENABLED\s*\n\s*value:\s*["']false["']/);
+  assert.match(sample, /STORE_CHECKOUT_ENABLED=false/);
+  assert.match(render, /key:\s*PAYMENTS_ENABLED\s*\n\s*sync:\s*false/);
+  assert.match(render, /key:\s*RAZORPAY_SUBSCRIPTIONS_ENABLED\s*\n\s*sync:\s*false/);
   assert.match(payments, /assertPaymentsEnabled\(env\.PAYMENTS_ENABLED\)/);
   assert.ok((payments.match(/requireRazorpayConfig\(\);/g) || []).length >= 4, 'booking/subscription order, client verification and refunds must be gated');
   assert.match(payments, /razorpayWebhook[\s\S]*?requireRazorpayConfig\(\{ webhook: true \}\)/);
   assert.match(env, /assertPaymentConfiguration\(parsedEnv\)/);
-  assert.match(paymentPolicy, /config\.NODE_ENV === 'production' \? 'rzp_live_' : 'rzp_test_'/);
+  assert.match(paymentPolicy, /config\.RAZORPAY_MODE \?\? \(config\.NODE_ENV === 'production' \? 'live' : 'test'\)/);
+  assert.match(paymentPolicy, /mode === 'live' \? 'rzp_live_' : 'rzp_test_'/);
+  assert.match(render, /key:\s*RAZORPAY_MODE\s*\n\s*sync:\s*false/);
 });
 
 test('payment verification uses shared signature, ownership and amount guards', () => {
@@ -367,7 +378,12 @@ test('all Prisma models have matching CREATE TABLE declarations across migration
     'backend/prisma/migrations/20261109000100_add_gardener_kyc_documents/migration.sql',
     'backend/prisma/migrations/20261109000200_add_cancelled_assignment_status/migration.sql',
     'backend/prisma/migrations/20261112000200_add_product_catalogue/migration.sql',
-    'backend/prisma/migrations/20261118000100_add_registration_consent_password_reset_receipts/migration.sql'
+    'backend/prisma/migrations/20261118000100_add_registration_consent_password_reset_receipts/migration.sql',
+    'backend/prisma/migrations/20261123000200_subscription_plan_catalogue/migration.sql',
+    'backend/prisma/migrations/20261123000300_subscription_booking_entitlements/migration.sql',
+    'backend/prisma/migrations/20261123000400_booking_subscription_link/migration.sql',
+    'backend/prisma/migrations/20261123000500_plant_store_orders/migration.sql',
+    'backend/prisma/migrations/20261123000600_qr_payment_sessions/migration.sql'
   ];
   const tables = migrationFiles.flatMap(file => [...read(file).matchAll(/CREATE TABLE\s+"([^"]+)"/gi)].map(match => match[1]));
   assert.equal(new Set(modelNames).size, modelNames.length, 'Prisma model names must be unique');
@@ -466,7 +482,8 @@ test('Admin and Gardener workspaces use the sidebar and a shared notification pr
   const dashboard = read('src/phase5.jsx');
   const store = read('src/notificationStore.js');
   assert.match(main, /function WorkspaceSidebar/);
-  assert.match(main, /hasSidebar\s*=\s*rk==='hq'\|\|rk==='crew'/);
+  assert.match(main, /usesWorkspaceSidebar\s*\(rk\)/);
+  assert.match(main, /import \{ workspaceForRole, usesWorkspaceSidebar \} from '\.\/authNavigation\.js'/);
   assert.match(main, /<WorkspaceSidebar/);
   assert.match(store, /setInterval\(\(\)\s*=>\s*refreshNotificationFeed\(\),\s*60_000\)/);
   assert.match(store, /\/notifications\?limit=5/);
@@ -485,4 +502,30 @@ test('Admin payment ledger supports searchable pagination beyond the first page'
   assert.match(finance, /admin\/payments\?page=\$\{paymentPage\}&limit=25/);
   assert.match(finance, /paymentsState\.data\?\.pagination/);
   assert.match(finance, /setPaymentPage\(value=>value\+1\)/);
+});
+
+
+test('Customer booking creation is protected by persisted idempotency keys and request fingerprints', () => {
+  const bookings = read('backend/src/routes/bookings.js');
+  const idempotency = read('backend/src/lib/bookingIdempotency.js');
+  const schema = read('backend/prisma/schema.prisma');
+  const migration = read('backend/prisma/migrations/20261123000100_booking_creation_idempotency/migration.sql');
+  assert.match(bookings, /Idempotency-Key/);
+  assert.match(bookings, /findUnique\(\{\s*where:\s*\{\s*idempotencyKey/);
+  assert.match(bookings, /idempotencyFingerprint/);
+  assert.match(idempotency, /createHash\('sha256'/);
+  assert.match(schema, /idempotencyKey\s+String\?\s+@unique/);
+  assert.match(migration, /CREATE UNIQUE INDEX \"Booking_idempotencyKey_key\"/);
+});
+
+test('Customer payment return reconciliation is owner-scoped and verifies Razorpay order amount and currency', () => {
+  const payments = read('backend/src/routes/payments.js');
+  const reconciliation = read('backend/src/lib/paymentReconciliation.js');
+  assert.match(payments, /customer\.post\('\/:id\/reconcile'/);
+  assert.match(payments, /booking:\s*\{\s*customerId:\s*customerProfile\.id/);
+  assert.match(payments, /subscription:\s*\{\s*customerId:\s*customerProfile\.id/);
+  assert.match(payments, /orders\/\$\{encodeURIComponent\(payment\.providerOrderId\)\}\/payments/);
+  assert.match(reconciliation, /providerAmountMatches/);
+  assert.match(reconciliation, /providerCurrencyMatches/);
+  assert.match(payments, /server\.reconcile\.payment/);
 });

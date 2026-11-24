@@ -20,6 +20,7 @@ import { requestSecurity, createRateLimiter, requireTrustedOrigin } from './midd
 import cmsRouter from './routes/cms.js';
 import analyticsRouter from './routes/analytics.js';
 import productsRouter from './routes/products.js';
+import ordersRouter from './routes/orders.js';
 
 export const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/v1/admin', adminRouter());
 app.use('/api/v1/cms', cmsRouter());
 app.use('/api/v1/analytics', analyticsRouter());
 app.use('/api/v1/products', productsRouter());
+app.use('/api/v1/orders', ordersRouter());
 
 app.use(notFound);
 app.use(errorHandler);

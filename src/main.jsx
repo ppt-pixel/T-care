@@ -9,6 +9,7 @@ import { Leaf, ArrowUpRight, Check, Bell, Search, Sun, Moon, Scissors, MapPin, S
   ClipboardList, Bot, ShoppingBag, Wand2, CornerDownLeft, Menu, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import {ServicesPage,AboutPage,PlansPage,StorePage,MakeoverPage,ContactPage,TermsPage,PrivacyPage} from './landing/Pages.jsx';
 import {usePublicList} from './landing/publicData.js';
+import {StoreCheckoutPage,StoreOrderPage,StoreOrdersWorkspacePage} from './store/StoreCheckout.jsx';
 import './styles.css';
 import * as Phase5 from './phase5.jsx';
 import { setNotificationUser, useNotificationFeed, refreshNotificationFeed } from './notificationStore.js';
@@ -37,7 +38,7 @@ async function authApi(path, body) {
 
 /* ---------- role navigation ---------- */
 const roles={
-  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['book','Book a service',CalendarDays],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['inbox','Inbox',Bell],['me','Profile',UserRound]]},
+  garden:{label:'Customer',base:'/garden',nav:[['','Today',LayoutGrid],['book','Book a service',CalendarDays],['visits','Visits',ClipboardList],['plants','Plants',Flower2],['addresses','Addresses',MapPin],['shop','Services',Sprout],['plan','Subscriptions',WalletCards],['billing','Billing',CreditCard],['store-orders','Store orders',ShoppingBag],['inbox','Inbox',Bell],['me','Profile',UserRound]]},
   crew:{label:'Gardener',base:'/crew',nav:[['','Route',LayoutGrid],['jobs','Jobs',ClipboardList],['reports','Reports',Stethoscope],['hours','Hours',CalendarDays],['kyc','Verification',FileText],['pay','Pay',WalletCards],['inbox','Inbox',Bell],['me','Profile',UserRound]]},
   hq:{label:'Admin',base:'/hq',nav:[['','Overview',LayoutGrid],['accounts','Account management',UserRound],['people','Customers',Users],['crew','Gardeners',Flower2],['visits','Bookings',ClipboardList],['catalog','Services',Package],['store','Store',ShoppingBag],['botany','Plants',Sprout],['reviews','Reviews',Star],['issues','Issues',FileText],['notifications','Notifications',Bell],['insights','Analytics',BarChart3],['cms','Content',FileText],['plans','Plans',WalletCards],['money','Finance',CreditCard]]}};
 const roleOf=p=>p.startsWith('/crew')?'crew':p.startsWith('/hq')?'hq':'garden';
@@ -205,7 +206,7 @@ const safeDecode=v=>{try{return decodeURIComponent(v)}catch{return v}};
 function Breadcrumbs({pathname}){
   const rk=roleOf(pathname),R=roles[rk];
   const parts=pathname.split('/').filter(Boolean);
-  const labels={garden:'Today',crew:'Route',hq:'Pulse',visits:'Visits',plants:'Plants',shop:'Services',book:'Book a service',plan:'Plan',billing:'Billing',inbox:'Inbox',me:'Profile',jobs:'Jobs',reports:'Reports',pay:'Pay',hours:'Hours',people:'Customers',catalog:'Services',store:'Store',plans:'Plans',botany:'Plants',money:'Finance',insights:'Analytics',cms:'Content',addresses:'Addresses',kyc:'Verification',notifications:'Notifications'};
+  const labels={garden:'Today',crew:'Route',hq:'Pulse',visits:'Visits',plants:'Plants',shop:'Services',book:'Book a service',plan:'Plan',billing:'Billing',inbox:'Inbox',me:'Profile',jobs:'Jobs',reports:'Reports',pay:'Pay',hours:'Hours',people:'Customers',catalog:'Services',store:'Store',plans:'Plans',botany:'Plants',money:'Finance',insights:'Analytics',cms:'Content',addresses:'Addresses',kyc:'Verification',notifications:'Notifications','store-orders':'Store orders'};
   return <nav className="crumbs" aria-label="Breadcrumb"><Link to={R.base}>{R.label}</Link>{parts.slice(1).map((part,i)=><React.Fragment key={part}><span>/</span><span>{labels[part]||safeDecode(part).replace(/-/g,' ')}</span></React.Fragment>)}</nav>
 }
 function AccountMenu({role}){
@@ -362,6 +363,8 @@ function ServicesRoute(){
 const AboutRoute=()=><PublicPage><AboutPage/></PublicPage>;
 const PlansRoute=()=><PublicPage><PlansPage/></PublicPage>;
 const StoreRoute=()=>{const {cart}=useApp();return <PublicPage><StorePage cart={cart}/></PublicPage>};
+const StoreCheckoutRoute=()=>{const {cart,authUser}=useApp();return <PublicPage><StoreCheckoutPage cart={cart} authUser={authUser}/></PublicPage>};
+const StoreOrderRoute=()=>{const {authUser}=useApp();return <PublicPage><StoreOrderPage authUser={authUser}/></PublicPage>};
 const MakeoverRoute=()=><PublicPage><MakeoverPage/></PublicPage>;
 const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
 const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
@@ -663,29 +666,33 @@ function Auth(){
     </div>
     <div className="auth-card">
       <div className="auth-tabs">
-        <button className={mode==='login'?'on':''} onClick={()=>switchMode('login')}>Sign in</button>
-        <button className={mode==='register'?'on':''} onClick={()=>switchMode('register')}>Create account</button>
+        <button type="button" className={mode==='login'?'on':''} onClick={()=>switchMode('login')} disabled={busy}>Sign in</button>
+        <button type="button" className={mode==='register'?'on':''} onClick={()=>switchMode('register')} disabled={busy}>Create account</button>
       </div>
 
       {step==='forgot-request' ? <>
         <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Forgot your password?</h2><p>Enter the email address associated with your T-CARE account. If it is eligible, we will send a one-time reset code.</p></div>
-        <form onSubmit={requestPasswordReset}>
+        <form onSubmit={requestPasswordReset} aria-busy={busy}>
+          <fieldset className="auth-form-fields" disabled={busy}>
           <label>Email address<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))} placeholder="you@example.com"/></label>
           {error&&<p className="auth-alert" role="alert">{error}</p>}
           <button className="btn full" type="submit" disabled={busy||!recovery.email.trim()}>{busy?'Requesting…':'Send reset code'} <ArrowUpRight size={16}/></button>
           <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setMode('login');setError('')}}>Back to sign in</button>
+          </fieldset>
         </form>
       </> : step==='forgot-reset' ? <>
         <div className="auth-heading"><span className="eyebrow">Account recovery</span><h2>Choose a new password.</h2><p>{recoveryNotice || 'Enter the reset code sent to your email address.'}</p></div>
-        <form onSubmit={completePasswordReset}>
+        <form onSubmit={completePasswordReset} aria-busy={busy}>
+          <fieldset className="auth-form-fields" disabled={busy}>
           <label>Registered email<input required type="email" autoComplete="email" value={recovery.email} onChange={event=>setRecovery(current=>({...current,email:event.target.value}))}/></label>
           <label>Six-digit reset code<input required inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={recovery.code} onChange={event=>setRecovery(current=>({...current,code:event.target.value.replace(/\D/g,'').slice(0,6)}))} placeholder="000000"/></label>
           <label>New password<input required type="password" minLength={12} maxLength={72} autoComplete="new-password" value={recovery.newPassword} onChange={event=>setRecovery(current=>({...current,newPassword:event.target.value}))} placeholder="At least 12 characters"/></label>
           <label>Confirm new password<input required type="password" minLength={12} maxLength={72} autoComplete="new-password" value={recovery.confirmPassword} onChange={event=>setRecovery(current=>({...current,confirmPassword:event.target.value}))} placeholder="Enter the new password again"/></label>
           {error&&<p className="auth-alert" role="alert">{error}</p>}
           <button className="btn full" type="submit" disabled={busy||recovery.code.length!==6||!recovery.newPassword||!recovery.confirmPassword}>{busy?'Updating password…':'Reset password'} <ArrowUpRight size={16}/></button>
-          <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('forgot-request');setError('');setRecoveryNotice('')}}>Request another code</button>
+          <button className="text-btn auth-resend" type="button" disabled={busy} onClick={()=>{setStep('forgot-request');setError('');setRecoveryNotice('')}}>Request another code</button>
           <button className="text-btn auth-resend" type="button" onClick={()=>{setStep('form');setMode('login');setError('')}}>Back to sign in</button>
+          </fieldset>
         </form>
       </> : step==='verify' ? <>
         <div className="auth-heading">
@@ -693,7 +700,8 @@ function Auth(){
           <h2>Check your inbox.</h2>
           <p>Enter the six-digit code sent to <strong>{verificationEmail}</strong>. The code expires in 10 minutes.</p>
         </div>
-        <form onSubmit={verify}>
+        <form onSubmit={verify} aria-busy={busy}>
+          <fieldset className="auth-form-fields" disabled={busy}>
           <label>Verification code
             <input required autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={code} onChange={event=>setCode(event.target.value.replace(/\D/g,'').slice(0,6))} placeholder="000000"/>
           </label>
@@ -703,6 +711,7 @@ function Auth(){
             {resendSeconds>0?`Resend code in ${resendSeconds}s`:'Resend verification code'}
           </button>
           <button className="text-btn auth-resend" type="button" onClick={()=>{setMode('login');setStep('form');setError('');setCode('')}}>Back to sign in</button>
+          </fieldset>
         </form>
       </> : <>
         <div className="auth-heading">
@@ -710,7 +719,8 @@ function Auth(){
           <h2>{mode==='login'?'Welcome back.':'Create your account.'}</h2>
           <p>{mode==='login'?'Sign in to your account.':'Create a Customer account to manage your plants and book care. Contact T-CARE to set up a Gardener account.'}</p>
         </div>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} aria-busy={busy}>
+          <fieldset className="auth-form-fields" disabled={busy}>
           {recoveryNotice&&<p className="auth-success" role="status">{recoveryNotice}</p>}
           {mode==='register'&&<label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={form.fullName} onChange={event=>update('fullName',event.target.value)} placeholder="Your full name"/></label>}
           <label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={event=>update('email',event.target.value)} placeholder="you@example.com"/></label>
@@ -730,8 +740,9 @@ function Auth(){
           </div>}
           {error&&<p className="auth-alert" role="alert">{error}</p>}
           <button className="btn full" type="submit" disabled={busy||(mode==='register'&&(!legalConsent.terms||!legalConsent.privacy))}>{busy?(mode==='login'?'Signing in…':'Creating account…'):(mode==='login'?'Sign in':'Create account')} <ArrowUpRight size={16}/></button>
+          </fieldset>
         </form>
-        {mode==='login'&&<button className="text-btn auth-forgot" type="button" onClick={()=>{setRecovery(current=>({...current,email:form.email,code:'',newPassword:'',confirmPassword:''}));setStep('forgot-request');setError('');setRecoveryNotice('')}}>Forgot password?</button>}
+        {mode==='login'&&<button className="text-btn auth-forgot" type="button" disabled={busy} onClick={()=>{setRecovery(current=>({...current,email:form.email,code:'',newPassword:'',confirmPassword:''}));setStep('forgot-request');setError('');setRecoveryNotice('')}}>Forgot password?</button>}
         <p className="auth-note">{location.state?.from?.startsWith('/garden/book')
           ? 'Sign in or create a Customer account to book a service. You will return to the booking form afterward.'
           : mode==='register'
@@ -746,8 +757,8 @@ function Auth(){
 
 /* ---------- routes ---------- */
 function NF(){const {theme}=useApp();return <div className="nf"><GardenBackground theme={theme}/><img className="nf-brand-mark" src="/brand/t-care-mark.png" alt="T-CARE" width="72" height="88"/><h1>Page not found</h1><p>That page isn’t available. Return to the T-CARE home page.</p><Btn to="/">Back home</Btn></div>}
-const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/privacy',PrivacyRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
-['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
+const routes=[['/',Home],['/services',ServicesRoute],['/about',AboutRoute],['/plans',PlansRoute],['/store/checkout',StoreCheckoutRoute],['/store/orders/:id',StoreOrderRoute],['/store',StoreRoute],['/makeover',MakeoverRoute],['/contact',ContactRoute],['/terms',TermsRoute],['/privacy',PrivacyRoute],['/login',Auth],['/register',()=> <Auth/>],['/garden',()=> <Phase5.CustomerDashboardPage Shell={Shell}/>],['/garden/visits',()=> <Phase5.CustomerBookingsPage Shell={Shell}/>],['/garden/shop',()=> <Phase5.CustomerServicesPage Shell={Shell}/>],['/garden/book',()=> <Phase5.CustomerBookingCreatePage Shell={Shell}/>],['/garden/payments/return/:id',()=> <Phase5.CustomerPaymentReturnPage Shell={Shell}/>],['/garden/booking-confirmed/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/visits/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/tracking/:id',()=> <Phase5.CustomerBookingDetailPage Shell={Shell}/>],['/garden/plants',()=> <Phase5.CustomerPlantsPage Shell={Shell}/>],['/garden/addresses',()=> <Phase5.CustomerAddressesPage Shell={Shell}/>],['/garden/plants/:id',()=> <Phase5.CustomerPlantDetailPage Shell={Shell}/>],
+['/garden/plan',()=> <Phase5.CustomerSubscriptionsPage Shell={Shell}/>],['/garden/billing',()=> <Phase5.CustomerPaymentsPage Shell={Shell}/>],['/garden/store-orders',()=> <StoreOrdersWorkspacePage Shell={Shell}/>],['/garden/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/garden/me',()=> <Phase5.CustomerProfilePage Shell={Shell}/>],['/garden/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/crew',()=> <Phase5.GardenerDashboardPage Shell={Shell}/>],['/crew/jobs',()=> <Phase5.GardenerJobsPage Shell={Shell}/>],['/crew/jobs/:id',()=> <Phase5.GardenerJobDetailPage Shell={Shell}/>],['/crew/jobs/:id/report',()=> <Phase5.GardenerReportPage Shell={Shell}/>],['/crew/reports',()=> <Phase5.GardenerReportsPage Shell={Shell}/>],['/crew/pay',()=> <Phase5.GardenerPayoutsPage Shell={Shell}/>],['/crew/inbox',()=> <Phase5.NotificationsPage Shell={Shell}/>],['/crew/hours',()=> <Phase5.GardenerAvailabilityPage Shell={Shell}/>],['/crew/kyc',()=> <Phase5.GardenerKycDocumentsPage Shell={Shell}/>],['/crew/me',GardenerProfile],['/crew/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],
 ['/hq',()=> <Phase5.AdminDashboardPage Shell={Shell}/>],['/hq/security',()=> <Phase5.AccountSecurityPage Shell={Shell}/>],['/hq/notifications',()=> <Phase5.AdminNotificationsPage Shell={Shell}/>],['/hq/people',()=> <Phase5.AdminUsersPage Shell={Shell} role="CUSTOMER"/>],['/hq/people/:id',()=> <Phase5.AdminUserDetailPage Shell={Shell}/>],['/hq/crew',()=> <Phase5.AdminGardenersKycPage Shell={Shell}/>],['/hq/visits',()=> <Phase5.AdminBookingsPage Shell={Shell}/>],['/hq/catalog',()=> <Phase5.AdminServicesPage Shell={Shell}/>],['/hq/store',()=> <Phase5.AdminProductsPage Shell={Shell}/>],['/hq/plans',()=> <Phase5.AdminSubscriptionsPage Shell={Shell}/>],['/hq/botany',()=> <Phase5.AdminPlantKnowledgePage Shell={Shell}/>],['/hq/money',()=> <Phase5.AdminFinancePage Shell={Shell}/>],['/hq/insights',()=> <Phase5.AdminAnalyticsPage Shell={Shell}/>],['/hq/cms',()=> <Phase5.AdminCmsPage Shell={Shell}/>],['/hq/reviews',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="reviews"/>],['/hq/issues',()=> <Phase5.AdminReviewsIssuesPage Shell={Shell} mode="issues"/>],['*',NF]];
 routes.push(['/hq/accounts',()=> <Phase5.AdminAccountManagementPage Shell={Shell}/>]);

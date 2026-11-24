@@ -86,3 +86,35 @@ a.p5-list-row:hover{background:var(--p5-tint)}
 @keyframes p5in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.p5-button,.p5-filter,.p5-card,.p5-booking-row,.p5-subscription-card,.p5-notification,.p5-metric,.p5-metrics>div{transition:none}.p5-button:hover:not(:disabled),.p5-filter:hover,a.p5-booking-row:hover,.p5-card:hover,.p5-subscription-card:hover{transform:none}}
 .p5-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
+
+/* Complete subscription plan details and renewal disclosure. */
+.p5-plan-details{display:grid;gap:.7rem;margin:.6rem 0}
+.p5-plan-detail-line{display:grid;grid-template-columns:minmax(105px,.4fr) minmax(0,1fr);gap:.7rem;padding:.55rem .65rem;border:1px solid var(--line);border-radius:10px;background:var(--p5-tint);font-size:.86rem}
+.p5-plan-detail-line>b{color:var(--mut)}.p5-plan-detail-line>span{overflow-wrap:anywhere;font-weight:650}
+.p5-plan-detail-group{display:grid;gap:.35rem;padding:.7rem .75rem;border:1px solid var(--line);border-radius:12px;min-width:0}
+.p5-plan-detail-group>b{font-size:.82rem;letter-spacing:.04em}
+.p5-plan-detail-group ul{margin:0;padding-left:1.15rem;display:grid;gap:.3rem;color:var(--mut);font-size:.84rem;line-height:1.45}
+.p5-plan-detail-group small{color:var(--mut);font-size:.82rem}
+.p5-plan-renewal-note{margin:.25rem 0;padding:.8rem .9rem;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:12px;background:var(--p5-tint);color:var(--mut);font-size:.82rem;line-height:1.55}
+.p5-plan-warning{margin:.2rem 0;padding:.75rem .85rem;border:1px solid color-mix(in srgb,#c58b2d 45%,var(--line));border-radius:12px;background:rgba(197,139,45,.1);color:var(--p5-warn);font-size:.82rem;line-height:1.5}
+.p5-plan-card-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
+.p5-plan-card-top>small{color:var(--mut);font-size:.76rem}
+.p5-admin-plan-row{align-items:flex-start;gap:1rem}
+.p5-admin-plan-row>div:first-child{flex:1}
+.p5-admin-plan-row .p5-actions{margin-top:0}
+.p5-plan-subscription-managed{display:inline-flex;align-items:center;gap:.35rem;color:var(--p5-muted);font-size:.78rem;font-weight:650}
+@media(max-width:620px){.p5-admin-plan-row{flex-direction:column;align-items:stretch}.p5-admin-plan-row .p5-actions{margin-top:.5rem}.p5-plan-detail-line{grid-template-columns:1fr;gap:.25rem}}
+
+.p5-plan-detail-group li{display:grid;gap:.15rem}.p5-plan-detail-group li small{display:block;margin-top:0}
+.p5-qr-block{margin:14px 0;padding:18px;border:1px solid var(--line,#dbe4d8);border-radius:16px;background:rgba(255,255,255,.55);display:flex;align-items:center;flex-direction:column;gap:10px;text-align:center}.p5-qr-block img{width:min(260px,70vw);aspect-ratio:1;object-fit:contain;padding:8px;border:1px solid var(--line,#dbe4d8);border-radius:12px;background:#fff}.p5-qr-block p{margin:0;color:var(--muted,#758176);font-size:12px}.p5-qr-block a{font-size:13px;font-weight:700;color:var(--green,#286744)}.p5-qr-block .p5-actions{margin:0;justify-content:center}
+
+/* Phase 6: consistent busy semantics, skeleton states and disabled formsets. */
+.p5-loading-state{display:grid;gap:.8rem;max-width:760px}
+.p5-loading-heading{display:flex;align-items:center;gap:.65rem;font-weight:650}
+.p5-loading-skeletons{display:grid;gap:.5rem;width:100%}
+.p5-loading-skeletons i{display:block;height:11px;width:100%;border-radius:999px;background:linear-gradient(90deg,var(--p5-tint) 0%,color-mix(in srgb,var(--accent) 13%,var(--p5-tint)) 48%,var(--p5-tint) 100%);background-size:200% 100%;animation:p5-skeleton-shimmer 1.35s ease-in-out infinite}
+.p5-loading-skeletons i:nth-child(2){width:82%}.p5-loading-skeletons i:nth-child(3){width:58%}
+.p5-form-lock{display:contents;border:0;margin:0;padding:0;min-width:0}
+.p5-form-lock:disabled{opacity:1}
+@keyframes p5-skeleton-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.p5-loading-skeletons i{animation:none;background:var(--p5-tint)}}

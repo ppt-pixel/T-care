@@ -46,10 +46,11 @@ export function useCart(toast){
       }
     }
   },[items,toast]);
-  const add=React.useCallback(p=>{setItems(a=>a.find(x=>x.id===p.id)?a.map(x=>x.id===p.id?{...x,qty:x.qty+1}:x):[...a,{id:p.id,name:p.name,price:p.price,kind:p.kind,pot:p.pot,qty:1}]);toast?.('Added to cart')},[toast]);
-  const setQty=React.useCallback((id,q)=>setItems(a=>q<=0?a.filter(x=>x.id!==id):a.map(x=>x.id===id?{...x,qty:q}:x)),[]);
+  const add=React.useCallback(p=>{setItems(a=>{const existing=a.find(x=>x.id===p.id);if(existing&&existing.qty>=20){toast?.('Maximum quantity per product is 20.',{type:'warning'});return a;}return existing?a.map(x=>x.id===p.id?{...x,qty:Math.min(20,x.qty+1),name:p.name,price:p.price}:x):[...a,{id:p.id,name:p.name,price:p.price,kind:p.kind,pot:p.pot,qty:1}]});toast?.('Added to cart')},[toast]);
+  const setQty=React.useCallback((id,q)=>setItems(a=>q<=0?a.filter(x=>x.id!==id):a.map(x=>x.id===id?{...x,qty:Math.min(20,q)}:x)),[]);
   // stable identity until the cart really changes, so unrelated context updates don't re-render every cart consumer
-  return React.useMemo(()=>({items,add,setQty,open,setOpen,count:items.reduce((n,x)=>n+x.qty,0),total:items.reduce((n,x)=>n+x.qty*x.price,0)}),[items,add,setQty,open]);
+  const clear=React.useCallback(()=>setItems([]),[]);
+  return React.useMemo(()=>({items,add,setQty,clear,open,setOpen,count:items.reduce((n,x)=>n+x.qty,0),total:items.reduce((n,x)=>n+x.qty*x.price,0)}),[items,add,setQty,clear,open]);
 }
 export function CartDrawer({cart}){
   React.useEffect(()=>{if(!cart.open)return;const k=e=>e.key==='Escape'&&cart.setOpen(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[cart.open]);
@@ -58,8 +59,8 @@ export function CartDrawer({cart}){
     <motion.aside key="cd" className="ld-panel cart" role="dialog" aria-label="Shopping cart" initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'tween',duration:.35,ease:[.22,1,.36,1]}}>
       <div className="ld-head"><h3>Your cart <small>({cart.count})</small></h3><button className="ib" onClick={()=>cart.setOpen(false)} aria-label="Close cart"><X size={17}/></button></div>
       {cart.items.length?<>
-        <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label="Decrease"><Minus size={13}/></button><i>{x.qty}</i><button onClick={()=>cart.setQty(x.id,x.qty+1)} aria-label="Increase"><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
-        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Orders and delivery are not available in the store. Your cart is saved in this browser.</p><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
+        <div className="cart-list">{cart.items.map(x=><div className="cart-item" key={x.id}><div className="ci-art"><ProductSvg kind={x.kind} pot={x.pot}/></div><div><b>{x.name}</b><span>{money(x.price)}</span><div className="qty"><button type="button" onClick={()=>cart.setQty(x.id,x.qty-1)} aria-label={`Decrease quantity of ${x.name}`}><Minus size={13}/></button><i aria-live="polite">{x.qty}</i><button type="button" onClick={()=>cart.setQty(x.id,x.qty+1)} disabled={x.qty>=20} aria-label={`Increase quantity of ${x.name}`} title={x.qty>=20?"Maximum quantity is 20":"Increase quantity"}><Plus size={13}/></button></div></div><button className="ci-x" onClick={()=>cart.setQty(x.id,0)} aria-label="Remove"><Trash2 size={15}/></button></div>)}</div>
+        <div className="cart-foot"><div><span>Subtotal</span><b>{money(cart.total)}</b></div><p className="cart-unavailable" role="status">Final price and stock are verified securely at checkout. Your cart is saved in this browser.</p><Link className="lb lb-gold full" to="/store/checkout" onClick={()=>cart.setOpen(false)}>Proceed to checkout <ArrowRight size={15}/></Link><button className="tl" onClick={()=>cart.setOpen(false)}>Keep browsing</button></div>
       </>:<div className="cart-empty"><ShoppingBag size={34}/><p>Your cart is empty.</p><LBtn variant="gold" to="#market" onClick={()=>cart.setOpen(false)}>Browse the market</LBtn></div>}
     </motion.aside></>}</AnimatePresence>;
 }
@@ -198,6 +199,32 @@ export function ServiceBanner({services=[]}){
 }
 
 /* ---------- plans ---------- */
+function PublicPlanDetails({ plan }) {
+  const services = plan.includedServices || [];
+  const benefits = plan.benefits || [];
+  const limitations = plan.limitations || [];
+  return <div className="plan-details">
+    <div className="plan-facts">
+      <div><span>Service frequency</span><b>{plan.serviceFrequency || 'Not configured'}</b></div>
+      <div><span>Plant limit</span><b>{plan.plantLimit == null ? 'No stated limit' : `Up to ${plan.plantLimit} plants`}</b></div>
+    </div>
+    <div className="plan-detail-group">
+      <b>Included services</b>
+      {services.length ? <ul>{services.map(service => <li key={service.id}><span><b>{service.name}</b>{service.description && <em>{service.description}</em>}</span>{service.durationLabel && <small>{service.durationLabel}</small>}</li>)}</ul> : <p className="plan-detail-empty">Included services are being confirmed.</p>}
+    </div>
+    {benefits.length > 0 && <div className="plan-detail-group"><b>Benefits</b><ul>{benefits.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
+    {limitations.length > 0 && <div className="plan-detail-group"><b>Limitations</b><ul>{limitations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
+    <div className="plan-renewal-note">
+      {plan.planType === 'ONE_TIME_SERVICE'
+        ? 'One-time payment. This plan does not renew automatically.'
+        : plan.autoRenew
+          ? 'Automatic renewal through UPI AutoPay requires your explicit mandate approval. Cancel the mandate in your UPI app to stop future renewals; paid benefits remain available until the paid-through date.'
+          : 'Existing billing terms apply. Contact T-CARE before choosing this legacy plan.'}
+    </div>
+    {plan.autoRenew && !plan.upiAutopayEligible && <p className="plan-warning">This plan is not currently eligible for UPI AutoPay at its listed amount. It cannot be purchased as an automatic-renewal plan.</p>}
+  </div>;
+}
+
 export function Plans(){
   const {items:plans,loading,error,retry}=usePublicList('/subscriptions/plans','plans');
   return <section className="lsec plans" id="plans"><Head center eyebrow="Plans & pricing">Care plans that <em>grow with you</em></Head>
@@ -205,12 +232,13 @@ export function Plans(){
     {error&&!plans.length?<div className="public-state" role="alert"><p>Plans are temporarily unavailable.</p><button type="button" className="tl" onClick={retry}>Try again</button></div>:null}
     {!loading&&!error&&!plans.length?<div className="public-state"><p>No plans are available right now.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Browse care services <ArrowRight size={14}/></LBtn><LBtn to="/contact" variant="outline">Contact T-Care</LBtn></div></div>:null}
     {!!plans.length&&<div className="plan-grid">{plans.map((p,i)=><Reveal key={p.id} delay={i*.08} className={'plan'+(i===1?' dark':'')}>
-      <small>Subscription</small><h3>{p.name}</h3>{p.description&&<p>{p.description}</p>}
-      <ul><li><Leaf size={13}/>Billed {p.billingCycle}</li>{p.plantLimit==null?<li><Leaf size={13}/>No stated plant limit</li>:<li><Leaf size={13}/>Up to {p.plantLimit} plants</li>}</ul>
-      <div className="plan-price"><b>{money(p.price)}</b><span>/ {p.billingCycle}</span></div>
-      <LBtn to="/garden/plan" variant={i===1?'gold':'dark'} full>Request this plan <ArrowRight size={14}/></LBtn>
+      <div className="plan-topline"><small>{p.planTypeLabel || 'Care plan'}</small>{p.autoRenew && <span className="plan-auto-tag">Auto-renew</span>}</div>
+      <h3>{p.name}</h3>{p.description&&<p>{p.description}</p>}
+      <PublicPlanDetails plan={p}/>
+      <div className="plan-price"><b>{money(p.price)}</b><span>/ {p.planType === 'ONE_TIME_SERVICE' ? 'one-time' : p.billingCycle}</span></div>
+      <LBtn to="/garden/plan" variant={i===1?'gold':'dark'} full>View plan details <ArrowRight size={14}/></LBtn>
     </Reveal>)}</div>}
-    <p className="catalog-note">A plan becomes active after payment is confirmed.</p>
+    <p className="catalog-note">Recurring plans renew only after you approve a UPI AutoPay mandate. Cancelling that mandate stops future renewals; benefits already paid for continue until the paid-through date.</p>
     <div className="plan-more"><LBtn to="/garden/plan" variant="outline">Open your subscription account</LBtn></div></section>;
 }
 
@@ -250,10 +278,10 @@ function Row({children,label}){
 export function Market({cart}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
   return <section className="lsec market" id="market"><div className="lsec-top"><Head eyebrow="T-Care market" sub="Browse plants and gardening essentials available in the store.">Everything your <em>plants</em> need</Head><LBtn to="/store" variant="outline">Open plant store</LBtn></div>
-    {loading&&!products.length?<div className="public-state">Loading products…</div>:null}
+    {loading&&!products.length?<div className="public-state public-loading" role="status" aria-live="polite" aria-busy="true"><span>Loading products…</span><div className="public-product-skeletons" aria-hidden="true">{Array.from({length:4},(_,i)=><i key={i}/>)}</div></div>:null}
     {error&&!products.length?<div className="public-state" role="alert"><p>Plant catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
     {!loading&&!error&&!products.length?<div className="public-state"><p>No products are available right now.</p><div className="public-state-actions"><LBtn to="/services" variant="dark">Explore care services <ArrowRight size={14}/></LBtn></div></div>:null}
-    {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
+    {!!products.length&&<Row label="products">{products.slice(0,8).map(p=><article className="pcard" key={p.id}><ProductArt product={p}/><div className="pbody"><small>{p.category}</small><h4>{p.name}</h4><div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></article>)}</Row>}
   </section>;
 }
 

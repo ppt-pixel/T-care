@@ -118,14 +118,14 @@ export function AboutPage(){
 
 /* ============ PLANS ============ */
 const FAQ_PLANS=[
-  ['Can I change my plan later?','Contact T-Care before your next billing date. Available changes depend on your subscription.'],
-  ['Can I pause or cancel?','If pause or cancellation is available for your plan, you can manage it from your subscription account.'],
-  ['When will I be charged?','Your plan stays pending until payment is confirmed.'],
-  ['Where can I see what my plan includes?','Each plan lists its billing period, price and plant limit.'],
+  ['Can I change my plan later?','UPI AutoPay plans cannot be edited after the mandate is created. Choose the plan carefully before approving the mandate; contact T-CARE if you want to move to a different plan.'],
+  ['How do I stop automatic renewal?','Cancel the UPI AutoPay mandate from the UPI payment app where you approved it. T-CARE will stop future renewals, while benefits already paid for remain available until the paid-through date.'],
+  ['When will I be charged?','A recurring plan starts only after you approve its UPI AutoPay mandate and Razorpay confirms the subscription. Subsequent eligible charges follow the plan schedule.'],
+  ['Where can I see what my plan includes?','Each plan shows its service frequency, included services, benefits, limitations, plant limit, price and renewal terms before you choose it.'],
 ];
 export function PlansPage(){
   return <>
-    <PageHero eyebrow="Plans & pricing" title={<>Care plans that <em>grow with you</em></>} sub="Compare available plans, prices, billing periods and plant limits.">
+    <PageHero eyebrow="Plans & pricing" title={<>Care plans that <em>grow with you</em></>} sub="Compare included services, visit frequency, benefits, limitations, prices and renewal terms.">
       <LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn>
     </PageHero>
     <Plans/>
@@ -145,14 +145,15 @@ export function StorePage({cart}){
   const {items:products,loading,error,retry}=usePublicList('/products?limit=100','products');
   const cats=['All',...Array.from(new Set(products.map(p=>p.category).filter(Boolean)))];
   const [cat,setCat]=React.useState('All');
+  const [selected,setSelected]=React.useState(null);
   const list=products.filter(p=>cat==='All'||p.category===cat);
   React.useEffect(()=>{if(cat!=='All'&&!cats.includes(cat))setCat('All')},[cat,cats.join('|')]);
   return <>
-    <PageHero eyebrow="T-Care market" title={<>Everything your <em>plants</em> need</>} sub="Browse plants and gardening essentials, with prices and stock shown on each listing.">
+    <PageHero eyebrow="T-Care market" title={<>Everything your <em>plants</em> need</>} sub="Browse plants and gardening essentials, with current prices and stock shown on each listing.">
       <LBtn onClick={()=>cart.setOpen(true)} variant="gold">View cart{cart.count>0?` (${cart.count})`:''} <ArrowRight size={15}/></LBtn>
     </PageHero>
     <section className="lsec store">
-      {loading&&!products.length?<div className="public-state" role="status">Loading products…</div>:null}
+      {loading&&!products.length?<div className="public-state public-loading" role="status" aria-live="polite" aria-busy="true"><span>Loading products…</span><div className="public-product-skeletons" aria-hidden="true">{Array.from({length:6},(_,i)=><i key={i}/>)}</div></div>:null}
       {error&&!products.length?<div className="public-state" role="alert"><p>The product catalogue is temporarily unavailable.</p><button className="tl" onClick={retry}>Try again</button></div>:null}
       {!!products.length&&<>
         <div className="chips" role="tablist" aria-label="Product categories">{cats.map(c=><button type="button" key={c} role="tab" aria-selected={cat===c} className={cat===c?'on':''} onClick={()=>setCat(c)}>{c}</button>)}</div>
@@ -160,8 +161,9 @@ export function StorePage({cart}){
           const discount=p.compareAtPrice>p.price?Math.round((p.compareAtPrice-p.price)/p.compareAtPrice*100):0;
           return <Reveal key={p.id} delay={(i%4)*.05} className="pcard">{discount>0&&<span className="off">{discount}% OFF</span>}<ProductArt product={p}/>
             <div className="pbody"><small>{p.category} · {p.stockQuantity>0?`${p.stockQuantity} in stock`:'Out of stock'}</small><h4>{p.name}</h4>{p.description&&<p className="product-desc">{p.description}</p>}
-              <div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div>
-                <button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div></div></Reveal>;
+              <div className="pfoot"><div><b>{money(p.price)}</b>{p.compareAtPrice>p.price&&<s>{money(p.compareAtPrice)}</s>}</div><button className="add" type="button" disabled={p.stockQuantity<=0} onClick={()=>cart.add({...p,kind:p.kind||'snake',pot:p.potColor||'#e8e1d2'})}>{p.stockQuantity>0?'Add to Cart':'Out of stock'}</button></div>
+              <button className="store-detail-link" type="button" onClick={()=>setSelected(p)}>View product details</button>
+            </div></Reveal>;
         })}</div>
         {!list.length&&<div className="public-state">No products are available in this category.</div>}
       </>}
@@ -169,8 +171,8 @@ export function StorePage({cart}){
     </section>
     <section className="lsec perks"><Head center eyebrow="Shop with clarity">Product details, <em>clear pricing</em></Head>
       <div className="commit-grid four">{STORE_PERKS.map(([I,t,d],i)=><Reveal key={t} delay={i*.06} className="commit-card"><span className="ic"><I size={22}/></span><h3>{t}</h3><p>{d}</p></Reveal>)}</div></section>
-    <section className="lsec guide"><Reveal className="guide-card"><div><span className="eyebrow">Need help with plant care?</span><h2>Find care that <em>suits your space</em></h2><p>Explore available services and book a visit for your plants.</p></div><div className="cta-btns"><LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="outline">Book a care visit</LBtn></div></Reveal></section>
-    <p className="catalog-note">Products can be browsed and saved in your cart. Orders, payment and delivery are not available in the store.</p>
+    <section className="lsec guide"><Reveal className="guide-card"><div><span className="eyebrow">Need help with plant care?</span><h2>Find care that <em>suits your space</em></h2><p>Explore care services and book a visit for your plants.</p></div><div className="cta-btns"><LBtn to="/services" variant="gold">Explore care services <ArrowRight size={15}/></LBtn><LBtn to="/garden/book" variant="outline">Book a care visit</LBtn></div></Reveal></section>
+    {selected&&<div className="store-detail-overlay" role="presentation" onClick={()=>setSelected(null)}><section className="store-detail-modal" role="dialog" aria-modal="true" aria-label={`${selected.name} product details`} onClick={event=>event.stopPropagation()}><button className="store-detail-close" type="button" onClick={()=>setSelected(null)} aria-label="Close product details">×</button><ProductArt product={selected}/><div className="store-detail-content"><small>{selected.category}</small><h2>{selected.name}</h2><strong>{money(selected.price)}</strong>{selected.description&&<p>{selected.description}</p>}{selected.careInstructions&&<div><b>Care instructions</b><p>{selected.careInstructions}</p></div>}{selected.lightRequirements&&<div><b>Light</b><p>{selected.lightRequirements}</p></div>}{selected.wateringFrequency&&<div><b>Watering</b><p>{selected.wateringFrequency}</p></div>}{selected.safetyNote&&<div><b>Safety</b><p>{selected.safetyNote}</p></div>}<small>{selected.stockQuantity>0?`${selected.stockQuantity} available`:'Currently out of stock'}</small><button className="add" type="button" disabled={selected.stockQuantity<=0} onClick={()=>{cart.add({...selected,kind:selected.kind||'snake',pot:selected.potColor||'#e8e1d2'});setSelected(null);}}>{selected.stockQuantity>0?'Add to cart':'Out of stock'}</button></div></section></div>}
   </>;
 }
 

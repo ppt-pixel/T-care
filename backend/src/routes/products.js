@@ -13,6 +13,10 @@ const productFields = {
   category: z.string().trim().min(2).max(80),
   kind: z.string().trim().max(40).nullable().optional(),
   imageUrl: z.string().url().max(2000).nullable().optional(),
+  careInstructions: z.string().trim().max(3000).nullable().optional(),
+  lightRequirements: z.string().trim().max(500).nullable().optional(),
+  wateringFrequency: z.string().trim().max(500).nullable().optional(),
+  safetyNote: z.string().trim().max(500).nullable().optional(),
   potColor: z.string().trim().max(40).nullable().optional(),
   price: z.number().finite().nonnegative(),
   compareAtPrice: z.number().finite().nonnegative().nullable().optional(),
@@ -54,7 +58,7 @@ router.get('/', async (req, res, next) => {
     const [items, total] = await prisma.$transaction([
       prisma.product.findMany({
         where,
-        select: { id: true, name: true, description: true, category: true, kind: true, imageUrl: true, potColor: true, price: true, compareAtPrice: true, stockQuantity: true },
+        select: { id: true, name: true, description: true, category: true, kind: true, imageUrl: true, careInstructions: true, lightRequirements: true, wateringFrequency: true, safetyNote: true, potColor: true, price: true, compareAtPrice: true, stockQuantity: true },
         orderBy: [{ category: 'asc' }, { name: 'asc' }],
         skip: (query.page - 1) * query.limit,
         take: query.limit

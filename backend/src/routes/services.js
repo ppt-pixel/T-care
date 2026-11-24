@@ -120,11 +120,15 @@ admin.delete('/:id', async (req, res, next) => {
   try {
     const existing = await prisma.service.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'SERVICE_NOT_FOUND', message: 'Service not found.' });
-    const bookingCount = await prisma.booking.count({ where: { serviceId: existing.id } });
-    if (bookingCount) {
+    const [bookingCount, planLinkCount] = await Promise.all([
+      prisma.booking.count({ where: { serviceId: existing.id } }),
+      prisma.subscriptionPlanService.count({ where: { serviceId: existing.id } })
+    ]);
+    if (bookingCount || planLinkCount) {
+      const reasons = [bookingCount ? 'booking history' : null, planLinkCount ? 'subscription plan inclusions' : null].filter(Boolean);
       const service = await prisma.service.update({ where: { id: existing.id }, data: { status: 'INACTIVE' } });
-      await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Service', entityId: service.id, metadata: { fromStatus: existing.status, toStatus: 'INACTIVE', reason: 'Service has booking history.' } } });
-      return res.json({ service, deactivated: true, message: 'Service has booking history and was deactivated instead of deleted.' });
+      await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Service', entityId: service.id, metadata: { fromStatus: existing.status, toStatus: 'INACTIVE', reason: reasons } } });
+      return res.json({ service, deactivated: true, message: `Service was deactivated instead of deleted because it is referenced by ${reasons.join(' and ')}.` });
     }
     await prisma.auditLog.create({ data: { actorUserId: req.auth.id, action: 'DELETE', entityType: 'Service', entityId: existing.id, metadata: { name: existing.name } } });
     await prisma.service.delete({ where: { id: existing.id } });

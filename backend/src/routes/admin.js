@@ -6,6 +6,7 @@ import { canTransitionBooking } from './bookings.js';
 import { notifyUserSafely } from '../lib/notifications.js';
 import { buildDailyBookingSeries, summarizeFinance } from '../lib/adminMetrics.js';
 import { createManagedAccount, resetManagedCustomerPassword } from '../lib/adminAccounts.js';
+import { canRestoreVisitCredit } from '../lib/subscriptionPlanRules.js';
 
 const router = Router();
 router.use((req, res, next) => {
@@ -363,6 +364,9 @@ router.patch('/bookings/:id/status', async(req, res, next) => {
         });
         if (!booking) return res.status(404).json({ error: 'BOOKING_NOT_FOUND', message: 'Booking not found.' });
         if (!canTransitionBooking(booking.status, input.status)) return res.status(409).json({ error: 'INVALID_BOOKING_TRANSITION', message: `Booking cannot transition from ${booking.status} to ${input.status}.` });
+        if (input.status === 'CANCELLED' && ['PENDING', 'AUTHORIZED'].includes(booking.payment?.status)) {
+            return res.status(409).json({ error: 'PAYMENT_PENDING', message: 'A pending or authorized payment must be resolved before this booking can be cancelled.' });
+        }
         if (input.status === 'CANCELLED' && ['PAID', 'PARTIALLY_REFUNDED'].includes(booking.payment?.status)) {
             return res.status(409).json({ error: 'REFUND_REQUIRED', message: 'A processed payment must go through the refund workflow before this booking can be cancelled.' });
         }
@@ -370,22 +374,39 @@ router.patch('/bookings/:id/status', async(req, res, next) => {
             await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${booking.id} FOR UPDATE`;
             const current = await tx.booking.findUnique({
                 where: { id: booking.id },
-                include: { assignment: { include: { gardener: { select: { userId: true } } } }, payment: { select: { status: true } } }
+                include: { assignment: { include: { gardener: { select: { userId: true } } } }, payment: { select: { status: true } }, subscriptionVisitCredit: true }
             });
             if (!current) throw Object.assign(new Error('Booking not found.'), { statusCode: 404, code: 'BOOKING_NOT_FOUND' });
             if (!canTransitionBooking(current.status, input.status)) {
                 throw Object.assign(new Error(`Booking cannot transition from ${current.status} to ${input.status}.`), { statusCode: 409, code: 'INVALID_BOOKING_TRANSITION' });
             }
+            if (input.status === 'CANCELLED' && ['PENDING', 'AUTHORIZED'].includes(current.payment?.status)) {
+                throw Object.assign(new Error('A pending or authorized payment must be resolved before this booking can be cancelled.'), { statusCode: 409, code: 'PAYMENT_PENDING' });
+            }
             if (input.status === 'CANCELLED' && ['PAID', 'PARTIALLY_REFUNDED'].includes(current.payment?.status)) {
                 throw Object.assign(new Error('A processed payment must go through the refund workflow before this booking can be cancelled.'), { statusCode: 409, code: 'REFUND_REQUIRED' });
             }
-            const updated = await tx.booking.update({ where: { id: current.id }, data: { status: input.status } });
+            let creditRestored = false;
+            if (input.status === 'CANCELLED' && current.subscriptionVisitCreditId && canRestoreVisitCredit({
+                bookingStatus: current.status,
+                assignmentStartedAt: current.assignment?.startedAt,
+                creditRestoredAt: current.creditRestoredAt
+            })) {
+                await tx.$queryRaw`SELECT "id" FROM "SubscriptionVisitCredit" WHERE "id" = ${current.subscriptionVisitCreditId} FOR UPDATE`;
+                const restored = await tx.subscriptionVisitCredit.updateMany({
+                    where: { id: current.subscriptionVisitCreditId, visitsUsed: { gt: 0 } },
+                    data: { visitsUsed: { decrement: 1 } }
+                });
+                if (restored.count !== 1) throw Object.assign(new Error('The subscription visit credit could not be restored safely. Contact T-CARE support.'), { statusCode: 409, code: 'VISIT_CREDIT_RESTORE_CONFLICT' });
+                creditRestored = true;
+            }
+            const updated = await tx.booking.update({ where: { id: current.id }, data: { status: input.status, ...(creditRestored ? { creditRestoredAt: new Date() } : {}) } });
             if (input.status === 'CANCELLED' && current.assignment) {
                 await tx.gardenerAssignment.update({ where: { id: current.assignment.id }, data: { status: 'CANCELLED' } });
             }
             await tx.bookingStatusHistory.create({ data: { bookingId: current.id, fromStatus: current.status, toStatus: input.status, changedBy: req.auth.id, note: input.note || 'Administrative status change.' } });
-            await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: current.id, metadata: { from: current.status, to: input.status, note: input.note } } });
-            return { booking: updated, assignment: current.assignment };
+            await tx.auditLog.create({ data: { actorUserId: req.auth.id, action: 'STATUS_CHANGE', entityType: 'Booking', entityId: current.id, metadata: { from: current.status, to: input.status, note: input.note, subscriptionVisitCreditRestored: creditRestored } } });
+            return { booking: updated, assignment: current.assignment, creditRestored };
         });
         if (input.status === 'CANCELLED') {
             await notifyUserSafely({ userId: booking.customer.userId, type: 'BOOKING', channel: 'IN_APP', title: 'Booking cancelled', body: `Booking ${booking.reference} was cancelled by T-CARE.` });
@@ -460,11 +481,14 @@ router.get('/payments', async(req, res, next) => {
                 { booking: { customer: { user: { email: searchFilter } } } },
                 { subscription: { plan: { name: searchFilter } } },
                 { subscription: { customer: { user: { fullName: searchFilter } } } },
-                { subscription: { customer: { user: { email: searchFilter } } } }
+                { subscription: { customer: { user: { email: searchFilter } } } },
+                { shopOrder: { orderNumber: searchFilter } },
+                { shopOrder: { customer: { user: { fullName: searchFilter } } } },
+                { shopOrder: { customer: { user: { email: searchFilter } } } }
             ] } : {})
         };
         const [payments, total] = await prisma.$transaction([
-            prisma.payment.findMany({ where, include: { booking: { select: { id: true, reference: true, service: { select: { name: true } }, customer: { include: { user: { select: { fullName: true, email: true } } } } } }, subscription: { select: { id: true, customer: { include: { user: { select: { fullName: true, email: true } } } }, plan: true } }, refunds: true, receipt: true }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
+            prisma.payment.findMany({ where, include: { booking: { select: { id: true, reference: true, service: { select: { name: true } }, customer: { include: { user: { select: { fullName: true, email: true } } } } } }, subscription: { select: { id: true, customer: { include: { user: { select: { fullName: true, email: true } } } }, plan: true } }, shopOrder: { select: { id: true, orderNumber: true, customer: { include: { user: { select: { fullName: true, email: true } } } } } }, refunds: true, receipt: true }, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.limit, take: q.limit }),
             prisma.payment.count({ where })
         ]);
         res.json({ payments: payments.map(p => ({...p, amount: serializeMoney(p.amount), refunds: p.refunds.map(r => ({...r, amount: serializeMoney(r.amount) })) })), pagination: { page: q.page, limit: q.limit, total, pages: Math.ceil(total / q.limit) } });

@@ -51,6 +51,14 @@ enum ServiceStatus {
   INACTIVE
 }
 
+enum SubscriptionPlanType {
+  ONE_TIME_SERVICE
+  WEEKLY
+  ONE_MONTH
+  ONE_YEAR
+  LEGACY_RECURRING
+}
+
 enum BookingStatus {
   CONFIRMED
   GARDENER_ASSIGNED
@@ -87,11 +95,29 @@ enum PaymentMethod {
   OTHER
 }
 
+enum ShopOrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_REVIEW
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
 enum ReceiptDeliveryStatus {
   PENDING
   SENDING
   SENT
   FAILED
+}
+
+enum QrPaymentSessionStatus {
+  ACTIVE
+  PAID
+  EXPIRED
+  CANCELLED
 }
 
 enum SubscriptionStatus {
@@ -191,6 +217,7 @@ model CustomerProfile {
   plants        Plant[]
   bookings      Booking[]
   subscriptions Subscription[]
+  shopOrders    ShopOrder[]
   reviews       Review[]
   issues        IssueReport[]
   createdAt     DateTime       @default(now())
@@ -380,6 +407,7 @@ model Service {
   updatedAt       DateTime       @updatedAt
   prices          ServicePrice[]
   bookings        Booking[]
+  planLinks       SubscriptionPlanService[]
 }
 
 model ServicePrice {
@@ -408,6 +436,8 @@ model Booking {
   scheduledStart      DateTime
   scheduledEnd        DateTime
   specialInstructions String?
+  idempotencyKey      String?                @unique
+  idempotencyFingerprint String?
   status              BookingStatus          @default(CONFIRMED)
   subtotal            Decimal                @db.Decimal(10, 2)
   convenienceFee      Decimal                @default(0) @db.Decimal(10, 2)
@@ -420,10 +450,18 @@ model Booking {
   report              ServiceReport?
   payment             Payment?
   review              Review?
+  subscriptionId String?
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionPlanId String?
+  subscriptionPlan SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id], onDelete: SetNull)
+  subscriptionVisitCreditId String?
+  subscriptionVisitCredit SubscriptionVisitCredit? @relation(fields: [subscriptionVisitCreditId], references: [id], onDelete: SetNull)
+  creditRestoredAt DateTime?
   issues              IssueReport[]
   careRecords         PlantCareRecord[]
 
   @@index([customerId, status, scheduledStart])
+  @@index([subscriptionId, scheduledStart])
   @@index([serviceId, scheduledStart])
   @@index([status, scheduledStart])
 }
@@ -548,11 +586,30 @@ model Payment {
   refunds           Refund[]
   events            PaymentEvent[]
   receipt           PaymentReceipt?
+  shopOrderId       String?        @unique
+  shopOrder         ShopOrder?     @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+  qrSessions        PaymentQrSession[]
 
   @@index([status, createdAt])
   @@index([provider, providerPaymentId])
   // Partial uniqueness for active subscription payments is maintained in SQL migration.
   @@index([subscriptionId, status])
+}
+
+model PaymentQrSession {
+  id                String                 @id @default(cuid())
+  paymentId         String
+  payment           Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  providerQrCodeId  String                 @unique
+  imageUrl          String
+  shortUrl          String
+  status            QrPaymentSessionStatus @default(ACTIVE)
+  expiresAt         DateTime
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([paymentId, status, createdAt])
+  @@index([status, expiresAt])
 }
 
 model PaymentReceipt {
@@ -611,34 +668,80 @@ model Refund {
 }
 
 model SubscriptionPlan {
-  id            String         @id @default(cuid())
-  name          String         @unique
-  description   String?
-  billingCycle  String
-  plantLimit    Int?
-  price         Decimal        @db.Decimal(10, 2)
-  status        ServiceStatus  @default(ACTIVE)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  subscriptions Subscription[]
+  id              String                 @id @default(cuid())
+  name            String                 @unique
+  description     String?
+  planType        SubscriptionPlanType   @default(LEGACY_RECURRING)
+  billingCycle    String
+  serviceFrequency String?
+  plantLimit      Int?
+  price           Decimal                @db.Decimal(10, 2)
+  benefits        String[]               @default([])
+  limitations     String[]               @default([])
+  razorpayPlanId  String?                @unique
+  includedVisitsPerPeriod Int?
+  minimumVisitIntervalDays Int?
+  maxRenewalCycles Int?
+  status          ServiceStatus          @default(ACTIVE)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  subscriptions   Subscription[]
+  serviceLinks    SubscriptionPlanService[]
+  bookings        Booking[]
+
+  @@index([status, planType, price])
+}
+
+model SubscriptionPlanService {
+  planId    String
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  serviceId String
+  service   Service          @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@id([planId, serviceId])
+  @@index([serviceId])
 }
 
 model Subscription {
-  id          String             @id @default(cuid())
-  customerId  String
-  customer    CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  planId      String
-  plan        SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
-  status      SubscriptionStatus @default(PENDING)
-  startedAt   DateTime?
-  renewsAt    DateTime?
-  pausedAt    DateTime?
-  cancelledAt DateTime?
-  payments    Payment[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id                    String             @id @default(cuid())
+  customerId            String
+  customer              CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  planId                String
+  plan                  SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status                SubscriptionStatus @default(PENDING)
+  startedAt             DateTime?
+  renewsAt              DateTime?
+  pausedAt              DateTime?
+  cancelledAt           DateTime?
+  cancelAtPeriodEnd     Boolean            @default(false)
+  providerSubscriptionId String?            @unique
+  providerSubscriptionStatus String?
+  providerSubscriptionCreateState String     @default("NOT_STARTED")
+  mandateAuthorizedAt DateTime?
+  idempotencyKey String? @unique
+  visitCredits SubscriptionVisitCredit[]
+  bookings Booking[]
+  payments              Payment[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   @@index([customerId, status])
+}
+
+model SubscriptionVisitCredit {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  periodStart    DateTime
+  periodEnd      DateTime
+  visitsGranted  Int
+  visitsUsed     Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  bookings       Booking[]
+
+  @@unique([subscriptionId, periodStart])
+  @@index([subscriptionId, periodEnd])
 }
 
 model Notification {
@@ -720,9 +823,86 @@ model Product {
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
   stockMovements  ProductStockMovement[]
+  orderItems      ShopOrderItem[]
+  careInstructions String?
+  lightRequirements String?
+  wateringFrequency String?
+  safetyNote       String?
 
   @@index([status, category, name])
   @@index([stockQuantity])
+}
+
+
+model StoreSettings {
+  id              String   @id @default("default")
+  shippingFee     Decimal  @default(0) @db.Decimal(10, 2)
+  taxRateBps      Int      @default(0)
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+model ShopOrder {
+  id                 String          @id @default(cuid())
+  orderNumber        String          @unique
+  customerId         String
+  customer           CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  status             ShopOrderStatus @default(PENDING_PAYMENT)
+  currency           String          @default("INR")
+  subtotal           Decimal         @db.Decimal(10, 2)
+  taxRateBps         Int             @default(0)
+  taxAmount          Decimal         @default(0) @db.Decimal(10, 2)
+  shippingFee        Decimal         @default(0) @db.Decimal(10, 2)
+  total              Decimal         @db.Decimal(10, 2)
+  recipientName      String
+  recipientEmail     String
+  recipientPhone     String
+  addressLine1       String
+  addressLine2       String?
+  city               String
+  state              String
+  postalCode         String
+  country            String          @default("India")
+  customerNote       String?
+  trackingNumber     String?
+  carrier            String?
+  fulfillmentNote    String?
+  idempotencyKey     String          @unique
+  requestFingerprint String
+  expiresAt          DateTime
+  stockReleasedAt    DateTime?
+  paidAt             DateTime?
+  processedAt        DateTime?
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  items              ShopOrderItem[]
+  payment            Payment?
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@index([expiresAt, status])
+}
+
+model ShopOrderItem {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productSku  String
+  productName String
+  imageUrl    String?
+  unitPrice   Decimal   @db.Decimal(10, 2)
+  quantity    Int
+  lineTotal   Decimal   @db.Decimal(10, 2)
+  createdAt   DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([productId])
 }
 
 model ProductStockMovement {
