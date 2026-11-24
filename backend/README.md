@@ -30,9 +30,6 @@ The application is designed so moving from Supabase Free to Pro does not require
 
 The backend includes server-authoritative Razorpay order creation, client-signature verification, signed webhook processing and Admin refund endpoints. Provider-confirmed payments create an idempotent receipt snapshot and email; Admins can search and paginate the payment ledger and retry receipt delivery. Receipt email status reflects the current payment state while retaining the original amount paid. Booking checkout is available in the Customer booking detail view only when the backend payment flag and Razorpay API credentials are configured. Configure `PAYMENT_PROVIDER`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` only on the server. Never expose secret values to the frontend. See `docs/T-CARE-PAYMENT-SECURITY.md` before enabling live payments.
 
-For local booking-payment testing, create an ignored `backend/.env.test` file using an isolated local database on `localhost:55432/tcare_payment_test`, keep `PAYMENTS_ENABLED=false`, and set `PAYMENT_TEST_CUSTOMER_EMAIL` to a synthetic `example.invalid` address plus `PAYMENT_TEST_CUSTOMER_PASSWORD` (12-72 UTF-8 bytes). Run `npm run payments:seed-test` from `backend/` to create a verified synthetic Customer, plant, address, active service and future booking. The script refuses any database URL other than the exact local test target and sends no email or Razorpay requests. Keep the existing `backend/.env` unchanged.
-
-
 ## Authentication and email verification
 
 Public registration creates Customer accounts only. The optional legacy `accountType` field accepts only `CUSTOMER`; Gardener and Admin role assignments are rejected. The API creates a Customer profile and a `PENDING` user record, and does not issue a session until email verification succeeds.
