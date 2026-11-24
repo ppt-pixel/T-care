@@ -132,14 +132,14 @@ export function StoreCheckoutPage({ cart, authUser }) {
 
   const subtotal = cart.items.reduce((sum, item) => sum + Number(item.price || 0) * item.qty, 0);
   return <section className="store-checkout-page">
-    <div className="store-checkout-top"><Link to="/store"><ArrowLeft size={16}/> Back to Plant Store</Link><span>Secure checkout · Razorpay</span></div>
+    <div className="store-checkout-top"><Link to="/store"><ArrowLeft size={16}/> Back to Plant Store</Link><span>{storeAvailability?.checkoutEnabled === true ? 'Secure payment · Razorpay' : 'Your cart'}</span></div>
     <div className="store-checkout-grid">
       <div className="store-checkout-main">
         <header><small>T-CARE MARKET</small><h1>Delivery details</h1><p>Enter where you want your plants and gardening products delivered.</p></header>
         {!authUser ? <div className="store-checkout-message"><b>Sign in required</b><p>Please sign in with your Customer account before placing an order.</p><Link to="/login">Sign in to continue</Link></div> : authUser.role !== 'CUSTOMER' ? <div className="store-checkout-message"><b>Customer account required</b><p>Store checkout is available to Customer accounts.</p><Link to="/">Return to T-CARE</Link></div> : null}
         {error && <div className="store-checkout-error" role="alert">{error}</div>}
         {availabilityError && <div className="store-checkout-error" role="alert">{availabilityError}</div>}
-        {storeAvailability && !storeAvailability.checkoutEnabled && <div className="store-checkout-notice" role="status">Plant Store online checkout is not enabled yet. You can continue browsing the catalogue; no payment will be requested.</div>}
+        {storeAvailability && !storeAvailability.checkoutEnabled && <div className="store-checkout-notice store-checkout-unavailable" role="status"><b>Online store orders are not available yet</b><p>You can still browse the Plant Store and keep items in your cart. T-CARE has not opened online ordering, so no payment will be requested or taken.</p><Link to="/store">Continue browsing the Plant Store</Link></div>}
         {notice && <div className="store-checkout-notice" role="status">{notice}</div>}
         {authUser?.role === 'CUSTOMER' && <form className="store-address-form" onSubmit={submit} aria-busy={busy}>
           <fieldset className="store-checkout-fields" disabled={busy || Boolean(qrPayment)}>

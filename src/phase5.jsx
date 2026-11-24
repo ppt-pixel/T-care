@@ -424,9 +424,11 @@ export function CustomerBookingCreatePage({ Shell }) {
   const [selectedPlanId, setSelectedPlanId] = React.useState(searchParams.get('planId') || '');
   const [serviceId, setServiceId] = React.useState(''), [plantIds, setPlantIds] = React.useState([]), [addressId, setAddressId] = React.useState(''), [scheduledStart, setScheduledStart] = React.useState(''), [specialInstructions, setSpecialInstructions] = React.useState('');
   const [showAddress, setShowAddress] = React.useState(false), [address, setAddress] = React.useState({ label: 'Home', type: 'HOME', line1: '', line2: '', city: '', state: '', postalCode: '', isDefault: true });
+  const [bookingStep, setBookingStep] = React.useState(0), [stepError, setStepError] = React.useState('');
   const bookingIdempotencyKey = React.useRef(null);
   const loadVersion = React.useRef(0);
   const loadController = React.useRef(null);
+  const stepHeadingRef = React.useRef(null);
   const load = React.useCallback(async () => {
     loadController.current?.abort();
     const controller = new AbortController();
@@ -460,6 +462,7 @@ export function CustomerBookingCreatePage({ Shell }) {
   React.useEffect(() => { if (!addressId && addresses.length) setAddressId(addresses.find(a => a.isDefault)?.id || addresses[0].id); }, [addresses, addressId]);
 
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || null;
+  const availablePlans = plans.filter(plan => plan.planType !== 'LEGACY_RECURRING');
   const includedServiceIds = selectedPlan?.includedServiceIds || [];
   const serviceOptions = selectedPlan ? services.filter(service => includedServiceIds.includes(service.id)) : services;
   React.useEffect(() => {
@@ -484,17 +487,62 @@ export function CustomerBookingCreatePage({ Shell }) {
           return minB - minA || new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime();
         })[0];
   const planPlantLimitExceeded = Boolean(selectedPlan?.plantLimit && plantIds.length > selectedPlan.plantLimit);
+  const noRecurringCredit = Boolean(selectedPlan?.autoRenew && !currentVisitCredit);
+  const isPlanReady = !selectedPlan || (selectedPlan.bookingReady && (selectedPlan.planType === 'ONE_TIME_SERVICE' || Boolean(currentVisitCredit)));
+  const minDateTime = new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const stepNames = ['Plan & service', 'Your plants', 'Visit details', 'Review'];
+
+  React.useEffect(() => {
+    if (bookingStep > 0) {
+      const heading = stepHeadingRef.current;
+      if (!heading) return;
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }
+  }, [bookingStep]);
+
   const createAddress = async e => {
-    e.preventDefault(); if (busy) return; setBusy(true); setError('');
+    e.preventDefault(); if (busy) return; setBusy(true); setError(''); setStepError('');
     try {
       const result = await request('/customer/addresses', { method: 'POST', body: json(address) });
-      setAddresses(current => [result.address, ...current]); setAddressId(result.address.id); setShowAddress(false); setSuccess('Address saved.');
+      setAddresses(current => [result.address, ...current]); setAddressId(result.address.id); setShowAddress(false); setSuccess('Your address has been saved and selected for this visit.');
+      setAddress({ label: 'Home', type: 'HOME', line1: '', line2: '', city: '', state: '', postalCode: '', isDefault: false });
     } catch (e2) { setError(errorText(e2)); }
     finally { setBusy(false); }
   };
+
+  const continueStep = () => {
+    setStepError('');
+    if (bookingStep === 0) {
+      if (selectedPlan && !selectedPlan.bookingReady) { setStepError('This plan is not ready for new bookings. Choose another option or contact T-CARE support.'); return; }
+      if (selectedPlan?.autoRenew && !currentVisitCredit) { setStepError('This subscription has no available visit credit yet. Activate UPI AutoPay and complete the first-period payment before continuing.'); return; }
+      if (!serviceOptions.length) { setStepError('No service is currently available for this option. Choose another plan or contact T-CARE support.'); return; }
+      if (!serviceId || !serviceOptions.some(service => service.id === serviceId)) { setStepError('Choose the service you would like the Gardener to provide.'); return; }
+    }
+    if (bookingStep === 1) {
+      if (!plants.length) { setStepError('Add at least one plant to your account before booking a visit.'); return; }
+      if (!plantIds.length) { setStepError('Select at least one plant that needs care.'); return; }
+      if (planPlantLimitExceeded) { setStepError(`This plan covers up to ${selectedPlan.plantLimit} plants per visit. Remove a plant to continue.`); return; }
+    }
+    if (bookingStep === 2) {
+      if (!scheduledStart) { setStepError('Choose a date and time for your visit.'); return; }
+      if (scheduledStart < minDateTime) { setStepError('Choose a visit time at least one hour from now.'); return; }
+      if (!addressId || !selectedAddress) { setStepError('Choose a saved service address or add a new one.'); return; }
+    }
+    setBookingStep(current => Math.min(3, current + 1));
+  };
+  const goBackStep = () => { setStepError(''); setBookingStep(current => Math.max(0, current - 1)); };
+  const choosePlan = value => { setSelectedPlanId(value); setPlantIds([]); setStepError(''); };
+
   const submit = async e => {
     e.preventDefault(); if (busy) return;
-    setBusy(true); setError(''); setSuccess('');
+    if (bookingStep < 3) { continueStep(); return; }
+    if (!serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit) {
+      setStepError('A required booking detail is missing. Review the highlighted step before submitting.');
+      setBookingStep(!serviceId ? 0 : !plantIds.length || planPlantLimitExceeded ? 1 : !scheduledStart || !addressId ? 2 : 0);
+      return;
+    }
+    setBusy(true); setError(''); setSuccess(''); setStepError('');
     const body = {
       serviceId,
       plantIds,
@@ -528,69 +576,118 @@ export function CustomerBookingCreatePage({ Shell }) {
       if (submitError?.code === 'IDEMPOTENCY_KEY_REUSED') setSuccess('A previous booking request may already have been submitted. Check your visits before creating another.');
     } finally { setBusy(false); }
   };
-  const noRecurringCredit = selectedPlan?.autoRenew && !currentVisitCredit;
-  const isPlanReady = !selectedPlan || (selectedPlan.bookingReady && (selectedPlan.planType === 'ONE_TIME_SERVICE' || Boolean(currentVisitCredit)));
-  const minDateTime = new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-  return <Shell title="Book a service" sub="Choose a plan, included service, plants, address and a visit time.">
+  return <Shell title="Book a service" sub="Arrange a visit for your plants in four simple steps.">
     <Notice error={error} success={success}/><State loading={loading} error={error} onRetry={load}/>
     {!loading && <form className="p5-panel" onSubmit={submit} aria-busy={busy}>
       <fieldset className="p5-form-lock" disabled={busy}>
-      <PageTitle eyebrow="Booking details" title="Plan your plant-care visit" sub="Review the plan terms and booking details before submitting." action={<Link to="/garden/addresses">Manage saved addresses →</Link>}/>
-      <Panel title="Choose a plan" sub="Plan prices, eligible services and visit allowances are maintained by T-CARE Admin.">
-        <Field label="Plan or payment option">
-          <select value={selectedPlanId} onChange={e => { setSelectedPlanId(e.target.value); setPlantIds([]); }}>
-            <option value="">Pay per service (no subscription plan)</option>
-            {plans.filter(plan => plan.planType !== 'LEGACY_RECURRING').map(plan => <option key={plan.id} value={plan.id}>{plan.name} · {money(plan.price)} / {plan.billingCycle}</option>)}
-          </select>
-        </Field>
-        {selectedPlan && <>
-          <PlanDetails plan={selectedPlan}/>
-          {selectedPlan.autoRenew && <div className="p5-plan-renewal-note">
-            {currentVisitCredit
-              ? `${currentVisitCredit.visitsAvailable} visit credits available in your paid period. Unused visits expire ${dateOnly(currentVisitCredit.periodEnd)}.`
-              : 'This plan needs an authorised UPI AutoPay mandate and a captured first-period payment before booking credits become available.'}
-          </div>}
-          {noRecurringCredit && <div className="p5-actions"><Link className="p5-button primary" to="/garden/plan">View plans and start UPI AutoPay</Link></div>}
-        </>}
-      </Panel>
-      <div className="p5-booking-intent" aria-live="polite"><span>I need</span><strong>{selectedService?.name || 'an included service'}</strong><span>for</span><strong>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'}</strong>{selectedPlan?.autoRenew && <Pill tone="success">Subscription visit</Pill>}</div>
-      <FormGrid>
-        <Field label="Choose an included service">
-          <select required value={serviceId} onChange={e => setServiceId(e.target.value)}>
-            <option value="">Select service</option>
-            {serviceOptions.map(service => <option key={service.id} value={service.id}>{service.name} · {service.durationLabel}</option>)}
-          </select>
-          {selectedPlan && !serviceOptions.length && <small>No active service is currently available in this plan. Contact T-CARE support.</small>}
-        </Field>
-        <Field label="Visit date and time"><input required type="datetime-local" value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} min={minDateTime}/></Field>
-      </FormGrid>
-      {selectedPlan?.autoRenew && selectedPlan.minimumVisitIntervalDays && <p className="p5-muted">Visits must be at least {selectedPlan.minimumVisitIntervalDays} days apart. The visit must occur before the current paid period ends.</p>}
-      <Panel title="Plants for this visit" sub={selectedPlan?.plantLimit ? `This plan covers up to ${selectedPlan.plantLimit} plants per visit.` : 'Choose the plants that need care.'}>
-        {plants.length ? <div className="p5-check-grid">{plants.map(plant => {
-          const lockedByLimit = Boolean(selectedPlan?.plantLimit && plantIds.length >= selectedPlan.plantLimit && !plantIds.includes(plant.id));
-          return <label key={plant.id} className="p5-check"><input type="checkbox" checked={plantIds.includes(plant.id)} disabled={lockedByLimit} onChange={event => setPlantIds(current => event.target.checked ? [...current, plant.id] : current.filter(id => id !== plant.id))}/><span><b>{plant.name}</b><small>{plant.type || statusLabel(plant.healthStatus)}</small></span></label>;
-        })}</div> : <Empty title="Add a plant before booking" text="Add a plant to your collection to request a visit."/>}
-      </Panel>
-      <Panel title="Service address" action={<Button variant="ghost" onClick={() => setShowAddress(value => !value)}>{showAddress ? 'Close' : '+ Add address'}</Button>}>
-        {addresses.length ? <div className="p5-check-grid">{addresses.map(item => <label className="p5-check" key={item.id}><input type="radio" name="address" checked={addressId === item.id} onChange={() => setAddressId(item.id)}/><span><b>{item.label} {item.isDefault ? '· Default' : ''}</b><small>{[item.line1, item.line2, item.city, item.state, item.postalCode].filter(Boolean).join(', ')}</small></span></label>)}</div> : <Empty title="No saved addresses" text="Add the address where you’d like the Gardener to visit."/>}
-        {showAddress && <div className="p5-address-editor"><FormGrid><Field label="Label"><input required value={address.label} onChange={e => setAddress({ ...address, label: e.target.value })}/></Field><Field label="Address type"><select value={address.type} onChange={e => setAddress({ ...address, type: e.target.value })}><option>HOME</option><option>OFFICE</option><option>OTHER</option></select></Field><Field label="Address line 1"><input required value={address.line1} onChange={e => setAddress({ ...address, line1: e.target.value })}/></Field><Field label="Address line 2"><input value={address.line2} onChange={e => setAddress({ ...address, line2: e.target.value })}/></Field><Field label="City"><input required value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })}/></Field><Field label="State"><input required value={address.state} onChange={e => setAddress({ ...address, state: e.target.value })}/></Field><Field label="Postal code"><input required value={address.postalCode} onChange={e => setAddress({ ...address, postalCode: e.target.value })}/></Field></FormGrid><Button onClick={createAddress} disabled={busy}>Save address</Button></div>}
-      </Panel>
-      <Field label="Special instructions"><textarea maxLength="2000" value={specialInstructions} onChange={e => setSpecialInstructions(e.target.value)} placeholder="Access notes, plant-care priorities or other details"/></Field>
-      <section className="p5-booking-review" aria-labelledby="booking-review-title">
-        <h3 id="booking-review-title">Review your booking request</h3>
-        <dl>
-          <div><dt>Plan</dt><dd>{selectedPlan?.name || 'Pay per service'}</dd></div>
-          <div><dt>Service</dt><dd>{selectedService?.name || 'Choose an included service'}</dd></div>
-          <div><dt>Plants</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'Select at least one plant'}</dd></div>
-          <div><dt>Visit time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
-          <div><dt>Service address</dt><dd>{selectedAddress ? `${selectedAddress.label} · ${[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}` : 'Choose or add an address'}</dd></div>
-          <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
-          <div><dt>Amount due for this booking</dt><dd>{selectedPlan?.autoRenew ? 'Included in your paid subscription' : selectedPrice ? money(selectedPrice.amount) : 'Price will be confirmed by T-CARE'}</dd></div>
-        </dl>
-      </section>
-      <p className="p5-booking-policy">Submitting sends a booking request and does not charge a recurring plan again. Subscription visits use one credit from the current paid period; unused visits expire at period end. A One-Time Service plan is charged through the existing Razorpay booking checkout.</p>
-      <div className="p5-actions"><Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || (selectedPlan?.autoRenew && !currentVisitCredit)}>{busy ? 'Submitting booking…' : 'Submit booking request'}</Button></div>
+      <div className="p5-booking-wizard">
+        <PageTitle eyebrow="YOUR VISIT" title="Let's plan your plant-care visit" sub="Choose what your plants need, then tell us when and where to visit."/>
+
+        <nav className="p5-booking-steps" aria-label="Booking progress">
+          {stepNames.map((name, index) => <button key={name} type="button" className={`p5-booking-step ${bookingStep === index ? 'is-current' : ''} ${bookingStep > index ? 'is-complete' : ''}`} aria-current={bookingStep === index ? 'step' : undefined} disabled={index > bookingStep} onClick={() => { setStepError(''); setBookingStep(index); }}>
+            <span className="p5-booking-step-number">{bookingStep > index ? '✓' : index + 1}</span>
+            <span className="p5-booking-step-copy"><b>{name}</b><small>{['Select how to pay', 'Choose what needs care', 'Set the time and location', 'Check everything'][index]}</small></span>
+          </button>)}
+        </nav>
+
+        {stepError && <div className="p5-booking-step-error" role="alert">{stepError}</div>}
+
+        <section className="p5-booking-step-content" aria-labelledby="booking-step-heading">
+          {bookingStep === 0 && <>
+            <div className="p5-booking-step-heading"><span>STEP 1 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Choose your service option</h3><p>Start with a one-time visit or choose a plan that suits your ongoing plant care.</p></div>
+            <div className="p5-booking-choice-grid" role="radiogroup" aria-label="Plan or payment option">
+              <label className={`p5-booking-option-card ${selectedPlanId === '' ? 'is-selected' : ''}`}>
+                <input type="radio" name="bookingPlan" value="" checked={selectedPlanId === ''} onChange={() => choosePlan('')}/>
+                <span className="p5-booking-radio-mark" aria-hidden="true"/>
+                <span className="p5-booking-option-copy"><b>Pay per service</b><small>Book individual visits without a subscription.</small><strong>Pay for each visit</strong></span>
+                <span className="p5-booking-option-tag">Flexible</span>
+              </label>
+              {availablePlans.map(plan => <label key={plan.id} className={`p5-booking-option-card ${selectedPlanId === plan.id ? 'is-selected' : ''}`}>
+                <input type="radio" name="bookingPlan" value={plan.id} checked={selectedPlanId === plan.id} onChange={() => choosePlan(plan.id)}/>
+                <span className="p5-booking-radio-mark" aria-hidden="true"/>
+                <span className="p5-booking-option-copy"><b>{plan.name}</b><small>{plan.planTypeLabel || (plan.autoRenew ? 'Recurring care plan' : 'One-time service plan')} · {plan.billingCycle}</small><strong>{money(plan.price)} <em>/ {plan.billingCycle}</em></strong></span>
+                <span className="p5-booking-option-tag">{plan.autoRenew ? 'Subscription' : 'One-time'}</span>
+              </label>)}
+            </div>
+
+            {selectedPlan && <div className="p5-booking-selected-plan"><PlanDetails plan={selectedPlan}/></div>}
+            {selectedPlan && !selectedPlan.bookingReady && <div className="p5-booking-callout is-warning" role="status"><b>This plan is not ready for new bookings yet.</b><span>Please choose another option or contact T-CARE support for help.</span></div>}
+            {noRecurringCredit && <div className="p5-booking-callout is-warning"><b>Your subscription visit is not available yet.</b><span>Complete UPI AutoPay authorisation and the first-period payment to receive visit credits.</span><Link to="/garden/plan">Review and activate your subscription →</Link></div>}
+
+            <div className="p5-booking-subheading"><div><h4>Choose a service</h4><p>Select the kind of care you would like us to provide.</p></div></div>
+            {serviceOptions.length ? <div className="p5-booking-service-grid" role="radiogroup" aria-label="Available services">
+              {serviceOptions.map(service => <label key={service.id} className={`p5-booking-service-card ${serviceId === service.id ? 'is-selected' : ''}`}>
+                <input type="radio" name="bookingService" value={service.id} checked={serviceId === service.id} onChange={() => { setServiceId(service.id); setStepError(''); }}/>
+                <span className="p5-booking-radio-mark" aria-hidden="true"/>
+                <span className="p5-booking-service-copy"><b>{service.name}</b><small>{service.description || 'Professional plant-care service'}</small></span>
+                <span className="p5-booking-service-duration">{service.durationLabel}</span>
+              </label>)}
+            </div> : <div className="p5-booking-empty"><b>No matching services are available</b><p>Choose another plan or contact T-CARE support. Your selection will not be submitted until a service is available.</p></div>}
+          </>}
+
+          {bookingStep === 1 && <>
+            <div className="p5-booking-step-heading"><span>STEP 2 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Which plants need care?</h3><p>Select every plant you would like the Gardener to look after during this visit.</p></div>
+            <div className="p5-booking-selection-count"><div><strong>{plantIds.length}</strong><span>{plantIds.length === 1 ? 'plant selected' : 'plants selected'}</span></div>{selectedPlan?.plantLimit ? <small>Plan allowance: up to {selectedPlan.plantLimit} {selectedPlan.plantLimit === 1 ? 'plant' : 'plants'} per visit</small> : <small>Select one or more plants for this visit.</small>}</div>
+            {plants.length ? <div className="p5-booking-plant-grid">{plants.map(plant => {
+              const checked = plantIds.includes(plant.id);
+              const lockedByLimit = Boolean(selectedPlan?.plantLimit && plantIds.length >= selectedPlan.plantLimit && !checked);
+              return <label key={plant.id} className={`p5-booking-plant-card ${checked ? 'is-selected' : ''} ${lockedByLimit ? 'is-disabled' : ''}`}>
+                <input type="checkbox" checked={checked} disabled={lockedByLimit} onChange={event => { setPlantIds(current => event.target.checked ? [...current, plant.id] : current.filter(id => id !== plant.id)); setStepError(''); }}/>
+                <span className="p5-booking-checkbox-mark" aria-hidden="true">{checked ? '✓' : ''}</span>
+                <span className="p5-booking-plant-copy"><b>{plant.name}</b><small>{plant.type || 'Plant'}</small><em>{statusLabel(plant.healthStatus || 'HEALTHY')}</em></span>
+                <span className="p5-booking-plant-action">{checked ? 'Selected' : lockedByLimit ? 'Plan limit reached' : 'Add plant'}</span>
+              </label>;
+            })}</div> : <div className="p5-booking-empty"><b>Your plant list is empty</b><p>Add a plant in a new tab, then refresh this list. Your booking selections will stay open here.</p><div className="p5-actions"><Link className="p5-button primary" to="/garden/plants" target="_blank" rel="noreferrer">Open Plants in a new tab</Link><Button variant="ghost" onClick={load}>Refresh plant list</Button></div></div>}
+            {planPlantLimitExceeded && <div className="p5-booking-callout is-warning">This plan covers up to {selectedPlan.plantLimit} plants per visit. Remove a selection to continue.</div>}
+          </>}
+
+          {bookingStep === 2 && <>
+            <div className="p5-booking-step-heading"><span>STEP 3 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">When and where should we visit?</h3><p>Choose a convenient time and the address where your plants are located.</p></div>
+            <div className="p5-booking-visit-layout">
+              <Field label="Visit date and time" hint="Choose a time at least one hour from now. Times are shown in your local time zone."><input className="p5-booking-large-input" required type="datetime-local" value={scheduledStart} onChange={e => { setScheduledStart(e.target.value); setStepError(''); }} min={minDateTime}/></Field>
+              {selectedPlan?.autoRenew && selectedPlan.minimumVisitIntervalDays && <div className="p5-booking-callout">Subscription visits must be at least {selectedPlan.minimumVisitIntervalDays} days apart and completed before the current paid period ends.</div>}
+              <div className="p5-booking-subheading"><div><h4>Service address</h4><p>Where should your Gardener arrive?</p></div><Button variant="ghost" onClick={() => setShowAddress(value => !value)}>{showAddress ? 'Close address form' : '+ Add new address'}</Button></div>
+              {addresses.length ? <div className="p5-booking-address-grid" role="radiogroup" aria-label="Saved service addresses">{addresses.map(item => <label className={`p5-booking-address-card ${addressId === item.id ? 'is-selected' : ''}`} key={item.id}>
+                <input type="radio" name="address" checked={addressId === item.id} onChange={() => { setAddressId(item.id); setStepError(''); }}/>
+                <span className="p5-booking-radio-mark" aria-hidden="true"/>
+                <span><b>{item.label} {item.isDefault ? <em>Default</em> : null}</b><small>{[item.line1, item.line2, item.city, item.state, item.postalCode].filter(Boolean).join(', ')}</small></span>
+              </label>)}</div> : <div className="p5-booking-empty"><b>No saved address yet</b><p>Add the address where you would like your Gardener to visit.</p></div>}
+              {showAddress && <div className="p5-address-editor p5-booking-address-editor"><div className="p5-booking-subheading"><div><h4>Add a service address</h4><p>Save this address to your Customer account for future bookings.</p></div></div><FormGrid><Field label="Address name"><input required maxLength="80" value={address.label} onChange={e => setAddress({ ...address, label: e.target.value })} placeholder="Home, Office or Garden"/></Field><Field label="Address type"><select value={address.type} onChange={e => setAddress({ ...address, type: e.target.value })}><option value="HOME">Home</option><option value="OFFICE">Office</option><option value="OTHER">Other</option></select></Field><Field label="Address line 1"><input required maxLength="180" value={address.line1} onChange={e => setAddress({ ...address, line1: e.target.value })} placeholder="House number, street and area"/></Field><Field label="Address line 2 (optional)"><input maxLength="180" value={address.line2} onChange={e => setAddress({ ...address, line2: e.target.value })} placeholder="Apartment, landmark or nearby details"/></Field><Field label="City"><input required maxLength="100" value={address.city} onChange={e => setAddress({ ...address, city: e.target.value })}/></Field><Field label="State"><input required maxLength="100" value={address.state} onChange={e => setAddress({ ...address, state: e.target.value })}/></Field><Field label="PIN code"><input required inputMode="numeric" maxLength="12" value={address.postalCode} onChange={e => setAddress({ ...address, postalCode: e.target.value })}/></Field></FormGrid><div className="p5-actions"><Button onClick={createAddress} disabled={busy || !address.label.trim() || !address.line1.trim() || !address.city.trim() || !address.state.trim() || !address.postalCode.trim()}>{busy ? 'Saving address…' : 'Save and use this address'}</Button><Button variant="ghost" onClick={() => setShowAddress(false)}>Cancel</Button></div></div>}
+              <Field label="Anything the Gardener should know?" hint="Optional — mention access instructions, plant-care concerns or areas that need attention."><textarea className="p5-booking-large-input" rows="4" maxLength="2000" value={specialInstructions} onChange={e => setSpecialInstructions(e.target.value)} placeholder="For example: Please call when you arrive, or pay special attention to the balcony plants."/></Field>
+            </div>
+          </>}
+
+          {bookingStep === 3 && <>
+            <div className="p5-booking-step-heading"><span>STEP 4 OF 4</span><h3 id="booking-step-heading" ref={stepHeadingRef} tabIndex="-1">Review your visit details</h3><p>Make sure everything is correct. You can go back to change any selection.</p></div>
+            <section className="p5-booking-review p5-booking-review-large" aria-labelledby="booking-review-title">
+              <div className="p5-booking-review-intro"><div><span>YOUR BOOKING SUMMARY</span><h4 id="booking-review-title">Your plant-care visit</h4></div><strong>{selectedPlan?.autoRenew ? 'Subscription visit' : selectedPlan?.planType === 'ONE_TIME_SERVICE' ? 'One-time service' : 'Pay per service'}</strong></div>
+              <dl>
+                <div><dt>Plan or payment option</dt><dd>{selectedPlan?.name || 'Pay per service'}</dd></div>
+                <div><dt>Service</dt><dd>{selectedService?.name || 'Choose a service'}</dd></div>
+                <div><dt>Plants ({selectedPlants.length})</dt><dd>{selectedPlants.length ? selectedPlants.map(plant => plant.name).join(', ') : 'No plants selected'}</dd></div>
+                <div><dt>Visit date and time</dt><dd>{scheduledStart ? new Date(scheduledStart).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' }) : 'Choose a date and time'}</dd></div>
+                <div><dt>Service address</dt><dd>{selectedAddress ? <>{selectedAddress.label} · {[selectedAddress.line1, selectedAddress.line2, selectedAddress.city, selectedAddress.state, selectedAddress.postalCode].filter(Boolean).join(', ')}</> : 'Choose or add an address'}</dd></div>
+                <div><dt>Special instructions</dt><dd>{specialInstructions.trim() || 'None added'}</dd></div>
+              </dl>
+              <div className="p5-booking-total"><span>{selectedPlan?.autoRenew ? 'Visit payment' : 'Estimated amount for this visit'}</span><strong>{selectedPlan?.autoRenew ? 'Covered by your paid subscription' : selectedPrice ? money(selectedPrice.amount) : 'Price to be confirmed'}</strong></div>
+              {!selectedPlan?.autoRenew && !selectedPrice && <p className="p5-booking-price-note">The final service price depends on the plant count and applicable service pricing. T-CARE will show the payable amount before payment.</p>}
+            </section>
+            {noRecurringCredit && <div className="p5-booking-callout is-warning"><b>Your subscription does not have a usable visit credit yet.</b><span>Activate UPI AutoPay and complete the first-period payment before booking with this plan.</span><Link to="/garden/plan">Review subscription →</Link></div>}
+            <p className="p5-booking-policy">Submitting creates your booking request. It does not charge a recurring subscription again. Subscription visits use one credit from your current paid period; unused visits expire at period end. One-Time Service plans are paid through the existing Razorpay booking checkout.</p>
+          </>}
+        </section>
+
+        <div className="p5-booking-controls">
+          <div className="p5-booking-controls-summary"><b>{selectedService?.name || 'Choose a service'}</b><span>{plantIds.length} {plantIds.length === 1 ? 'plant' : 'plants'} selected</span>{selectedPrice && !selectedPlan?.autoRenew && <strong>{money(selectedPrice.amount)}</strong>}</div>
+          <div className="p5-booking-controls-actions">
+            {bookingStep > 0 && <Button variant="ghost" onClick={goBackStep}>← Back</Button>}
+            {bookingStep < 3
+              ? <Button onClick={continueStep}>Continue <span aria-hidden="true">→</span></Button>
+              : <Button type="submit" disabled={busy || !serviceId || !plantIds.length || !addressId || !scheduledStart || !isPlanReady || planPlantLimitExceeded || noRecurringCredit}>{busy ? 'Submitting your request…' : 'Confirm booking request'}</Button>}
+          </div>
+        </div>
+      </div>
       </fieldset>
     </form>}
   </Shell>;

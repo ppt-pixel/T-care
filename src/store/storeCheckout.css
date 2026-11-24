@@ -15,3 +15,37 @@
 .store-order-skeleton{display:block;width:min(560px,100%);height:12px;border-radius:999px;background:linear-gradient(90deg,#e8eee6 0%,#dce8dc 48%,#e8eee6 100%);background-size:200% 100%;animation:store-order-shimmer 1.35s ease-in-out infinite}
 @keyframes store-order-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
 @media(prefers-reduced-motion:reduce){.store-order-skeleton{animation:none;background:#e8eee6}}
+
+/* Checkout contrast correction: light checkout surfaces always use dark readable text,
+   regardless of the dashboard's selected theme. */
+.store-checkout-page{color:var(--ink,#20352a)}
+.store-address-form,.store-order-summary,.store-order-card,.store-checkout-message{color:#20352a}
+.store-address-form{background:rgba(255,255,255,.96)}
+.store-checkout-message{background:#f7f9f4;color:#20352a}
+.store-checkout-message>b{display:block;color:#20352a;font-size:1.12rem;line-height:1.35;margin-bottom:6px}
+.store-checkout-message p{margin:0 0 9px;color:#536558;font-size:.96rem;line-height:1.55}
+.store-checkout-message a{display:inline-flex;color:#245e3d;font-size:.98rem;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.store-checkout-message a:hover{color:#173e29}
+.store-order-summary{background:#fbfcf9;color:#20352a}
+.store-summary-heading{color:#20352a}
+.store-summary-heading h2{color:#20352a}
+.store-summary-heading span{background:#e6f0e3;color:#245e3d;font-weight:800}
+.store-summary-item{color:#20352a;font-size:.94rem;line-height:1.4}
+.store-summary-item b,.store-summary-item strong{color:#20352a}
+.store-summary-item small{color:#5e6d61;font-size:.84rem}
+.store-summary-total{color:#435548;font-size:.92rem}
+.store-summary-total b,.store-summary-total.grand,.store-summary-total.grand b{color:#20352a}
+.store-order-summary>small{color:#596b5e;font-size:.85rem;line-height:1.55}
+.store-order-summary>a{color:#245e3d;font-size:.92rem}
+.store-checkout-small{color:#5a6a5e;font-size:.86rem;line-height:1.6}
+.store-checkout-notice{background:#edf5eb;border-color:#c9dfc6;color:#315e3c;font-size:.95rem;line-height:1.6}
+.store-checkout-error{color:#873722;font-size:.95rem;line-height:1.6}
+.store-form-grid label{font-size:.94rem;color:#435548}
+.store-form-grid input,.store-form-grid textarea{font-size:1rem;min-height:48px;color:#20352a;background:#fff}
+.store-form-grid input::placeholder,.store-form-grid textarea::placeholder{color:#778379;opacity:1}
+.store-payment-methods legend{font-size:.9rem;color:#435548}
+.store-payment-methods label{font-size:.94rem;color:#294b34}
+@media(max-width:760px){.store-address-form,.store-order-summary,.store-order-card,.store-checkout-message{padding:18px}.store-order-summary{position:static}}
+.store-checkout-unavailable>b{display:block;margin:0 0 5px;color:#244d31;font-size:1.02rem}
+.store-checkout-unavailable p{margin:0;color:#435b49}
+.store-checkout-unavailable a{display:inline-flex;margin-top:10px;color:#245e3d;font-weight:800;text-decoration:underline;text-underline-offset:3px}
