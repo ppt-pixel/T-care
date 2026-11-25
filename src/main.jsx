@@ -401,7 +401,7 @@ const ContactRoute=()=><PublicPage><ContactPage/></PublicPage>;
 const TermsRoute=()=><PublicPage><TermsPage/></PublicPage>;
 const PrivacyRoute=()=><PublicPage><PrivacyPage/></PublicPage>;
 function Home(){
-  const {theme,toggleTheme,cart,authUser,logout}=useApp();
+  const {theme,toggleTheme,cart,authUser,authReady,logout}=useApp();
   const requireCustomer=useRequireCustomerForStore();
   const openCart=()=>{if(requireCustomer('/store'))cart.setOpen(true)};
   return <div className="landing"><GardenBackground theme={theme}/>
