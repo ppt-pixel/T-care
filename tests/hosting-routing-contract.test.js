@@ -12,6 +12,21 @@ test('Hostinger Apache config preserves assets and sends frontend deep links to 
   assert.match(htaccess, /RewriteRule\s+\^\s+index\.html\s+\[L\]/);
 });
 
+test('Hostinger cache policy revalidates the SPA shell and only long-caches fingerprinted build assets', () => {
+  const htaccess = read('../public/.htaccess');
+  const htmlPolicy = htaccess.match(/<FilesMatch \"[^\"]*html[^\"]*\">([\s\S]*?)<\/FilesMatch>/i)?.[1];
+  const immutablePolicy = htaccess.match(/<FilesMatch \"\^\[\^\/\]\+?-[^\"]+\">([\s\S]*?)<\/FilesMatch>/)?.[1];
+  assert.match(htaccess, /Header always set Cache-Control \"no-cache, max-age=0, must-revalidate\"/);
+  assert.match(htaccess, /<IfModule LiteSpeed>[\s\S]*?\[E=Cache-Control:no-cache\]/);
+  assert.match(htaccess, /REQUEST_URI\} !\^\/assets\//);
+  assert.ok(htmlPolicy, 'HTML must have a dedicated cache policy');
+  assert.match(htmlPolicy, /no-store, no-cache, must-revalidate, max-age=0/);
+  assert.ok(immutablePolicy, 'fingerprinted build assets must have a dedicated cache policy');
+  assert.match(immutablePolicy, /public, max-age=31536000, immutable/);
+  assert.ok(htaccess.includes(String.raw`[A-Za-z0-9_-]{8,}`), 'the immutable cache rule must require a content-hash suffix');
+  assert.match(htaccess, /Header always set Expires \"0\"/);
+});
+
 test('Netlify API proxy is evaluated before its SPA catch-all rewrite', () => {
   const redirects = read('../public/_redirects');
   const lines = redirects.split(/\r?\n/).map(line => line.trim());

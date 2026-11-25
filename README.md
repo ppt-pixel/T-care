@@ -59,6 +59,11 @@ For the existing production topology, use the [Production Release Runbook](docs/
 Customer billing history is read-only and reflects verified payment/refund records returned by the authenticated Customer payment API. For the existing Hostinger deployment, set `VITE_API_BASE_URL` to the actual HTTPS Render API origin before building the production frontend. The `.htaccess` file handles React Router history fallback only; it does not proxy `/api` requests. For an optional Netlify deployment, the same-origin `/api/*` proxy can be used with `VITE_API_BASE_URL` unset.
 
 
+## Hostinger browser-cache behavior
+
+`public/.htaccess` prevents stale application shells after frontend deployments: HTML is `no-store`/`no-cache`, the LiteSpeed Cache Manager is bypassed for the SPA shell and unversioned files, and only content-hashed Vite assets receive a one-year immutable cache. Upload the complete new `dist` contents, including the hidden `.htaccess`, after each build. Purge the Hostinger Cache Manager and CDN once when installing this policy to clear old entries. See [`docs/T-CARE-HOSTINGER-CACHE-POLICY-2026-11-24.md`](docs/T-CARE-HOSTINGER-CACHE-POLICY-2026-11-24.md). A tab already running an older bundle gets the new code on its next ordinary reload/navigation; the application does not forcibly interrupt active booking or payment flows.
+
+
 ## Maintainer note
 
 The dedicated cleanup checkpoint dated 14 November 2026 removed the unmounted prototype Customer/Gardener/Admin screens, their demo records and the frontend-only mutation state from `src/main.jsx`. The active Customer/Admin/Gardener workspace routes remain mapped to API-backed components, with the Gardener profile using authenticated API endpoints. Public catalogue sections continue to use live API data and honest empty/loading/error states. Later Phase 4 and Phase 5 work adds persistent Plant Store orders, server-side payment verification and optional provider-generated UPI QR; the earlier browsing-only Store status is superseded by those later phases. Do not reintroduce demo records or non-persistent workspace screens into production navigation.
